@@ -1,0 +1,56 @@
+; --------------------------------------------------------------------------------
+; @Title: TMPR461XBG Serial FLASH Programming Script
+; @Description:
+; Serial FLASH (MICRON, N25Q128) connected the SPI0 
+; (Serial Peripheral Interface)
+; Serial FLASH (SPANSION,S25FL32)
+;
+; Internal SRAM    : 0x800000
+; Serial FLASH Controller Addr: 0xC0109000  
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Keywords: MICRON N25Q128 SPANSION S25FL32 SPI 
+; --------------------------------------------------------------------------------
+; $Id: tmpr46x-spi64.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+; Basic setup
+  SYStem.RESet
+  SYStem.CPU CortexR4
+  SYStem.Option ResBreak OFF
+
+; Configure CoreSight
+  SYStem.CONFIG.COREDEBUG.Base   0x80007000
+  SYStem.CONFIG.CTI.Base         0x80009000
+  SYStem.CONFIG.ETM.Base         0x80008000
+  SYStem.CONFIG.ITM.Base         0x80005000
+  SYStem.CONFIG.FUNNEL.Base      0x80004000
+  SYStem.CONFIG.FUNNEL.ATBSource ETM 0 ITM.state 1     ; Guessed
+  SYStem.CONFIG.TPIU.Base        0x80003000
+  SYStem.CONFIG.TPIU.ATBSource   FUNNEL
+  SYStem.CONFIG.ETB.Base         0x80001000
+  SYStem.CONFIG.ETB.ATBSource    FUNNEL
+  
+  SYStem.Up
+
+  Break.RESet
+
+  FLASHFILE.RESet
+
+//FLASFILE.CONFIG  <Base address>
+  FLASHFILE.CONFIG  0xC0109000
+
+// FLASHFILE.TARGET <code range> <data range> <Algorithm file>
+  FLASHFILE.TARGET 0x800000++0x3fff 0x804000++0x4FFF ~~/demo/arm/flash/byte/spi64_tmpr46x.bin  /KEEP
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Dump window for Serial FLASH
+ ;FLASHFILE.DUMP 0x0               ; Read  
+ ;FLASHFILE.UNLOCK 0x0--0xFFFFF    ; Unlock
+ ;FLASHFILE.ERASE 0x0--0xFFFFF     ; Erase 
+ ;FLASHFILE.LOAD * 0x0             ; Write 
+
+ENDDO
+

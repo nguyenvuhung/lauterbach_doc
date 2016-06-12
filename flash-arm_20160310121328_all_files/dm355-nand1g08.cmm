@@ -1,0 +1,70 @@
+; --------------------------------------------------------------------------------
+; @Title: TI DM320/DM355/DM365 NAND Flash Programming Script
+; @Description:
+; NAND FLASH(NUMONYX NAND01GW3B2B) is connected to CE0
+; 
+; Internal SRAM    : 0x2000
+; Command Register : 0x02000010  
+; Address Register : 0x0200000A
+; Data Register    : 0x02000000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: TMS320DM355
+; @Keywords: NUMONYX NAND01GW3B2B FLASH NAND Davinci
+; --------------------------------------------------------------------------------
+; $Id: dm355-nand1g08.cmm 3339 2015-07-16 07:55:52Z jjeong $
+
+  SYStem.RESet
+  SYStem.CPU DM355
+  SYStem.JtagClock RTCK 1Mhz
+  SYStem.Up
+
+  Data.Set C15:0x1 %Long  (Data.Long(C15:0x1)&~(0x1005))  ; disable cache and mmu
+
+//NAND bus initialize..
+; Setup AEMIF (CE0 and CE1)
+; EMIF configuration for J7 in NAND mode
+; Use extended wait cycles to keep CE low during NAND access
+  Data.Set 0x01e10004 %Long 0xff
+
+; Setup CE0 - 8-bit NAND, 9.26ns/cycle
+  Data.Set  0x01e10010 %Long  0x40400204        ; Setup=0, Strobe=4, Hold=0, TA=1, 8-bit
+  Data.Set  0x01e10060 %Long Data.Long(SD:0x01e10060)|0x1
+
+  FLASHFILE.RESet
+
+//FLASHFILE.config <Cmd_reg>   <Addr_reg>  <Data_reg>
+  FLASHFILE.CONFIG 0x02000010 0x0200000A 0x02000000
+
+//FLASHFILE.TARGET <Code_range> <Data_range> <Algorithm file>
+  FLASHFILE.TARGET 0x2000++0xFFF 0x3000++0xFFF ~~/demo/arm/flash/byte/nand1g08.bin  ; for SRAM
+  ;FLASHFILE.TARGET 0x80002000++0x1FFF 0x80002000++0x1FFF ~~/demo/arm/flash/byte/nand1g08.bin ; for SDRAM
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Put a list of bad blocks into area window
+  FLASHFILE.GETBADBLOCK 0x0--0xFFFFF
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+  //Erase NAND FLASH Main and Bad block inforamtion
+    FLASHFILE.Erase 0x0--0x7FFFFFF 
+    ;FLASHFILE.ERASE 0x0--0x7FFFFFF  /EraseBadBlocks
+
+  //Skipped way 
+    FLASHFILE.LOAD.binary  * 0x0 
+
+	//Ecc Writing to spare area
+	//FLASHFILE.LOADECC <main area range to make ecc>  <eccLocation on spare>  /<ecc Type>
+	  ;FLASHFILE.LOADECC 0x0--0xFFFFF 40. /256SWAP
+  )
+
+//Open NAND FLASH Dump window
+  FLASHFILE.DUMP 0x0
+
+ENDDO
+

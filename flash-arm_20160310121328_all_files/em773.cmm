@@ -1,0 +1,146 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of NXP EM773 internal flash.
+;
+; @Description: 
+; Script arguments:
+;
+;   DO em773 [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/em773 PREPAREONLY
+;
+; EM773 has 32 kByte internal flash and 8 kB internal SRAM.
+; 
+; Code Read Protection (CRP):
+;
+; CRP is invoked by programming a specific pattern in flash location 
+; at 0x000002FC.
+;
+; Name     Pattern      Description
+; --------------------------------
+; NO_ISP   0x4E697370   Prevents sampling of pin PIO0_1 for entering ISP mode.
+;                       PIO0_1 is available for other uses.
+; CRP1     0x12345678   Access to chip via the JTAG pins is disabled. This mode
+;                       allows partial flash update using the following ISP 
+;                       commands and restrictions:
+;                       • Write to RAM command cannot access RAM below
+;                         0x10000300.
+;                       • Copy RAM to flash command can not write to Sector 0.
+;                       • Erase command can erase Sector 0 only when all
+;                         sectors are selected for erase.
+;                       • Compare command is disabled.
+;                       • Read Memory command is disabled.
+;                       This mode is useful when CRP is required and flash
+;                       field updates are needed but all sectors can not be
+;                       erased.
+; CRP2     0x87654321   Access to chip via the JTAG pins is disabled. The
+;                       following ISP commands are disabled:
+;                       • Read Memory
+;                       • Write to RAM
+;                       • Go
+;                       • Copy RAM to flash
+;                       • Compare
+;                       When CRP2 is enabled the ISP erase command only allows
+;                       erasure of all user sectors.
+; CRP3     0x43218765   Access to chip via the JTAG pins is disabled. ISP entry 
+;                       by pulling PIO0_1 LOW is disabled if a valid user code 
+;                       is present in flash sector 0.
+;                       This mode effectively disables ISP override using 
+;                       PIO0_1 pin. 
+;                       It is up to the user’s application to provide a flash 
+;                       update mechanism using IAP calls or call reinvoke ISP  
+;                       command to enable flash update via UART.
+;                       Caution: If CRP3 is selected, no future factory testing
+;                       can be performed on the device.
+;
+; RAM used by IAP command handler:
+;
+;   Flash programming commands use the top 32 bytes of on-chip RAM. The maximum
+;   stack usage in the user allocated stack space is 128 bytes and it grows 
+;   downwards.
+;
+; HINTS:
+;
+;   Flash clock has to match System Clock Frequency (CCLK). 
+;   FLASH.CLocK.AUTO can be used for automatic flash clock measurement.
+;
+;   Boot flash cannot be programmed or erased with builtin flash 
+;   algorithm. 
+;
+;   Data has to be loaded to flash alignment to page boundaries.
+;
+;   Vector table checksum generation is done by script, so that it 
+;   can be used or switched off, as needed.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: EM773
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: em773.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  ; --------------------------------------------------------------------------------
+  ; Start debugging
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU EM773
+    SYStem.Option ResBreak OFF
+    IF CABLE.TWOWIRE()
+    (
+      SYStem.CONFIG.DEBUGPORTTYPE SWD
+    )
+    ELSE
+    (
+      PRINT %ERROR "Serial Wire Debug (SWD) not supported by debug cable"
+      ENDDO
+    )
+    SYStem.Up
+  )
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  FLASH.CLocK AUTO
+  FLASH.Create 1. 0x00000000--0x00007fff 0x1000 TARGET Long
+  FLASH.TARGET 0x10001200 0x10000000 0x1000 ~~/demo/arm/flash/long/lpc1100.bin
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+  
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    ; Switch memory mapping to user flash mode, so that on-chip flash is 
+    ; mapped to address 0x0--0x1ff. System Memory Remap register 
+    ; SYSMEMREMAP:0..1 = 11b
+    Data.Set 0x40048000 %Long 0x03
+
+    ; Example for download 
+    FLASH.ReProgram.ALL /Erase
+    ; 1. Download file
+    Data.LOAD.auto *
+    ; 2. Checksum generation
+    Data.SUM 0x0--0x1b /Long         ;Calculate checksum of all (other) vectors
+    Data.Set 0x1c %Long -Data.SUM()  ;Write the 2's complement in reserved vector's spot
+    ; 3. Flash programming
+    FLASH.ReProgram.off
+  )
+
+  ENDDO

@@ -1,0 +1,1147 @@
+; --------------------------------------------------------------------------------
+; @Title: AT91SAM9xxx Flash Dialog for programming additional Flash bits.
+; @Description: 
+; -
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: AT91SAM9*
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: at91sam9-nvm.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+; Create LOCAL macros
+  LOCAL &mcu
+  LOCAL &mcu_class
+  LOCAL &mcu_class_strlen
+  LOCAL &mcu_flashsize
+  LOCAL &number_lockbits
+  LOCAL &number_gpnvmbits
+  LOCAL &result
+  LOCAL &EFC_BASE    ; Flash controller base address
+  LOCAL &MC_FSR      ; Flash Status Register
+  LOCAL &MC_FRR      ; Flash Result Register
+  LOCAL &temp
+  
+  &EFC_BASE=0xFFFFFA00
+  
+; Basic checks
+  ON ERROR GOSUB
+  (
+    CONTinue
+    RETURN
+  )
+  
+  ; Checking CPU selection
+  &mcu=CPU()
+  &mcu_class=STRing.MID("&mcu",0.,8.)
+  IF "&mcu_class"!="AT91SAM9"
+  (
+    DIALOG.OK "Not an AT91SAM9 selected!"
+    SYStem.view
+    ENDDO
+  )
+  
+  &mcu_class_strlen=STRing.SCAN("&mcu","512",0.)
+  IF &mcu_class_strlen==-1
+  (
+    &mcu_class_strlen=STRing.SCAN("&mcu","256",0.)
+  )
+  IF &mcu_class_strlen==-1
+  (
+    &mcu_class_strlen=STRing.SCAN("&mcu","128",0.)
+  )
+  IF &mcu_class_strlen==-1
+  (
+    DIALOG.OK "&mcu is not supported by the script"
+    SYStem.view
+    ENDDO
+  )
+  
+  &mcu_class=STRing.MID("&mcu",0.,&mcu_class_strlen)
+  &mcu_flashsize=STRing.MID("&mcu",&mcu_class_strlen,30.)
+        &mcu_flashsize="&mcu_flashsize."
+
+  IF &mcu_flashsize==128.
+  (
+    &number_lockbits=8.
+  )
+  IF &mcu_flashsize==256.
+  (
+    &number_lockbits=16.
+  )
+  IF &mcu_flashsize==512.
+  (
+    &number_lockbits=32.
+  )
+  
+  &number_gpnvmbits=3.
+  
+  IF SYStem.MODE()<5
+  (
+    DIALOG.OK "ERROR: System is down!"
+  
+    ENDDO
+  )
+  
+  ; Read NVM bits to check security bit and exit if set
+  GOSUB ExecuteFlashCommandFRR_EFC0 0x5a00000D
+  ENTRY &MC_FRR
+  
+  IF (&MC_FRR&0x01)!=0
+  (
+    DIALOG.OK "Security bit is enabled! Flash content can only be erased by the external ERASE pin."
+    ENDDO
+  )
+  
+; Creating the main dialog.
+  WinPOS 50. 5. 45. 19.
+  DIALOG.view
+(&
+              HEADER "Flash settings for the &mcu"
+            
+              POS 1. 0. 43. 9.
+               BOX "EEFC Sector Lock Bits"
+             
+               POS 3. 2. 4. 1.
+CHK_EFC0_00:  CHECKBOX " 0" ""
+              POS 8. 2. 4. 1.
+CHK_EFC0_01:  CHECKBOX " 1" ""
+              POS 13. 2. 4. 1.
+CHK_EFC0_02:  CHECKBOX " 2" ""
+              POS 18. 2. 4. 1.
+CHK_EFC0_03:  CHECKBOX " 3" ""
+               POS 23. 2. 4. 1.
+CHK_EFC0_04:  CHECKBOX " 4" ""
+              POS 28. 2. 4. 1.
+CHK_EFC0_05:  CHECKBOX " 5" ""
+              POS 33. 2. 4. 1.
+CHK_EFC0_06:  CHECKBOX " 6" ""
+              POS 38. 2. 4. 1.
+CHK_EFC0_07:  CHECKBOX " 7" ""
+               POS 3. 3. 4. 1.
+CHK_EFC0_08:  CHECKBOX " 8" ""
+              POS 8. 3. 4. 1.
+CHK_EFC0_09:  CHECKBOX " 9" ""
+              POS 13. 3. 4. 1.
+CHK_EFC0_10:  CHECKBOX "10" ""
+              POS 18. 3. 4. 1.
+CHK_EFC0_11:  CHECKBOX "11" ""
+               POS 23. 3. 4. 1.
+CHK_EFC0_12:  CHECKBOX "12" ""
+              POS 28. 3. 4. 1.
+CHK_EFC0_13:  CHECKBOX "13" ""
+              POS 33. 3. 4. 1.
+CHK_EFC0_14:  CHECKBOX "14" ""
+              POS 38. 3. 4. 1.
+CHK_EFC0_15:  CHECKBOX "15" ""
+               POS 3. 4. 4. 1.
+CHK_EFC0_16:  CHECKBOX "16" ""
+              POS 8. 4. 4. 1.
+CHK_EFC0_17:  CHECKBOX "17" ""
+              POS 13. 4. 4. 1.
+CHK_EFC0_18:  CHECKBOX "18" ""
+              POS 18. 4. 4. 1.
+CHK_EFC0_19:  CHECKBOX "19" ""
+               POS 23. 4. 4. 1.
+CHK_EFC0_20:  CHECKBOX "20" ""
+              POS 28. 4. 4. 1.
+CHK_EFC0_21:  CHECKBOX "21" ""
+              POS 33. 4. 4. 1.
+CHK_EFC0_22:  CHECKBOX "22" ""
+              POS 38. 4. 4. 1.
+CHK_EFC0_23:  CHECKBOX "23" ""
+               POS 3. 5. 4. 1.
+CHK_EFC0_24:  CHECKBOX "24" ""
+              POS 8. 5. 4. 1.
+CHK_EFC0_25:  CHECKBOX "25" ""
+              POS 13. 5. 4. 1.
+CHK_EFC0_26:  CHECKBOX "26" ""
+              POS 18. 5. 4. 1.
+CHK_EFC0_27:  CHECKBOX "27" ""
+               POS 23. 5. 4. 1.
+CHK_EFC0_28:  CHECKBOX "28" ""
+              POS 28. 5. 4. 1.
+CHK_EFC0_29:  CHECKBOX "29" ""
+              POS 33. 5. 4. 1.
+CHK_EFC0_30:  CHECKBOX "30" ""
+              POS 38. 5. 4. 1.
+CHK_EFC0_31:  CHECKBOX "31" ""
+
+              POS 3. 7. 9. 1.
+              BUTTON "Select All" "GOSUB EEFC0SelectAll"
+              
+              POS 13. 7. 9. 1.
+              BUTTON "Unselect All" "GOSUB EEFC0UnselectAll"
+
+      ; GPNVM bits settings
+              POS 1. 9. 43. 5.
+               BOX "General Purpose NVM Bits"
+               
+              POS 3. 11. 10. 1.
+CHSB.ROM:     CHOOSEBOX "ROM Boot"   ""
+CHSB.FLASH:     CHOOSEBOX "Flash Boot" ""
+
+              POS 20. 11. 20. 1.
+CHK_BOD0:      CHECKBOX "Brownout Detector Enable" ""
+              POS 20. 12. 20. 1.
+CHK_BOD1:      CHECKBOX "Brownout Reset Enable" ""
+            
+      
+      ; Security bit
+              POS 1. 14. 43. 4.
+               BOX "Enable security bit and lock content"
+               
+               POS 3. 16. 25. 1.
+CHK_SEC:      CHECKBOX "Enable security bit and lock content" "GOSUB EnableSecurityBit"
+
+              POS 1. 18. 10. 1.
+              BUTTON "Program" "GOSUB ProgramFlashSettings"
+              
+              POS 34. 18. 10. 1.
+              BUTTON "Exit" "CONTinue"
+              
+              CLOSE "CONTinue"
+)
+  
+  ON SYSDOWN GOSUB
+  (
+    DIALOG.OK "System is down!"
+    DIALOG.END
+    END
+  )
+  
+  ; Disable/Enable the check boxes
+  GOSUB UpdateWindowFromFlashType
+  GOSUB UpdateWindowFlashSettings
+  
+  STOP
+  
+  DIALOG.END
+  
+  ENDDO
+  
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Routines for updating the window
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+UpdateWindowFromFlashType:
+  IF &number_lockbits<=16.
+  (
+    DIALOG.Disable CHK_EFC0_16
+    DIALOG.Disable CHK_EFC0_17
+    DIALOG.Disable CHK_EFC0_18
+    DIALOG.Disable CHK_EFC0_19
+    DIALOG.Disable CHK_EFC0_20
+    DIALOG.Disable CHK_EFC0_21
+    DIALOG.Disable CHK_EFC0_22
+    DIALOG.Disable CHK_EFC0_23
+    DIALOG.Disable CHK_EFC0_24
+    DIALOG.Disable CHK_EFC0_25
+    DIALOG.Disable CHK_EFC0_26
+    DIALOG.Disable CHK_EFC0_27
+    DIALOG.Disable CHK_EFC0_28
+    DIALOG.Disable CHK_EFC0_29
+    DIALOG.Disable CHK_EFC0_30
+    DIALOG.Disable CHK_EFC0_31
+  )
+  
+  IF &number_lockbits<=8.
+  (
+    DIALOG.Disable CHK_EFC0_08
+    DIALOG.Disable CHK_EFC0_09
+    DIALOG.Disable CHK_EFC0_10
+    DIALOG.Disable CHK_EFC0_11
+    DIALOG.Disable CHK_EFC0_12
+    DIALOG.Disable CHK_EFC0_13
+    DIALOG.Disable CHK_EFC0_14
+    DIALOG.Disable CHK_EFC0_15
+  )
+
+  RETURN
+  
+UpdateWindowFlashSettings:
+  ; Read out Lock Bit Status EEFC and set the check boxes in the right way.
+  GOSUB ExecuteFlashCommandFRR_EFC0 0x5a00000A
+  ENTRY &MC_FRR
+  
+  IF (&MC_FRR&0x00000001)!=0
+    DIALOG.Set CHK_EFC0_00 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_00 " "
+  IF (&MC_FRR&0x00000002)!=0
+    DIALOG.Set CHK_EFC0_01 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_01 " "
+  IF (&MC_FRR&0x00000004)!=0
+    DIALOG.Set CHK_EFC0_02 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_02 " "
+  IF (&MC_FRR&0x00000008)!=0
+    DIALOG.Set CHK_EFC0_03 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_03 " "
+  IF (&MC_FRR&0x00000010)!=0
+    DIALOG.Set CHK_EFC0_04 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_04 " "
+  IF (&MC_FRR&0x00000020)!=0
+    DIALOG.Set CHK_EFC0_05 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_05 " "
+  IF (&MC_FRR&0x00000040)!=0
+    DIALOG.Set CHK_EFC0_06 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_06 " "
+  IF (&MC_FRR&0x00000080)!=0
+    DIALOG.Set CHK_EFC0_07 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_07 " "
+  IF (&MC_FRR&0x00000100)!=0
+    DIALOG.Set CHK_EFC0_08 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_08 " "
+  IF (&MC_FRR&0x00000200)!=0
+    DIALOG.Set CHK_EFC0_09 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_09 " "
+  IF (&MC_FRR&0x00000400)!=0
+    DIALOG.Set CHK_EFC0_10 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_10 " "
+  IF (&MC_FRR&0x00000800)!=0
+    DIALOG.Set CHK_EFC0_11 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_11 " "
+  IF (&MC_FRR&0x00001000)!=0
+    DIALOG.Set CHK_EFC0_12 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_12 " "
+  IF (&MC_FRR&0x00002000)!=0
+    DIALOG.Set CHK_EFC0_13 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_13 " "
+  IF (&MC_FRR&0x00004000)!=0
+    DIALOG.Set CHK_EFC0_14 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_14 " "
+  IF (&MC_FRR&0x00008000)!=0
+    DIALOG.Set CHK_EFC0_15 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_15 " "
+  
+  IF (&MC_FRR&0x00010000)!=0
+    DIALOG.Set CHK_EFC0_16 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_16 " "
+  IF (&MC_FRR&0x00020000)!=0
+    DIALOG.Set CHK_EFC0_17 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_17 " "
+  IF (&MC_FRR&0x00040000)!=0
+    DIALOG.Set CHK_EFC0_18 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_18 " "
+  IF (&MC_FRR&0x00080000)!=0
+    DIALOG.Set CHK_EFC0_19 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_19 " "
+  IF (&MC_FRR&0x00100000)!=0
+    DIALOG.Set CHK_EFC0_20 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_20 " "
+  IF (&MC_FRR&0x00200000)!=0
+    DIALOG.Set CHK_EFC0_21 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_21 " "
+  IF (&MC_FRR&0x00400000)!=0
+    DIALOG.Set CHK_EFC0_22 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_22 " "
+  IF (&MC_FRR&0x00800000)!=0
+    DIALOG.Set CHK_EFC0_23 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_23 " "
+  IF (&MC_FRR&0x01000000)!=0
+    DIALOG.Set CHK_EFC0_24 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_24 " "
+  IF (&MC_FRR&0x02000000)!=0
+    DIALOG.Set CHK_EFC0_25 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_25 " "
+  IF (&MC_FRR&0x04000000)!=0
+    DIALOG.Set CHK_EFC0_26 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_26 " "
+  IF (&MC_FRR&0x08000000)!=0
+    DIALOG.Set CHK_EFC0_27 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_27 " "
+  IF (&MC_FRR&0x10000000)!=0
+    DIALOG.Set CHK_EFC0_28 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_28 " "
+  IF (&MC_FRR&0x20000000)!=0
+    DIALOG.Set CHK_EFC0_29 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_29 " "
+  IF (&MC_FRR&0x40000000)!=0
+    DIALOG.Set CHK_EFC0_30 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_30 " "
+  IF (&MC_FRR&0x80000000)!=0
+    DIALOG.Set CHK_EFC0_31 ""
+  ELSE
+    DIALOG.Set CHK_EFC0_31 " "
+  
+  
+  ; Check the GPNVM bits in EEFC
+  ; Read NVM bits to check security bit and exit if set
+  GOSUB ExecuteFlashCommandFRR_EFC0 0x5a00000D
+  ENTRY &MC_FRR
+
+  IF (&MC_FRR&0x00000002)!=0
+    DIALOG.Set CHK_BOD0 ""
+  ELSE
+    DIALOG.Set CHK_BOD0 " "
+  IF (&MC_FRR&0x00000004)!=0
+    DIALOG.Set CHK_BOD1 ""
+  ELSE
+    DIALOG.Set CHK_BOD1 " "
+  IF (&MC_FRR&0x00000008)!=0
+    DIALOG.Set CHSB.FLASH ""
+  ELSE
+    DIALOG.Set CHSB.ROM ""
+  
+  RETURN
+  
+
+EEFC0SelectAll:
+  DIALOG.Set CHK_EFC0_00 ""
+  DIALOG.Set CHK_EFC0_01 ""
+  DIALOG.Set CHK_EFC0_02 ""
+  DIALOG.Set CHK_EFC0_03 ""
+  DIALOG.Set CHK_EFC0_04 ""
+  DIALOG.Set CHK_EFC0_05 ""
+  DIALOG.Set CHK_EFC0_06 ""
+  DIALOG.Set CHK_EFC0_07 ""
+  
+  IF &number_lockbits>8.  
+  (                           
+    DIALOG.Set CHK_EFC0_08 ""
+    DIALOG.Set CHK_EFC0_09 ""
+    DIALOG.Set CHK_EFC0_10 ""
+    DIALOG.Set CHK_EFC0_11 ""
+    DIALOG.Set CHK_EFC0_12 ""
+    DIALOG.Set CHK_EFC0_13 ""
+    DIALOG.Set CHK_EFC0_14 ""
+    DIALOG.Set CHK_EFC0_15 ""
+  )                           
+
+  IF &number_lockbits>16.  
+  (                           
+    DIALOG.Set CHK_EFC0_16 ""
+    DIALOG.Set CHK_EFC0_17 ""
+    DIALOG.Set CHK_EFC0_18 ""
+    DIALOG.Set CHK_EFC0_19 ""
+    DIALOG.Set CHK_EFC0_20 ""
+    DIALOG.Set CHK_EFC0_21 ""
+    DIALOG.Set CHK_EFC0_22 ""
+    DIALOG.Set CHK_EFC0_23 ""
+    DIALOG.Set CHK_EFC0_24 ""
+    DIALOG.Set CHK_EFC0_25 ""
+    DIALOG.Set CHK_EFC0_26 ""
+    DIALOG.Set CHK_EFC0_27 ""
+    DIALOG.Set CHK_EFC0_28 ""
+    DIALOG.Set CHK_EFC0_29 ""
+    DIALOG.Set CHK_EFC0_30 ""
+    DIALOG.Set CHK_EFC0_31 ""
+  )                           
+
+  RETURN
+  
+  
+EEFC0UnselectAll:
+  DIALOG.Set CHK_EFC0_00 " "
+  DIALOG.Set CHK_EFC0_01 " "
+  DIALOG.Set CHK_EFC0_02 " "
+  DIALOG.Set CHK_EFC0_03 " "
+  DIALOG.Set CHK_EFC0_04 " "
+  DIALOG.Set CHK_EFC0_05 " "
+  DIALOG.Set CHK_EFC0_06 " "
+  DIALOG.Set CHK_EFC0_07 " "
+
+  IF &number_lockbits>8.   
+  (                           
+    DIALOG.Set CHK_EFC0_08 " "
+    DIALOG.Set CHK_EFC0_09 " "
+    DIALOG.Set CHK_EFC0_10 " "
+    DIALOG.Set CHK_EFC0_11 " "
+    DIALOG.Set CHK_EFC0_12 " "
+    DIALOG.Set CHK_EFC0_13 " "
+    DIALOG.Set CHK_EFC0_14 " "
+    DIALOG.Set CHK_EFC0_15 " "
+  )                           
+
+  IF &number_lockbits>16.  
+  (                           
+    DIALOG.Set CHK_EFC0_16 " "
+    DIALOG.Set CHK_EFC0_17 " "
+    DIALOG.Set CHK_EFC0_18 " "
+    DIALOG.Set CHK_EFC0_19 " "
+    DIALOG.Set CHK_EFC0_20 " "
+    DIALOG.Set CHK_EFC0_21 " "
+    DIALOG.Set CHK_EFC0_22 " "
+    DIALOG.Set CHK_EFC0_23 " "
+    DIALOG.Set CHK_EFC0_24 " "
+    DIALOG.Set CHK_EFC0_25 " "
+    DIALOG.Set CHK_EFC0_26 " "
+    DIALOG.Set CHK_EFC0_27 " "
+    DIALOG.Set CHK_EFC0_28 " "
+    DIALOG.Set CHK_EFC0_29 " "
+    DIALOG.Set CHK_EFC0_30 " "
+    DIALOG.Set CHK_EFC0_31 " "
+  )                           
+
+  RETURN
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Flash programming routine. This routine does not modify the flash content, but 
+; changes some flags of the Embedded Flash Controller.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+ProgramFlashSettings:
+  LOCAL &error
+  
+  &error=0;
+  
+  IF DIALOG.BOOLEAN(CHK_SEC)
+  (
+    DIALOG.YESNO "Do you really want to program the flash settings and enable the Security bit?"
+    ENTRY &result
+  )
+  ELSE
+  (
+    DIALOG.YESNO "Do you really want to program the flash settings?"
+    ENTRY &result
+  )
+  
+  IF !&result
+    RETURN
+  
+  ; Programming the Sector protection bits.
+  
+  IF DIALOG.BOOLEAN(CHK_EFC0_00)
+  (  
+    GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x00<<(5.+8.))+0x08
+    ENTRY &error
+  )
+  ELSE
+  (
+    GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x00<<(5.+8.))+0x09
+    ENTRY &error
+  )
+  IF &error!=0
+    RETURN
+    
+  IF DIALOG.BOOLEAN(CHK_EFC0_01)
+  (  
+    GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x01<<(5.+8.))+0x08
+    ENTRY &error
+  )
+  ELSE
+  (
+    GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x01<<(5.+8.))+0x09
+    ENTRY &error
+  )
+  IF &error!=0
+    RETURN
+    
+  IF DIALOG.BOOLEAN(CHK_EFC0_02)
+  (  
+    GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x02<<(5.+8.))+0x08
+    ENTRY &error
+  )
+  ELSE
+  (
+    GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x02<<(5.+8.))+0x09
+    ENTRY &error
+  )
+  IF &error!=0
+    RETURN
+    
+  IF DIALOG.BOOLEAN(CHK_EFC0_03)
+  (  
+    GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x03<<(5.+8.))+0x08
+    ENTRY &error
+  )
+  ELSE
+  (
+    GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x03<<(5.+8.))+0x09
+    ENTRY &error
+  )
+  IF &error!=0
+    RETURN
+    
+  IF DIALOG.BOOLEAN(CHK_EFC0_04)
+  (  
+    GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x04<<(5.+8.))+0x08
+    ENTRY &error
+  )
+  ELSE
+  (
+    GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x04<<(5.+8.))+0x09
+    ENTRY &error
+  )
+  IF &error!=0
+    RETURN
+    
+  IF DIALOG.BOOLEAN(CHK_EFC0_05)
+  (  
+    GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x05<<(5.+8.))+0x08
+    ENTRY &error
+  )
+  ELSE
+  (
+    GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x05<<(5.+8.))+0x09
+    ENTRY &error
+  )
+  IF &error!=0
+    RETURN
+    
+  IF DIALOG.BOOLEAN(CHK_EFC0_06)
+  (  
+    GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x06<<(5.+8.))+0x08
+    ENTRY &error
+  )
+  ELSE
+  (
+    GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x06<<(5.+8.))+0x09
+    ENTRY &error
+  )
+  IF &error!=0
+    RETURN
+    
+  IF DIALOG.BOOLEAN(CHK_EFC0_07)
+  (  
+    GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x07<<(5.+8.))+0x08
+    ENTRY &error
+  )
+  ELSE
+  (
+    GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x07<<(5.+8.))+0x09
+    ENTRY &error
+  )
+  IF &error!=0
+    RETURN
+    
+  IF &number_lockbits>=16.
+  (
+    IF DIALOG.BOOLEAN(CHK_EFC0_08)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x08<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x08<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_09)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x09<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x09<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_10)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x0A<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x0A<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_11)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x0B<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x0B<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_12)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x0C<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x0C<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_13)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x0D<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x0D<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_14)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x0E<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x0E<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_15)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x0F<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x0F<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+  )
+  
+  IF &number_lockbits==32.
+  (
+    IF DIALOG.BOOLEAN(CHK_EFC0_16)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x10<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x10<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_17)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x11<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x11<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_18)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x12<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x12<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_19)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x13<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x13<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_20)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x14<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x14<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_21)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x15<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x15<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_22)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x16<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x16<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_23)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x17<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x17<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+    
+    IF DIALOG.BOOLEAN(CHK_EFC0_24)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x18<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x18<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_25)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x19<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x19<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_26)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x1A<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x1A<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_27)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x1B<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x1B<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_28)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x1C<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x1C<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_29)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x1D<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x1D<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_30)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x1E<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x1E<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+      
+    IF DIALOG.BOOLEAN(CHK_EFC0_31)
+    (  
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x1F<<(5.+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC0 0x5A000000+(0x1F<<(5.+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+  )
+  
+  ; Programing the GPNVM bits
+  IF DIALOG.BOOLEAN(CHK_BOD0)
+  (  
+    GOSUB ExecuteFlashCommand_EFC0 0x5A00010B
+    ENTRY &error
+  )
+  ELSE
+  (
+    GOSUB ExecuteFlashCommand_EFC0 0x5A00010C
+    ENTRY &error
+  )
+  IF &error!=0
+    RETURN
+    
+  IF DIALOG.BOOLEAN(CHK_BOD1)
+  (  
+    GOSUB ExecuteFlashCommand_EFC0 0x5A00020B
+    ENTRY &error
+  )
+  ELSE
+  (
+    GOSUB ExecuteFlashCommand_EFC0 0x5A00020C
+    ENTRY &error
+  )
+  IF &error!=0
+    RETURN
+    
+  IF DIALOG.BOOLEAN(CHSB.FLASH)
+  (  
+    GOSUB ExecuteFlashCommand_EFC0 0x5A00030B
+    ENTRY &error
+  )
+  ELSE
+  (
+    GOSUB ExecuteFlashCommand_EFC0 0x5A00030C
+    ENTRY &error
+  )
+  IF &error!=0
+    RETURN
+    
+  IF DIALOG.BOOLEAN(CHK_SEC)
+  (  
+    GOSUB ExecuteFlashCommand_EFC0 0x5A00000B
+    ENTRY &error
+    
+    ; When the Security bit was successfully enabled, these script lines shouldn't 
+    ; be reached because system is going done immediately. Ensure that the dialog 
+    ; will be closed. Any modification in the flash setup is forbidden, until the 
+    ; flash was erased by the external ERASE pin.
+    IF &error==0
+    (
+      DIALOG.END
+      END
+    )
+  )
+
+  GOSUB UpdateWindowFlashSettings
+
+  RETURN
+  
+ExecuteFlashCommand_EFC0:
+  ENTRY &cmd
+  LOCAL &error
+  LOCAL &timer
+  
+  &error=0
+  
+  ; Check FRDY bit in the FSR
+  &MC_FSR=Data.Long(ASD:0xFFFFFA08)
+  IF (&MC_FSR&0x1)==0
+  (
+    DIALOG.OK "Unexpected Error: Flash controller is busy!"
+    &error=1
+    RETURN &error
+  )
+  
+  ; Write flash command
+  Data.Set 0xFFFFFA04 %Long &cmd
+  
+  ; Check FRDY bit in the FSR
+  &MC_FSR=Data.Long(ASD:0xFFFFFA08)
+  &timer=0.
+  
+  WHILE (&MC_FSR&0x1)==0
+  (
+    WAIT 10ms
+    &timer=&timer+1.
+    IF &timer>500.       ; Timeout after 5 seconds
+    (
+      DIALOG.OK "Timeout: Flash controller keeps busy!"
+      &error=1
+      RETURN &error
+    )
+    &MC_FSR=Data.Long(ASD:0xFFFFFA08)
+  )
+  
+  IF (&MC_FSR&0x4)!=0
+  (
+    DIALOG.OK "Unexpected Error: Locking region violation!"
+    &error=1
+    RETURN &error
+  )
+  
+  IF (&MC_FSR&0x2)!=0
+  (
+    DIALOG.OK "INTERNAL ERROR: Bad keyword violation!"
+    &error=1
+    RETURN &error
+  )
+  
+  RETURN &error
+  
+
+ExecuteFlashCommandFRR_EFC0:
+  ENTRY &cmd
+  LOCAL &error
+  LOCAL &timer
+  
+  &result=0
+  
+  ; Check FRDY bit in the FSR
+  &MC_FSR=Data.Long(ASD:&EFC_BASE+0x08)
+  IF (&MC_FSR&0x1)==0
+  (
+    DIALOG.OK "Unexpected Error: Flash controller is busy!"
+    RETURN &result
+  )
+  
+  ; Write flash command
+  Data.Set &EFC_BASE+0x04 %Long &cmd
+  
+  ; Check FRDY bit in the FSR
+  &MC_FSR=Data.Long(ASD:&EFC_BASE+0x08)
+  &timer=0.
+  
+  WHILE (&MC_FSR&0x1)==0
+  (
+    WAIT 10ms
+    &timer=&timer+1.
+    IF &timer>500.       ; Timeout after 5 seconds
+    (
+      DIALOG.OK "Timeout: Flash controller keeps busy!"
+      RETURN &result
+    )
+    &MC_FSR=Data.Long(ASD:&EFC_BASE+0x08)
+  )
+  
+  IF (&MC_FSR&0x4)!=0
+  (
+    DIALOG.OK "Unexpected Error: Locking region violation!"
+    RETURN &result
+  )
+  
+  IF (&MC_FSR&0x2)!=0
+  (
+    DIALOG.OK "INTERNAL ERROR: Bad keyword violation!"
+    RETURN &result
+  )
+  
+  ; Read Result
+  &MC_FRR=Data.Long(ASD:&EFC_BASE+0x0C)
+  &result=&MC_FRR
+  
+  RETURN &result
+  
+
+EnableSecurityBit:
+  IF DIALOG.BOOLEAN(CHK_SEC)
+  (
+    DIALOG.YESNO "WARNING: Flash cannot be read or written after programming until it is erased by the external ERASE pin! Continue?"
+    ENTRY &result
+    
+    IF !&result
+    (
+      DIALOG.Set CHK_SEC " "
+    )
+  )
+  
+  RETURN
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Helper sub to mark not implemented functions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+MissingImpl:
+  DIALOG.OK "Implementation Missing!"
+  RETURN
+  
+  ENDDO 
+  

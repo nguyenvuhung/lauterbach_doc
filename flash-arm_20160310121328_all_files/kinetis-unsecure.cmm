@@ -1,0 +1,81 @@
+; --------------------------------------------------------------------------------
+; @Title: Kinetis unsecure sequence executing mass erase.
+; @Description: -
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: kinetis-unsecure.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  IF VERSION.BUILD()<34133.
+  (
+    ON.ERROR GOSUB
+    (
+      &errmsg=HELP.MESSAGE()
+      IF "&errmsg"=="#emu_errbuserr"
+      (
+        PRINT %ERROR "Trace32 software version is to old to unsecure the device, please request an update"
+        DIALOG.OK "Trace32 software version is to old to unsecure the device" "" "Please request an update"
+        SYStem.Down
+        ENDDO
+      )
+      ELSE
+        ENDDO
+    )
+
+    Data.In D:0x40C /Long
+  )
+
+  ON.ERROR GOSUB
+  (
+    &errmsg=HELP.MESSAGE()
+    IF "&errmsg"=="#emu_errbuserr"
+      RETURN
+    ELSE
+      ENDDO
+  )
+
+  Break.RESet
+  SYStem.Down
+  SYStem.JtagClock 1Mhz
+  SYStem.Mode.Prepare
+
+  ; Print security state information
+  PRINT "MDM-AP Status Register is 0x" Data.Long(EDBG:0x40000100)
+  IF (Data.Long(EDBG:0x40000100)&0x04)==0x04
+    PRINT "    Device secured"
+  IF (Data.Long(EDBG:0x40000100)&0x02)==0x02
+    PRINT "    Flash ready"
+  IF (Data.Long(EDBG:0x40000100)&0x20)==0x20
+    PRINT "    Mass erase enabled"
+  IF (Data.Long(EDBG:0x40000100)&0x40)==0x40
+    PRINT "    Backdoor access key enabled"
+
+  DIALOG.YESNO "Execute mass erase to unsecure chip?"
+  LOCAL &erase
+  ENTRY &erase
+
+  IF &erase
+  (
+    JTAG.PIN NRESET 0
+
+    ; Setup mass erase command
+    Data.Set EDBG:0x40000104 %Long 0yXXXXxxxxXXXXxxxxXXXXxxxxXXXXxxx1
+    ; wait until mass erase has completed
+    WHILE ((Data.Long(EDBG:0x40000100)&0x04)==0x04)||((Data.Long(EDBG:0x40000104)&0x01)==0x01)
+    (
+    )
+    WAIT 100ms
+
+    JTAG.PIN NRESET 1
+    WAIT 100ms
+
+    SYStem.Down
+    WAIT 100ms
+  )
+  ELSE
+  (
+    SYStem.Down
+  )
+
+  ENDDO

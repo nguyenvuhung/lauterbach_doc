@@ -1,0 +1,26 @@
+; --------------------------------------------------------------------------------
+; @Title: TMS470 internal flash of TMS470MSF246
+;
+; @Description:
+; Script arguments:
+;
+;   DO TMS470MSF246 [PREPAREONLY] 
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/TMS470MSF246 PREPAREONLY
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 3152 $
+; $Id: tms470msf246.cmm 3152 2015-02-06 16:35:19Z kjmal $
+
+LOCAL &parameters
+ENTRY %LINE &parameters
+
+DO ~~~~/tms470msf241 TMS470MSF246 &parameters
+
+ENDDO

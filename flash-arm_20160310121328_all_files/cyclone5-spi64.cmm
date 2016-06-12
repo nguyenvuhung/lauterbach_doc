@@ -1,0 +1,99 @@
+; @Title: Cyclone V SOC DevKit( 2xCortex-A9) Quad SPI FLASH Program script
+; @Description:
+; The 25Q00AA (Numonyx Quad SPI flash) is on the HPSQSPI0_SS0
+;
+; SRAM: 0x0FFF1000
+; QuadSPI(controller) Base: 0xFF705000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: cyclone*
+; @Keywords: 25Q00 numonyx Flash SPI QuadSPI
+; $Id: cyclone5-spi64.cmm 3339 2015-07-16 07:55:52Z jjeong $
+;
+
+&QSPI_BASE=0xFF705000
+  
+  RESet
+  SYStem.CPU CYCLONEVSOC
+  CORE.ASSIGN 1                             ; "1" = first core, "2" = second core, "1 2" = both cores (SMP)
+  ;  ARM(HPS) + FPGA(Cyclone V) + MAX  in CHAIN
+  ; J6=J8=SW4.3=ON
+  ; SW4.1=SW4.2=SW4.4=OFF  
+
+  SYStem.CONFIG DAPIRPOST 0.
+  SYStem.CONFIG DAPIRPRE 20.
+  SYStem.CONFIG DAPDRPOST 0.
+  SYStem.CONFIG DAPDRPRE 2.
+  
+  ;  ARM(HPS) + FPGA(Cyclone V) in CHAIN
+  ;SYStem.CONFIG DAPIRPOST 0.
+  ;SYStem.CONFIG DAPIRPRE 10.
+  ;SYStem.CONFIG DAPDRPOST 0.
+  ;SYStem.CONFIG DAPDRPRE 1.
+     
+  SYStem.Up
+
+  Data.Set C15:0x1 %Long  (Data.Long(C15:0x1)&~(0x1005))  ; disable cache and mmu
+
+  Data.Set A:&QSPI_BASE %LE %Long 0x80583807   ; Enable Qspi: bit[0] and qspi clock configure bit[22:19]
+
+//FLASH READ ID TEST
+AREA.CLEAR
+AREA.view
+GOSUB READ_ID_TEST
+DIALOG.YESNO "the flash id is correct on AREA window?"
+ENTRY &result
+IF !&result
+(
+PRINT "pls, check your register configuration to enable your flash controller"
+ENDDO
+)
+
+//S(D)RAM TEST for algorithm file
+GOSUB SDRAM_INIT
+Data.Test 0x0FFF1000++0x3FFF  /Prime ;s(d)ram test
+IF FOUND()
+( 
+PRINT "s(d)ram is NOT initialized around 0x" ADDRESS.OFFSET(TRACK.ADDRESS())
+ENDDO
+)
+
+  FLASHFILE.RESet
+  FLASHFILE.CONFIG A:&QSPI_BASE 0x0 0x0
+  FLASHFILE.TARGET A:0x0FFF1000++0x1FFF  A:0x0FFF3000++0x4FFF  ~~/demo/arm/flash/byte/spi4b64fs_cyclone5qspi.bin  /KEEP
+
+  FLASHFILE.GETID
+  FLASHFILE.UNLOCK 0x0--0xFFFFFF
+  FLASHFILE.DUMP 0x0
+
+//Erase Serial FLASH  
+  ;FLASHFILE.ERASE 0x0--0xFFFFF
+
+//Write
+  ;FLASHFILE.LOAD   * 0x0
+  ;FLASHFILE.LOAD   * 0x0  /ComPare   ;verify
+
+ENDDO
+
+READ_ID_TEST:
+
+&cmd=0x9F; read ID JEDEC Manufacture ID and JEDEC CFI
+
+&temp=(&cmd<<24.)      ; cmd
+&temp=&temp|(1<<23.)   ; enable read
+&temp=&temp|(3.<<20.)  ; read length
+
+Data.Set A:(&QSPI_BASE+0x90) %Long (&temp|0x1)  ; execute command
+
+PRINT "1st 0x" Data.Long(A:(&QSPI_BASE+0xA0))&0xFF        " (Manufacture)"
+PRINT "2nd 0x" (Data.Long(A:(&QSPI_BASE+0xA0))>>8.)&0xFF " (Device ID)"
+PRINT "3rd 0x" (Data.Long(A:(&QSPI_BASE+0xA0))>>16.)&0xFF 
+PRINT "4th 0x" (Data.Long(A:(&QSPI_BASE+0xA0))>>24.)&0xFF 
+
+RETURN
+
+
+SDRAM_INIT:
+
+RETURN

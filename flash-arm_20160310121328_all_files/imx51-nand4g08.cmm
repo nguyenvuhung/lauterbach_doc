@@ -1,0 +1,54 @@
+; --------------------------------------------------------------------------------
+; @Title: i.MX51 NAND FLASH Programming Script
+; @Description:
+; NAND FLASH(SAMSUNG, K9F4G08) is connected
+; 
+; S(D)RAM: 0x20000000
+; NFC_AXI_BASE = 0xCFFF0000 
+; NFC_IP_BASE = 0x83FDB000 
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: iMX515
+; @Keywords: SAMSUNG K9F4G08 Flash NAND
+; --------------------------------------------------------------------------------
+; $Id: imx51-nand4g08.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+
+  AREA.RESet
+  AREA.view
+  
+//SYStem configuration
+
+  SYStem.CPU iMX515
+  SYStem.Option ResBreak ON    
+  SYStem.Option EnReset OFF    
+  SYStem.JtagClock 20MHz       
+
+  SYStem.Up
+
+  PER.Set.simple C15:0x1 %Long  (Data.Long(C15:0x1)&~(0x5))  ; disable interrupt and mmu
+
+  Data.Set 0x83FDB000 %Long 0x0DB6DB6BC   ; NFC_WR_PROTECT
+  Data.Set 0x83FDB004 %Long 0x0FFFF0000   ; Unlock for CS0
+// 64B Spare, 5 row+col address, 64 page per block, 2KB page
+  Data.Set 0x83FDB024 %Long 0x70200EBD    ; NFC_CONFIG2
+  Data.Set 0x83FDB028 %Long 0x100609      ; NFC_CONFIG3
+
+  Break.RESet
+
+  FLASHFILE.RESet
+//FLASHFILE.CONFIG <<NFC_AXI_BASE Address>> <<NFC_IP_BASE Address>>
+  FLASHFILE.CONFIG   0xCFFF0000               0x83FDB000             0x0
+
+// FLASHFILE.TARGET <<code range>> <<data range>> <<algorithm file>>
+  FLASHFILE.TARGET 0x20000000++0x1fff 0x20002000++0x4fff ~~/demo/arm/flash/byte/nand2g08_imx51.bin /KEEP /STACKSIZE 0x400
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+ ;FLASHFILE.DUMP 0x0                             ; Read NAND 
+ ;FLASHFILE.ERASE 0x0--0xFFFFF  /EraseBadBlock   ; Erase NAND
+ ;FLASHFILE.LOAD * 0x0  /WriteBadBlock           ; Write NAND
+
+ENDDO
+

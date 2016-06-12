@@ -1,0 +1,165 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Fujitsu MB9A110 series internal flash.
+;
+; @Description:
+; Script arguments:
+;
+;   DO mb9a110 [PREPAREONLY] [CPU=<cpu>]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/mb9a110 CPU=MB9AF116N PREPAREONLY
+;
+; List of MB9A110 series derivatives and their configuration:
+;
+;   CPU-Type       FlashSize  RamSize
+;                     [kB]      [kB]
+;   ---------------------------------
+;   MB9AF111L          64.       16.
+;   MB9AF111M          64.       16.
+;   MB9AF111N          64.       16.
+;   MB9AF112L         128.       16.
+;   MB9AF112M         128.       16.
+;   MB9AF112N         128.       16.
+;   MB9AF114L         256.       32.
+;   MB9AF114M         256.       32.
+;   MB9AF114N         256.       32.
+;   MB9AF115M         384.       32.
+;   MB9AF115N         384.       32.
+;   MB9AF116M         512.       32.
+;   MB9AF116N         512.       32.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: MB9AF11?L MB9AF11?M MB9AF11?N
+; --------------------------------------------------------------------------------
+; $Rev: 3513 $
+; $Id: mb9a110.cmm 3513 2015-12-02 16:10:14Z fcaron $
+
+  LOCAL &parameters &param_prepareonly
+  ENTRY %LINE &parameters
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &param_cpu
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  ; --------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    Break.RESet
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(MB9AF11*)
+      SYStem.CPU MB9AF11*
+
+    IF CABLE.TWOWIRE()
+      SYStem.CONFIG.DEBUGPORTTYPE SWD
+    ELSE
+      SYStem.CONFIG.DEBUGPORTTYPE JTAG
+
+    SYStem.Option.ResBreak OFF
+    SYStem.Up
+  )
+
+  IF CPUIS("MB9AF11?K")
+  (
+    DO ~~~~/mb9a110k &parameters
+    ENDDO
+  )
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration
+
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &FlashSize
+
+  IF CPUIS("MB9AF111?")
+  (
+    &FlashSize=0x10000
+  )
+  ELSE IF CPUIS("MB9AF112?")
+  (
+    &FlashSize=0x20000
+  )
+  ELSE IF CPUIS("MB9AF114?")
+  (
+    &FlashSize=0x40000
+  )
+  ELSE IF CPUIS("MB9AF115?")
+  (
+    &FlashSize=0x60000
+  )
+  ELSE IF CPUIS("MB9AF116?")
+  (
+    &FlashSize=0x80000
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  IF &FlashSize==0x10000
+  (
+    FLASH.Create 1. 0x000000--0x007FFF  0x4000 TARGET Long
+    FLASH.Create 1. 0x008000--0x00FFFF  0x8000 TARGET Long
+  )
+  ELSE IF &FlashSize>=0x20000
+  (
+    FLASH.Create 1. 0x000000--0x007FFF  0x4000 TARGET Long
+    FLASH.Create 1. 0x008000--0x01FFFF 0x18000 TARGET Long
+  )
+  IF &FlashSize>=0x40000
+  (
+    FLASH.Create 1. 0x020000--0x03FFFF 0x20000 TARGET Long
+  )
+  IF &FlashSize>=0x60000
+  (
+    FLASH.Create 1. 0x040000--0x05FFFF 0x20000 TARGET Long
+  )
+  IF &FlashSize>=0x80000
+  (
+    FLASH.Create 1. 0x060000--0x07FFFF 0x20000 TARGET Long
+  )
+
+  FLASH.TARGET 0x1FFFF000 0x20000000 0x1000 ~~/demo/arm/flash/long/fm3t1.bin
+
+  RETURN

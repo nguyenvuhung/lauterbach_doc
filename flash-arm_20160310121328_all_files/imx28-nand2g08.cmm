@@ -1,0 +1,131 @@
+; --------------------------------------------------------------------------------
+; @Title: I.MX28 GPMI NAND FLASH Programming Script
+; @Description:
+;   FLASH Type: NAND FLASH(SAMSUNG,K9F4G08) connected to NAND_CS0
+; 
+;   Internal SRAM    : 0x001000
+;   APBH-Bridge-DMA Register : 0x80004000        
+;   GPMIRegister : 0x8000C000   
+;
+; @Author: jjeong
+; @Chip: IMX287
+; @Keywords: SAMSUNG K9F4G08
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: imx28-nand2g08.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+
+	SYStem.RESet
+	SYStem.CPU IMX287
+	SYStem.JtagClock RTCK
+	
+; If the power supply is used the power button has to be pressed each time after reset.
+; 
+; Solution 1: Disable EnReset
+; Solution 2: Use USB power on J82
+	
+	SYStem.Option EnReset OFF
+	
+	SYStem.Up
+
+  GOSUB CLOCK_SETUP	
+
+  PER.Set.simple C15:0x1 %Long 0x51078   ;MMU disable
+
+  GOSUB NAND_SETUP
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.config <APBH-Bridge-DMA>  <GPMI reg>  
+  FLASHFILE.CONFIG  0x80004000        0x8000C000   ,  ,
+
+//FLASHFILE.TARGET <code range>        <data range>      <Algorithm file>
+  FLASHFILE.TARGET 0x010000++0x3FFF 0x00014000++0x3FFF  ~~/demo/arm/flash/byte/nand2g08_gpmimx28.bin  /STACKSIZE 0x500
+ 
+  FLASHFILE.GETID                                ; Read ID
+ ;FLASHFILE.DUMP 0x0                             ; Read NAND 
+ ;FLASHFILE.ERASE 0x0--0xFFFFF  /EraseBadBlock   ; Erase NAND
+ ;FLASHFILE.LOAD * 0x0  /WriteBadBlock           ; Write NAND
+
+ENDDO
+
+NAND_SETUP:
+  Data.Set A:0x8000c000 %Long 0xC0000000  //HW_GPMI_CTRL0
+  Data.Set A:0x80018108 %Long 0x0000FFFF  //HW_PINCTRL_MUXSEL0_CLR
+  Data.Set A:0x80018118 %Long 0x03FF0F0F  //HW_PINCTRL_MUXSEL1_CLR
+
+  Data.Set A:0x80040000 %LE %Long 0x00060000    //HW_CLKCTRL_PLL0CTRL0
+  Data.Set A:0x80040060 %LE %Long 0x2 //HW_CLKCTRL_HBUS
+  Data.Set A:0x800400D0 %Long 0x00000010  //HW_CLKCTRL_GPMI
+  Data.Set A:0x800401B0 %LE %Long 0x92925a52   //HW_CLKCTRL_FRAC0
+  Data.Set A:0x800401D0 %LE %Long 0x0000417E //HW_CLKCTRL_CLKSEQ
+  Data.Set A:0x800401D4 %Long 0x00000004  //HW_CLKCTRL_CLKSEQ_SET
+  
+  Data.Set A:0x8000C008 %Long 0xC0000000  //HW_GPMI_CTRL0_CLR
+  Data.Set A:0x80004008 %Long 0xC0000000  //HW_APBH_CTRL0_CLR
+  Data.Set A:0x8000C064 %Long 0x00000008   //Write protect is disabled
+
+  Data.Set A:0x8000A080 %Long 0x030A4200  //HW_BCH_FLASH0LAYOUT0
+  Data.Set A:0x8000A090 %Long 0x08404200  //HW_BCH_FLASH0LAYOUT1
+RETURN
+
+
+CLOCK_SETUP:    
+	
+	//=============================================================================
+	//init script for MX28 EVK/Armadillo DDR2 CPU board (ddr2-EDE1116)
+	//Date:     DEC-03 2009
+	//Author:   Freescale-MAD
+	//Version:  0.1
+	//=============================================================================
+	
+	//****************************
+	// VDDD setting
+	//****************************
+	//set VDDD =1.55V =(0.8v + TRIG x 0.025v), TRIG=0x1e
+	//Data.Set ASD:0x80044040 %Long 0x0032071e
+	Data.Set ASD:0x80044040 %Long 0x0022071e
+	
+	
+	//****************************
+	// CLOCK set up
+	//****************************
+	// Power up PLL0 HW_CLKCTRL_PLL0CTRL0
+	Data.Set ASD:0x80040000 %Long 0x00020000
+	// Set up fractional dividers for CPU and EMI - HW_CLKCTRL_FRAC0
+	// EMI - first set DIV_EMI to div-by-2 before programming frac divider
+	Data.Set ASD:0x800400F0 %Long 0x80000002
+	
+	// CPU: CPUFRAC=19 480*18/19=454.7MHz, EMI: EMIFRAC=22, (480/2)*18/22=196.4MHz
+	//Data.Set ASD:0x800401B0 %Long 0x92921613
+	
+	// CPU: CPUFRAC=20 480*18/20=432MHz, EMI: EMIFRAC=22, (480/2)*18/22=196.4MHz
+	Data.Set ASD:0x800401B0 %Long 0x92921614
+	
+	// CPU: CPUFRAC=28 480*18/28=308.6MHz, EMI: EMIFRAC=22, (480/2)*18/22=196.4MHz
+	// IF CLK_H=CLK_P/2, then CLK_H=154.3MHz
+	//Data.Set ASD:0x800401B0 %Long 0x9292161C
+	
+	// Clear the bypass bits for CPU and EMI clocks in HW_CLKCTRL_CLKSEQ_CLR
+	Data.Set ASD:0x800401D8 %Long 0x00040080
+	
+	// HCLK = CLK_P/2,HW_CLKCTRL_HBUS DIV =0x2 (unstable)
+	//Data.Set ASD:0x80040060 %Long 0x00000002
+	// HCLK = CLK_P/3,HW_CLKCTRL_HBUS DIV =0x3 
+	Data.Set ASD:0x80040060 %Long 0x00000003
+	// HCLK = CLK_P/4,HW_CLKCTRL_HBUS DIV =0x4 
+	//Data.Set ASD:0x80040060 %Long 0x00000004
+	
+RETURN
+
+
+
+
+
+
+
+
+
+

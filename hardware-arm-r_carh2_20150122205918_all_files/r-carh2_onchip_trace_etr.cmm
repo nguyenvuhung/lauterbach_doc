@@ -1,0 +1,78 @@
+; --------------------------------------------------------------------------------
+; @Title: Start-up Script file for R-CARH2 on LAGER board
+; @Description: 
+;   Connects to the four Cortex-A7 of the R-CARH2 and set up the ETR.
+;   Depending on the Master Boot Mode Selection only the first CA15 or the first
+;   CA7 is active.
+;   SW8.7=MD6=ON, SW8.8=MD7=ON -> CA15
+;   SW8.7=MD6=OFF, SW8.8=MD7=ON -> CA7
+;   Therefore first connect to the active core in order to power and deassert reset
+;   of the other cores.
+; @Keywords: Cortex-A15, Cortex-A7, ETR, R-CARH2, RCARH2, Renesas, Trace
+; @Author: PEG
+; @Board: LAGER
+; @Chip: R8A7790?
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: r-carh2_onchip_trace_etr.cmm 7570 2014-08-25 15:02:32Z pegold $
+
+
+; master boot CA15/CA7 CPU0 reset vector break
+  RESet
+  SYStem.CPU RCARH2-CA7 ; use RCARH2-CA15 in case CA7 is active (see boot mode above)
+  CORE.ASSIGN 1
+  TrOnchip.Set DABORT OFF
+  TrOnchip.Set PABORT OFF
+  TrOnchip.Set UNDEF OFF
+  SYStem.Option PWRCHECKFIX OFF ; use ON in case of CA15 is active
+  SYStem.Up
+
+; power up power domain of CA15 SCU and CA7 SCU
+  Data.Set ANSD:0xE618018c %Long 0x1 ; PWRONCR5 (CA15 SCU)
+  Data.Set ANSD:0xE618010c %Long 0x1 ; PWRONCR3 (CA7 SCU)
+
+; reset control setting for debug mode
+  Data.Set ANSD:0xE6152180 %Long 0x01f80000 ; CA15_PCCU_PWRCTL
+  Data.Set ANSD:0xE6151180 %Long 0x01f83330 ; CA7_PCCU_PWRCTL
+
+; control power and isolation of other CPUs
+  Data.Set ANSD:0xe6152010 %Long 0x1 ; CA15_WUPCR (CPU0)
+  Data.Set ANSD:0xe6152010 %Long 0x2 ; CA15_WUPCR (CPU1)
+  Data.Set ANSD:0xe6152010 %Long 0x4 ; CA15_WUPCR (CPU2)
+  Data.Set ANSD:0xe6152010 %Long 0x8 ; CA15_WUPCR (CPU3)
+  Data.Set ANSD:0xe6151010 %Long 0x1 ; CA7_WUPCR (CPU0)
+  Data.Set ANSD:0xe6151010 %Long 0x2 ; CA7_WUPCR (CPU1)
+  Data.Set ANSD:0xe6151010 %Long 0x4 ; CA7_WUPCR (CPU2)
+  Data.Set ANSD:0xe6151010 %Long 0x8 ; CA7_WUPCR (CPU3)
+
+; module reset deassert and reset vector break
+  Data.Set ANSD:0xe6160040 %Long 0xa5a50007 ; CA15_RESCNT (CPU0)
+  Data.Set ANSD:0xe6160040 %Long 0xa5a50003 ; CA15_RESCNT (CPU1)
+  Data.Set ANSD:0xe6160040 %Long 0xa5a50001 ; CA15_RESCNT (CPU2)
+  Data.Set ANSD:0xe6160040 %Long 0xa5a50000 ; CA15_RESCNT (CPU3)
+  Data.Set ANSD:0xe6160044 %Long 0x5a5a0007 ; CA7_RESCNT (CPU0)
+  Data.Set ANSD:0xe6160044 %Long 0x5a5a0003 ; CA7_RESCNT (CPU1)
+  Data.Set ANSD:0xe6160044 %Long 0x5a5a0001 ; CA7_RESCNT (CPU2)
+  Data.Set ANSD:0xe6160044 %Long 0x5a5a0000 ; CA7_RESCNT (CPU3)
+
+
+; connect to all four CA7 cores in a SMP debug session
+  Go
+  SYStem.Down
+  SYStem.CPU RCARH2-CA7
+  CORE.ASSIGN 1 2 3 4
+  SYStem.Mode Attach
+  IF RUN()
+    Break
+
+; prepare onchip trace in ETF
+  Trace.METHOD Onchip
+  Onchip.TraceCONNECT ETR1
+  Data.Set AXI:0xe6300000++0fff %l 55555555
+  Do ~~/demo/arm/etc/embedded_trace_router/etr_utility ETR1 set DAB 0x00000000E6300000
+  Do ~~/demo/arm/etc/embedded_trace_router/etr_utility ETR1 set RSZ 0x400
+  Do ~~/demo/arm/etc/embedded_trace_router/etr_utility ETR1 set AXICTL 0x00000000 0x00000FBF
+
+
+
+  

@@ -1,0 +1,195 @@
+; --------------------------------------------------------------------------------
+; @Title: Xilinx ZEDBOARD(ZYNQ-7000) SPI Flash Programming CMM
+; @Description:
+; SPI Flash(SPANSION, S25FL256) is connected to the PS_MIO1 (CS)
+; Code uses OnchipRam Mapped to 
+;                     0xFFFC0000--0xFFFFFFFF
+; LQSPI Tx Register : 0xE000D080   
+; LQSPI Rx Register : 0xE000D020   
+; LQSPI CS Register : 0xE000D000
+;
+;   Prerequisites:
+;     * Debugger or Combiprobe is connected to 
+;       14pin JTAG header using LA-3881 adapter
+;     *  MIO[6..2]=0y00000 - JTAG BOOT
+;       or
+;        MIO[6..2]=0y01100 - SD BOOT and remove the SD-Card
+;    * Please power-cycle the board before executing the script
+;
+;   Note: 
+;     for Flash devices <64MB please adapt the FLASHFILE.CONFIG line (see comment)
+;
+; @Author: AME JIM
+; @Copyright: (c) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: Zynq-7000
+; @Board: ZedBoard
+; @Keywords: Zynq Zynq7000 Spansion S25FL256 flash spi
+; --------------------------------------------------------------------------------
+; $Id: zedboard-spi64.cmm 3231 2015-03-20 14:57:20Z jjeong $
+; $Rev: 3231 $
+
+LOCAL &ctrl_reg
+LOCAL &tx_reg
+LOCAL &rx_reg
+
+&ctrl_reg=0xE000D000
+&tx_reg=0xE000D080
+&rx_reg=0xE000D020  
+
+WinCLEAR
+
+SYStem.RESet
+RESet
+SYStem.CPU ZYNQ-7000
+
+SYStem.MemAccess DAP
+
+; This selects the DAP for accessing the ARM cores 
+; (accessing the TAP of the FPGA logic requires different settings)
+SYStem.CONFIG DAPIRPRE 6.      
+SYStem.CONFIG DAPIRPOST 0.
+SYStem.CONFIG DAPDRPRE 1.
+SYStem.CONFIG DAPDRPOST 0.
+
+TrOnchip.Set.RESET OFF
+TrOnchip.Set.UNDEF OFF
+TrOnchip.Set.DABORT OFF
+TrOnchip.Set.PABORT OFF
+
+SYStem.JtagClock Ctck 10.0MHz
+CORE.ASSIGN 1.
+
+SYStem.Mode.Attach
+
+if run()
+break
+
+//disable MMU & Cache
+PER.Set C15:0x1 %Long 0x18c52c78
+
+; PC should be around 0xfffc0000--0xffffffff
+; SLCR - UNLOCK WRITE
+Data.Set ASD:0XF8000008 %Long 0x0000DF0D
+; Assert Reset of Second core -  we are save to remap memories
+Data.Set ASD:0xF8000244 %LONG 0x2 
+; MMU disable, Exception Vectors HIGH
+Data.Set C15:0x1 %Long 0x18C52478
+; OCM_CFG - ALL RAMS HIGH 0xfffc0000
+Data.Set AZSD:0xF8000910 %LONG 0x1F 
+
+; exception Vectors
+Data.Assemble R:0xffff0000 b $+0
+Data.Assemble , b $+0
+Data.Assemble , b $+0
+Data.Assemble , b $+0
+Data.Assemble , b $+0
+Data.Assemble , b $+0
+Data.Assemble , b $+0
+
+//spi pin configuration
+Data.Set ASD:0xF8000704 %Long %LE 0x00003302 ; PS_MIO1 -> QSPI1_CS
+Data.Set ASD:0xF8000708 %Long %LE 0x00000302 ; PS_MIO2 -> QSPI1_IO0
+Data.Set ASD:0xF800070C %Long %LE 0x00000302 ; PS_MIO3 -> QSPI1_IO1
+Data.Set ASD:0xF8000710 %Long %LE 0x00000302 ; PS_MIO4 -> QSPI1_IO2
+Data.Set ASD:0xF8000714 %Long %LE 0x00000302 ; PS_MIO5 -> QSPI1_IO3
+Data.Set ASD:0xF8000718 %Long %LE 0x00002302 ; PS_MIO6 -> QSPI1_CLK
+
+;Data.Set AZSD:0xF800014C %LE %Long  0x2821  ;default clk for qspi
+Data.Set AZSD:0xF800014C %LE %Long  0x521  ; 173Mhz clk for qspi
+
+Data.Set AZSD:0xF800012C %LE %Long Data.Long(AZSD:0xF800012C)|0x800000   ; Enable Clock of QSPI
+Data.Set AZSD:0xF8000230 %LE %Long 0x3                                   ; assert RESET
+WAIT 100.ms 
+Data.Set AZSD:0xF8000230 %LE %Long 0x0                                   ; deassert RESET
+WAIT 100.ms
+Data.Set AZSD:0xE000D014 %LE %Long 0x0                                   ; Disable QSPI
+Data.Set AZSD:0xE000D000 %LE %Long 0x80020021                            ; Configuration SPI, CS0, 8bits, Master Mode
+Data.Set AZSD:0xE000D000 %LE %Long Data.Long(AZSD:0xE000D000)|(0x1<<14.) ;manual CS mode
+Data.Set AZSD:0xE000D008 %LE %Long 0xFF                                  ; Enable SPI Interupt 
+Data.Set AZSD:0xE000D0A0 %Long 0x00000003  ; disable LQ_MODE, enable TWO_MEM & SEP_BUS for dual spi devices
+Data.Set AZSD:0xE000D028 %Long 0x1
+Data.Set AZSD:0xE000D02C %Long 0x1
+Data.Set AZSD:0xE000D038 %Long 0x33
+Data.Set AZSD:0xE000D014 %LE %Long 0x1                                   ; Enable QSPI
+
+//FLASH READ ID TEST
+AREA.view
+GOSUB READ_ID_TEST
+DIALOG.YESNO "Is the flash ID correctly shown in the AREA window?"
+LOCAL &result
+ENTRY &result
+IF !&result
+(
+  PRINT "Please check your register configuration to enable your flash controller"
+  ENDDO
+)
+
+programFlash:
+
+FLASHFILE.RESet
+FLASHFILE.CONFIG 0xE000D080 0xE000D020 0xE000D000
+;FLASHFILE.TARGET 0xFFFC0000++0x3FFF  EAHB:0xFFFD0000++0x81FF ~~/demo/arm/flash/byte/spi64_pele.bin  /KEEP /DUALPORT        ; 3B address mode
+FLASHFILE.TARGET 0xFFFC0000++0x3FFF  EAHB:0xFFFD0000++0x81FF ~~/demo/arm/flash/byte/spi4b64br_pele.bin  /KEEP /DUALPORT    ; 4B address mode , over > 64MB size
+
+FLASHFILE.GETID
+
+//Dump window for Serial FLASH
+FLASHFILE.DUMP 0x0    ; Also can read the spi flash data at 0xFC00_0000 after LQSPI_CFG.LQ_MODE is enabled
+
+//Erase Serial FLASH
+;FLASHFILE.ERASE 0x0--0x47ffff
+
+//Write Serial FLASH
+;FLASHFILE.LOAD ~~~~/boot.bin 0x0
+;FLASHFILE.LOAD ~~~~/boot.bin 0x0 /ComPare
+
+ENDDO
+
+
+READ_ID_TEST:
+  LOCAL &data
+  &data=Data.Long(A:&ctrl_reg)
+  PRINT "ctrl_reg : &data "
+
+  Data.Set &ctrl_reg %Long  (&data&(~(0x1<<10.)))   ; cs low
+
+  Data.Set &tx_reg %Byte 0x9F
+  &data=Data.Long(A:&ctrl_reg)
+  Data.Set &ctrl_reg %Long (&data|(0x1<<16.))  ; start cmd
+  WAIT 1.ms
+  PRINT "      0x" FORMAT.HEX(2,(Data.Long(A:&rx_reg)>>24.)&0xFF)
+
+  Data.Set &tx_reg %Byte 0x00
+  &data=Data.Long(A:&ctrl_reg)
+  Data.Set &ctrl_reg %Long (&data|(0x1<<16.))  ; start cmd
+  WAIT 1.ms
+  PRINT "1st : 0x" FORMAT.HEX(2,(Data.Long(A:&rx_reg)>>24.)&0xFF)
+
+  Data.Set &tx_reg %Byte 0x00
+  &data=Data.Long(A:&ctrl_reg)
+  Data.Set &ctrl_reg %Long (&data|(0x1<<16.))  ; start cmd
+  WAIT 1.ms
+  PRINT "2nd : 0x" FORMAT.HEX(2,(Data.Long(A:&rx_reg)>>24.)&0xFF)
+
+  Data.Set &tx_reg %Byte 0x00
+  &data=Data.Long(A:&ctrl_reg)
+  Data.Set &ctrl_reg %Long (&data|(0x1<<16.))  ; start cmd
+  WAIT 1.ms
+  PRINT "3rd : 0x" FORMAT.HEX(2,(Data.Long(A:&rx_reg)>>24.)&0xFF)
+
+  Data.Set &tx_reg %Byte 0x00
+  &data=Data.Long(A:&ctrl_reg)
+  Data.Set &ctrl_reg %Long (&data|(0x1<<16.))  ; start cmd
+  WAIT 1.ms
+  PRINT "4th : 0x" FORMAT.HEX(2,(Data.Long(A:&rx_reg)>>24.)&0xFF)
+
+
+  Data.Set &tx_reg %Byte 0x00
+  &data=Data.Long(A:&ctrl_reg)
+  Data.Set &ctrl_reg %Long (&data|(0x1<<16.))  ; start cmd
+  WAIT 1.ms
+  PRINT "5th : 0x" FORMAT.HEX(2,(Data.Long(A:&rx_reg)>>24.)&0xFF)
+
+  Data.Set &ctrl_reg %Long  (&data|(0x1<<10.))  ; cs high
+
+  RETURN

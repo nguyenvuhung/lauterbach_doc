@@ -1,0 +1,83 @@
+; --------------------------------------------------------------------------------
+; @Title: Example script for programming of PXA800F internal flash
+;
+; @Description:
+; Example for target controlled flash programming script of 
+; PXA800F (Manitoba) internal flash.
+;
+; Hints:
+; - Unlocking the flash sectors is handled by the script, not the 
+;   flash algorithm itself
+; - flash.erase.all command is actually not supported by the flash
+;   algortihm itself. Because there is no possibility to declare 
+;   this with debugger syntax, flash.erase.all is executed as two 
+;   flash.erase commands where each is erasing a part of the flash.
+;
+; Both problems are planned to fix.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: PXA800F
+; --------------------------------------------------------------------------------
+; $Id: pxa800f.cmm 2881 2014-07-07 10:35:48Z kjmal $
+; wrd - 07.01.2003
+
+LOCAL &param
+ENTRY &param
+
+GLOBAL &faddr
+GLOBAL &caddr
+LOCAL &filename
+
+; Default flash start address to 0x80000000
+IF "&param"=="" 
+  &faddr=0x80000000
+ELSE
+  &faddr=&param
+
+; Set start address for flash algorithm and data buffer to target RAM.
+&caddr=0x18000000
+
+; Flash declaration for target controlled algorithm.
+FLASH.RESet
+FLASH.Create 1. &faddr++0x3fffff 0x10000 TARGET Word
+FLASH.TARGET &caddr &caddr+0x2000 0x1000 ~~/demo/arm/flash/word/MANITOBA.bin
+
+; Unlocking whole internal flash
+&addr=&faddr
+WHILE &addr<(&faddr+0x3fffff)
+(
+  Data.Set &addr %Word 0x60
+  Data.Set &addr %Word 0xd0
+  Data.Set &addr %Word 0xff
+  &addr=&addr+0x10000
+)
+
+; Erasing whole internal flash. 
+FLASH.Erase ALL
+
+; Download Elf file with user application.
+; Please adjust to your needs.
+DIALOG.File *
+ENTRY &filename
+FLASH.Program ALL
+Data.LOAD.Elf &filename
+FLASH.Program off
+
+; Switching all sectors to read mode.
+; Some sectors stay in status mode after programming. The reason 
+; therefore is still unknown.
+&addr=&faddr
+WHILE &addr<(&faddr+0x3fffff)
+(
+  Data.Set &addr %Word 0xff
+  &addr=&addr+0x10000
+)
+
+; Check downloaded flash contents
+Data.LOAD.Elf &filename /ComPare
+
+; Switch flash to auto mode for usage of software breakpoints
+FLASH.AUTO ALL
+
+ENDDO

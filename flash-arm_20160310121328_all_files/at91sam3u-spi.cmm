@@ -1,0 +1,129 @@
+; --------------------------------------------------------------------------------
+; @Title: SPI FLASH Programming script for AT91SAM3U
+; @Description:
+; SPI FLASH(Spansion, S25FL512) is connected SS0
+;
+; Internal SRAM    : 0x20000000
+; Tx Register : 0x4000800C  
+; Rx Register : 0x40008008  
+; CS Register : 0x40008000  ; SPI flash Chip Enable register   
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: AT91SAM3U4E
+; @Keywords: Spansion S25FL512 flash SPI
+; --------------------------------------------------------------------------------
+; $Id: at91sam3u-spi.cmm 2907 2014-07-16 16:25:15Z jjeong $
+
+; PA13  MISO
+; PA14  MOSI
+; PA15  SCLK
+; PA16  SS0
+
+  SYStem.CPU AT91SAM3U4E
+  SYStem.Option.ResBreak OFF
+  SYStem.Up
+
+  Data.Set SD:0x400E1254 %LE %Long 0x3FFFFFFF ; Watch dog diasable
+ 
+  GOSUB spi_Init
+
+//FLASH READ ID TEST
+AREA.CLEAR
+AREA.view
+GOSUB READ_ID_TEST
+DIALOG.YESNO "the flash id is correct on AREA window?"
+ENTRY &result
+IF !&result
+(
+PRINT "pls, check your register configuration to enable your flash controller"
+ENDDO
+)
+
+//S(D)RAM TEST for algorithm file
+GOSUB SDRAM_INIT
+Data.Test 0x20000000++0x3FFF  /Prime ;s(d)ram test
+IF FOUND()
+( 
+PRINT "s(d)ram is NOT initialized around 0x" ADDRESS.OFFSET(TRACK.ADDRESS())
+ENDDO
+)
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASFILE.CONFIG  <Tx Reg>   <Rx Reg>     <CS>         <port>
+  FLASHFILE.CONFIG 0x4000800C  0x40008008  0x40008000   0
+
+// FLASHFILE.TARGET <code range>        <data range>           <Algorithm file>
+  FLASHFILE.TARGET 0x20000000++0x1FFF 0x20002000++0x4FFF  ~~/demo/arm/flash/byte/spi4b64br_at91sam.bin /KEEP
+
+  FLASHFILE.GETID
+  FLASHFILE.UNLOCK 0x0--0xFFFFFF
+  FLASHFILE.DUMP 0x0
+
+//Erase Serial FLASH  
+  ;FLASHFILE.ERASE 0x0--0xFFFFF
+
+//Write
+  ;FLASHFILE.LOAD   * 0x0
+  ;FLASHFILE.LOAD   * 0x0  /ComPare   ;verify
+
+ENDDO
+
+
+spi_Init:
+
+//Clock Enable for SPI
+PER.Set.simple AD:0x400E0418 %Long 0x100f00  ;;PID20 = SPI
+
+//AIC Interrupt Enable for SPI
+PER.Set.simple AD:0x400E0C64 %Long 0x2000  ;pull up enable
+PER.Set.simple AD:0x400E0C60 %Long 0x1C000  ; pull up disable
+
+PER.Set.simple AD:0x400E0C44 %Long 0x1E000; Intrrupt diable
+PER.Set.simple AD:0x400E0C04 %Long 0x1E000; disable PIO, enable peripheral
+
+PER.Set.simple AD:0x400E0410 %Long 0x00100500
+
+PER.Set.simple AD:0x400E0C10 %Long 0x1c000
+
+PER.Set.simple ASD:0x40008000 %Word 0x80
+PER.Set.simple ASD:0x40008000 %Word 0x80
+
+PER.Set.simple ASD:0x40008004 %Long 0xE0011
+
+PER.Set.simple AD:0x40008030 %Long 0x01192009 ; pls put correct clock speed 3Mhz, too slow also no good to get correct response form flash
+
+//Disable PDC
+;PER.S ASD:0x40008120 %LONG 0x202
+
+RETURN
+
+
+READ_ID_TEST:
+
+&tx_reg=0x4000800C  
+&rx_reg=0x40008008
+&cs_reg=0x40008000
+
+Data.Set &cs_reg %Long 0x1  ;CS Eable
+
+Data.Set &tx_reg %Long 0x9F    ; Write command
+PRINT "dummy :0x" Data.Byte(SD:&rx_reg)  ; dummy
+
+Data.Set &tx_reg %Long 0x00    ; Write dummy
+PRINT "Manufacture ID :0x" Data.Byte(SD:&rx_reg)  ; Manufacture ID
+
+Data.Set &tx_reg %Long 0x00    ; Write dummy
+PRINT "Device ID :0x" Data.Byte(SD:&rx_reg)  ; Device  ID
+
+Data.Set &cs_reg %Long 0x2  ;CS disable
+
+RETURN
+
+SDRAM_INIT:
+
+RETURN
+

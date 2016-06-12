@@ -1,0 +1,191 @@
+; --------------------------------------------------------------------------------
+; @Title: QNX Demo for TRACE32 RTOS Debugger on the OSK5912 Board
+; @Description: 
+;   
+;   This batchfile demonstrates the use of the RTOS Debugger for QNX
+;   
+;   The example is generated for a Spectrum Digital OSK5912 board
+;   using an ICD.
+;   It will NOT run on any other board, but may be used as a template
+;   for others.
+;   QNX is downloaded to the board via ICD.
+;   
+; @Keywords: awareness
+; @Props: Template
+; @Author: DIE
+; @Board: OSK5912
+; @Chip: OMAP5912
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: qnx.cmm 7821 2014-10-29 11:06:58Z kjmal $
+
+
+; Starting QNX example with TRACE32 and console terminal:
+; - Connect NULL modem cable to P7
+; - Start TRACE32
+; - Open serial terminal: 115200 baud, 8/N/1, no(!) handshake
+; - Switch on the board
+; - TRACE32: "do qnx"
+; - terminal: start "helloloop_g"
+
+
+ SCREEN.ALways      ; permanent update for internal terminal window
+ ; screen.on        ; if you use external terminal
+
+
+; Debugger Reset
+
+ WinPAGE.RESet
+ AREA.RESet
+ WinPOS 0. 25. 75. 8. 0. 0. W000
+ AREA.view
+ 
+ PRINT "resetting..."
+ 
+ RESet
+
+
+; Initializing Debugger
+ 
+ PRINT "initializing..."
+ SYStem.CPU OMAP5912
+ SYStem.JtagClock RTCK
+ SYStem.Option DACR ON          ; give Debugger global write permissions
+ SYStem.Option ResBreak OFF     ; hardware dependent (see manual)
+ SYStem.Option WaitReset ON     ; hardware dependent (see manual)
+ TrOnchip.Set DABORT OFF        ; used by qnx for page miss!
+ TrOnchip.Set PABORT OFF        ; used by qnx for page miss!
+ SYStem.Option MMUSPACES ON     ; enable space ids to virtual addresses
+
+ SYStem.Up
+
+ DO reset_osk5912                       ; reset the board
+ 
+ MAP.DenyAccess 0xE0000000--0xEFFFFFFF  ; access may disturb the board
+
+ Register.RESet
+ 
+ SETUP.IMASKASM ON          ; lock interrupts while single stepping
+
+
+; Open serial terminal window on COM1
+ 
+ WinPOS 35. 0. ,,,,, TERM.view
+ TERM.METHOD COM COM1 115200. 8 NONE 1STOP NONE 
+ TERM.view
+ 
+
+; Target Setup: initialize DRAM controller and peripherals
+ 
+ ; Either let the boot monitor setup the board
+    ; Ensure, that the proper IPL is programmed into flash!
+    Go
+    PRINT "target setup..."
+    WAIT 1.s
+    Break
+ ; or use the debugger to initialize it
+    ;print "target setup..."
+    ;do init_osk5912   ; do basic setup
+
+ 
+; configure ETM on target and on TRACE32 for OSK5912
+ PRINT "ETM setup..."
+ DO init_etm
+
+
+; Download QNX IFS
+
+ PRINT "loading QNX image..."
+
+ ; specify download address
+ ; see "System->Image Address" property of your system builder project
+ &DNLD_ADDR=0x10010000
+ 
+ ; load the QNX image onto the target
+ Data.LOAD.Binary osk.ifs &DNLD_ADDR
+ 
+ Register.Set PC &DNLD_ADDR
+ 
+
+; Generating symbol files
+ ; The QNX Awareness needs the symbols of procnto (procnto.sym). 
+ ; In QNX 6.1/6.2, you have to add "[+keeplinked]" to your
+ ; image build file. 
+ ; In QNX 6.3, set the project.bld property 
+ ; "Procnto/Startup Symbol Files?" to "Yes".
+ ; The symbol files are stored in your "Images" directory.
+ 
+; if you want to debug the startup
+ ; Data.LOAD.Elf startup-osk.sym /nocode
+ 
+; Load the symbols of procnto
+ PRINT "loading procnto symbols..."
+ Data.LOAD.Elf procnto.sym /NoCODE 
+ 
+ 
+; Run over MMU initialization
+
+ Break.Set _main /Program /Onchip   ; use onchip because of virtual address
+ Go
+ PRINT "initilizing QNX..."
+ WAIT !run()
+ Break.Delete _main
+ 
+
+; Switch on debugger address translation
+ PRINT "scanning system MMU..."
+ MMU.FORMAT QNX
+ TRANSlation.COMMON 0xfc000000--0xffffffff  ; kernel area is common for all MMU space ids
+ TRANSlation.ON
+
+ 
+; We'd like to see something, open a code window.
+ WinPOS 0. 0. 77. 22.
+ List.auto
+ 
+
+; Initialize QNX Support
+
+ PRINT "initializing QNX support..."
+ TASK.CONFIG ../qnx         ; loads QNX awareness (qnx.t32)
+ MENU.ReProgram ../qnx      ; loads QNX menu (qnx.men)
+ HELP.FILTER.Add rtosqnx    ; add QNX awareness manual to help system
+ 
+
+; Now let's boot and start QNX!
+ 
+ wintop TERM.view        ; set terminal window to front
+ Go
+ PRINT "starting QNX... (please wait)"
+ WAIT 1.s       ; let it run for 1 second
+ Break
+ 
+ PRINT "done."
+ 
+
+; --------------------------------------------------------------------------------
+; Application Debugging
+; e.g. "helloloop_g"
+; --------------------------------------------------------------------------------
+
+ PRINT "please start 'sieve_g'"
+
+ ; script based
+   ; using the script based application debugging
+   ; gives more control over the single commands
+   ; see file "app_debug.cmm"
+   
+   ;do ../app_debug helloloop_g
+   
+ ; process watch system
+   ; the process watch system automates the actions
+   ; for application debugging
+   
+   WinPOS 55. 24. 40. 4.
+   ;TASK.Watch.View "helloloop_g"
+   TASK.Watch.View  "sieve_g"
+   Go
+
+ENDDO
+
+ 

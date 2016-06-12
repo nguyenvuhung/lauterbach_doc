@@ -1,0 +1,112 @@
+; --------------------------------------------------------------------------------
+; @Title: TMS470 internal flash of TMS470R1F354
+;
+; @Description:
+; Script arguments:
+;
+;   DO tms470r1f354 [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/tms470r1f354 PREPAREONLY
+;
+; Internal flash is mapped to 0x00000000
+; Internal RAM is mapped to 0x01000000
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 3152 $
+; $Id: tms470r1f354.cmm 3152 2015-02-06 16:35:19Z kjmal $
+
+  LOCAL &parameters &param_prepareonly
+  ENTRY %LINE &parameters
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  ; --------------------------------------------------------------------------------
+  ; Init script variables
+
+  DO ~~~~/tms470-func Init
+
+  ; --------------------------------------------------------------------------------
+  ; Setup CPU
+
+  ON.ERROR NOTHING
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU TMS470R1F354
+    SYStem.Option.BigEndian ON
+    SYStem.Option.NOIRCHECK ON
+    SYStem.Up
+  )
+
+  ; --------------------------------------------------------------------------------
+  ; Flash configuration and declaration generated out of flash.cfg file
+  ;
+
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ; Config for TMS470R1F354 Rev 0
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;Device ID: 0x0af               TMS470R1F354
+  ;  ProgVersion: 0.48 ; Library Version
+  LOCAL &ProgRoutines
+  &ProgRoutines="f10s"
+
+  ;  Frequency: 20.0 Range: 10.0 - 20.0
+  ;  Minor Revisions: 1
+  ;    0 "TMS470R1F354 Rev 0"
+  ;  Ram Config: 0x01000000 0x00001000
+  LOCAL &RamStart &RamSize
+  &RamStart=0x01000000
+  &RamSize=0x00001000
+
+  ;  Initialization: 6
+  Data.Set 0xfffffd30 %Long 0x00000002 ; Disable peripherals
+  Data.Set 0xfffffd30 %Long 0x00000003 ; Enable peripherals
+  Data.Set 0xfffffe00 %Long 0x00000000 0x00000070 0x00000000 0x00000000 0x00000100 0x00000030 0x00000000 0x00000000
+  Data.Set 0xfffffe20 %Long 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+  Data.Set 0xfffffe40 %Long 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+  Data.Set 0xfffffe00 %Long 0x00000000 0x00000170 ; Enable memory map
+
+  Data.Set 0xFFFFFFDC %Long 0x00000007 ; configure PLL
+  LOCAL &FlashClock_Frequency
+  &FlashClock_Frequency="20MHz"     ; Setup flash clock frequency to PLL frequency
+
+  ;  Engr ID: 0xffe88000 0x00000000
+  ;  Protection Keys:
+  DO ~~~~/tms470-func FlashProtection 0xffe88000 0x0000fff0 0xffffffff 0xffffffff 0xffffffff 0xffffffff
+
+  ;  Number of Blocks: 4
+  FLASH.RESet
+  DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00000000   Length: 0x00002000   Control: 0xffe88000   Core: 0x00   Sector: 0x00
+  DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00002000   Length: 0x00006000   Control: 0xffe88000   Core: 0x00   Sector: 0x01
+  DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00008000   Length: 0x00006000   Control: 0xffe88000   Core: 0x00   Sector: 0x02
+  DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x0000e000   Length: 0x00002000   Control: 0xffe88000   Core: 0x00   Sector: 0x03
+
+  DO ~~~~/tms470-func DeclareFlashAlgortihm &ProgRoutines &RamStart &RamSize &FlashClock_Frequency
+
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ; End of flash.cfg
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+
+  IF &progflash 
+  (  
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+  )
+
+  ENDDO

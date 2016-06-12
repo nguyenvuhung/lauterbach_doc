@@ -1,0 +1,90 @@
+; --------------------------------------------------------------------------------
+; @Title: Serial FLASH Programming script for PUMA5 board
+; @Description:
+; Serial FLASH(Winbond,25Q128) is connected to the CS number0
+;
+; SRAM: 0x00100
+;
+; before booting up
+; SPI Base Register : 0x08612504   
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ARM1176JZ-S
+; @Board: PUMA5
+; @Keywords: Winbond 25Q128 SPI
+; --------------------------------------------------------------------------------
+; $Id: puma5-spi64.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+SYStem.RESet
+SYStem.CPU ARM1176JZ
+SYStem.JtagClock 1Mhz
+SYStem.CONFIG.MULTITAP IcepickC
+
+;ARM11
+SYStem.CONFIG.DEBUGTAP 1
+SYStem.CONFIG.IRPOST 6
+SYStem.CONFIG.DRPOST 1
+
+SYStem.Option PWRDWN ON
+
+SYStem.Mode Go
+
+WAIT 2.s
+IF run()
+Break.direct
+
+GOSUB spi_init
+
+  Break.RESet
+  FLASHFILE.RESet
+
+//FLASFILE.CONFIG  <spi base>    0x0 0x0 <cs Num>
+   FLASHFILE.CONFIG  0x08612504   0x0 0x0  0  ; SPI CS0
+;  FLASHFILE.CONFIG  0x08612504   0x0 0x0  1  ; SPI CS1
+
+//FLASHFILE.TARGET <Code Range>     <Data Range>        <Algorithm File>
+  FLASHFILE.TARGET 0x0100++0xEFF    0x1000++0xFFF       ~~/demo/arm/flash/byte_be/spi64_puma5.bin   /KEEP
+
+  FLASHFILE.GETID
+
+//Dump window for Serial FLASH
+  FLASHFILE.DUMP 0x0
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+
+    //Erase Serial FLASH 5MB
+    &addr=0x0 
+    RePeaT 5.
+    (
+    PRINT "Erasing 1MB from 0x" &addr
+    FLASHFILE.Erase &addr++0xFFFFF
+    &addr=&addr+0x100000
+    )
+
+    //Write Serial FLASH
+    FLASHFILE.LOAD.binary  * 0x0
+  
+  //Save Serial FLASH 
+    ;FLASHFILE.SAVE dump.bin 0x0--0x7FFFFF
+  )
+
+ENDDO 
+
+
+spi_init:
+ Data.Set ZSD:0x8621120 %BE %Long 0x1     // Start power domain state transition
+ Data.Set ZSD:0x8621a50 %BE %Long 0x0103  // Change MM-SPI state to enabled
+
+;D.S ZSD:0x8612500 %BE %LONG 0x4e780001
+ Data.Set ZSD:0x8612504 %BE %Long 0x80000000   //SPI clock enable
+ Data.Set ZSD:0x8612508 %BE %Long 0x0          //SPI_CONFIG
+ Data.Set ZSD:0x8612518 %BE %Long 0x2163b      //SPI CS0 MM-SETUP
+ Data.Set ZSD:0x861251C %BE %Long 0x2163b      //SPI CS1 MM-SETUP
+;D.S ZSD:0x8612528 %BE %LONG 0            //SPI MM SWITCH
+
+RETURN
+

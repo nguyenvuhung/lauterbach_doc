@@ -1,0 +1,152 @@
+; --------------------------------------------------------------------------------
+; @Title: TMS470 internal flash of TMS470PVF244B/245B/246B/247B/248Bx/249B
+;
+; @Description:
+; Script arguments:
+;
+;   DO tms470pvf244b [CPU=<cpu>|<cpu>] [PREPAREONLY]
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;     <cpu>     selects CPU derivative <cpu> (obsolete syntax)
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/tms470pvf244b CPU=TMS470PVF244 PREPAREONLY
+;
+; internal flash is mapped to: 0x00000000
+; internal RAM is mapped to:   0x08000000
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 3152 $
+; $Id: tms470pvf244b.cmm 3152 2015-02-06 16:35:19Z kjmal $
+
+LOCAL &parameters
+ENTRY %LINE &parameters
+
+LOCAL &cpu &param_prepareonly
+&param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+IF STRing.SCAN(STRing.UPpeR("&parameters"),"TMS470PVF245",0)!=-1
+  &cpu="TMS470PVF245"
+ELSE IF STRing.SCAN(STRing.UPpeR("&parameters"),"TMS470PVF246",0)!=-1
+  &cpu="TMS470PVF246"
+ELSE IF STRing.SCAN(STRing.UPpeR("&parameters"),"TMS470PVF247",0)!=-1
+  &cpu="TMS470PVF247"
+ELSE IF STRing.SCAN(STRing.UPpeR("&parameters"),"TMS470PVF248",0)!=-1
+  &cpu="TMS470PVF248"
+ELSE IF STRing.SCAN(STRing.UPpeR("&parameters"),"TMS470PVF249",0)!=-1
+  &cpu="TMS470PVF249"
+ELSE
+  &cpu="TMS470PVF244"
+
+
+; --------------------------------------------------------------------------------
+; Init script variables
+
+DO ~~~~/tms470-func Init
+
+; --------------------------------------------------------------------------------
+; Setup CPU
+
+ON ERROR NOTHING
+IF SYStem.MODE()<5
+(
+  SYStem.RESet
+  SYStem.CPU &cpu
+  SYStem.Option.BigEndian ON
+  ;SYStem.Option NOIRCHECK ON
+  SYStem.Up
+)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Config for TMS470PVF244B/245B/246B/247B/248Bx/249B Rev 0
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; actual device ID is 0x801621xx (Unique id is bits 30-17, revision is bits 7-3)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;Device ID: 0x000b         TMS470PVF244B/245B/246B/247B/248Bx/249B
+;  ProgVersion: 0.36 ; Library Version
+;  ProgRoutines: pf05a.lib ; Platform library archive
+LOCAL &ProgRoutines
+&ProgRoutines="pf05a"
+
+;  Frequency: 24.0 Range: 10.0 - 24.0
+;  Minor Revisions: 2
+;    0 "TMS470PVF244B/245B/246B/247B/248Bx/249B Rev 0
+;    0 "TMS470PVF244B/245B/246B/247B/248Bx/249B Rev A"
+;  Ram Config: 0x08000000 0x00004000 ; 16KB
+LOCAL &RamStart &RamSize
+&RamStart=0x08000000 
+&RamSize=0x00004000 
+
+;  Initialization: 7
+;    0xffffffd0: 0x01010000 ; Disable peripherals
+;    0xffffffd0: 0x01010100 ; Enable peripherals
+;    0xffffff74: 0x00000000 ; FMENA off
+;    0xfff87100: 0x00000000 ; disable pipeline mode
+;    0xfff87110: 0x00000805 ; Switch off Flash ECC
+;    0xffffffc4: 0x0000000a ; MEMSW='1010' => Flash at 0x00000000, RAM at 0x08000000)
+;    0xfffff900: 0x00000005 ; Switch off RAM ECC
+Data.Set 0xffffffd0 %Long 0x01010000 ; Disable peripherals
+Data.Set 0xffffffd0 %Long 0x01010100 ; Enable peripherals
+Data.Set 0xffffff74 %Long 0x00000000 ; FMENA off
+Data.Set 0xfff87100 %Long 0x00000000 ; disable pipeline mode
+Data.Set 0xfff87110 %Long 0x00000805 ; Switch off Flash ECC
+Data.Set 0xffffffc4 %Long 0x0000000a ; MEMSW='1010' => Flash at 0x00000000, RAM at 0x08000000)
+Data.Set 0xfffff900 %Long 0x00000005 ; Switch off RAM ECC
+
+;  PLL Config: 0xffffff70 0x00000004 0x00c00007 ; configure FMZPLL *8/5 (assuming 15.0 Mhz OSCIN)
+Data.Set 0xffffff70 %Long 0x00000707 ; configure PLL *8/8
+LOCAL &FlashClock_Frequency
+&FlashClock_Frequency="15MHz"      ; Setup flash clock frequency to PLL frequency
+
+;  Engr ID: 0xfff87000 0x00000000
+;  Aux Engr ID: 0xfff87000 0x00000100 0x0100 ; 256KB
+;  Protection Keys:
+;    0xfff87000 0x00003ff0: 0xffffffff 0xffffffff 0xffffffff 0xffffffff
+DO ~~~~/tms470-func FlashProtection 0xfff87000 0x00003ff0 0xffffffff 0xffffffff 0xffffffff 0xffffffff
+
+;  Number of Blocks: 11
+FLASH.RESet
+DO ~~~~/tms470-func DeclareSector Type: OTP    Start: 0x00000000   Length: 0x00000800   Control: 0xfff87000   Core: 0x00   Sector: 0x00
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00000000   Length: 0x00004000   Control: 0xfff87000   Core: 0x00   Sector: 0x00
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00004000   Length: 0x00004000   Control: 0xfff87000   Core: 0x00   Sector: 0x01
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00008000   Length: 0x00008000   Control: 0xfff87000   Core: 0x00   Sector: 0x02
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00010000   Length: 0x00008000   Control: 0xfff87000   Core: 0x00   Sector: 0x03
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00018000   Length: 0x00008000   Control: 0xfff87000   Core: 0x00   Sector: 0x04
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00020000   Length: 0x00008000   Control: 0xfff87000   Core: 0x00   Sector: 0x05
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00028000   Length: 0x00008000   Control: 0xfff87000   Core: 0x00   Sector: 0x06
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00030000   Length: 0x00008000   Control: 0xfff87000   Core: 0x00   Sector: 0x07
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00038000   Length: 0x00004000   Control: 0xfff87000   Core: 0x00   Sector: 0x08
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x0003c000   Length: 0x00004000   Control: 0xfff87000   Core: 0x00   Sector: 0x09
+
+DO ~~~~/tms470-func DeclareFlashAlgortihm &ProgRoutines &RamStart &RamSize &FlashClock_Frequency
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; End of flash.cfg
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; Flash script ends here if called with parameter PREPAREONLY
+IF &param_prepareonly
+  ENDDO PREPAREDONE
+
+; --------------------------------------------------------------------------------
+; Flash programming example
+;
+FLASH.List
+;
+DIALOG.YESNO "Program flash memory?"
+ENTRY &progflash
+
+IF &progflash 
+(  
+  FLASH.Erase ALL
+  FLASH.Program ALL
+  Data.LOAD.auto * /Long
+  FLASH.Program off
+  Data.LOAD.auto * /Long /ComPare
+)
+
+ENDDO

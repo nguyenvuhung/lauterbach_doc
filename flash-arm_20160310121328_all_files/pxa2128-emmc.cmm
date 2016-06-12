@@ -1,0 +1,211 @@
+; --------------------------------------------------------------------------------
+; @Title: PXA2128 eMMC FLASH Programming Script
+; @Description:
+; eMMC FLASH(SanDisk, 8GB eMMC) is connected MMC3
+; 
+; S(D)RAM: 0xD100A000
+; MMC3 Register : 0xD4281000 
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Keywords: SanDisk eMMC
+; --------------------------------------------------------------------------------
+; $Id: pxa2128-emmc.cmm 3178 2015-02-20 11:20:01Z jjeong $
+
+&MMC_BASE=0xD4281000
+
+SYStem.RESet
+
+SYStem.CPU PXA2128
+
+SYStem.CONFIG CTI.RESET
+SYStem.CONFIG.ETM.RESET
+SYStem.CONFIG ETB1.RESET
+SYStem.CONFIG.TPIU.RESET
+SYStem.CONFIG ITM.RESet
+
+SYStem.Mode.Attach
+
+IF run()
+   Break.direct
+
+PER.Set.simple C15:0x1 %Long 0xc5187a  ; disable mmu & cache
+
+GOSUB MMC_Enable
+
+//configure SD Host controller
+Data.Set A:0xD4281004 %LE %Long 0x7200
+Data.Set A:0xD4281028 %LE %Long 0xf00   ; SD BUS POWER ON
+Data.Set A:0xD428102C %LE %Long 0xEFF07 
+Data.Set A:0xD4281034 %LE %Long 0xf7ff1fff 
+Data.Set A:0xD4281038 %LE %Long 0xf7ff1fff
+
+;Data.Set A:0xD42810E0 %LE %LONG 0x405    
+;Data.Set A:0xD42810E8 %LE %LONG 0x03fff
+
+GOSUB READ_ID_TEST
+
+ Break.RESet
+
+ FLASHFILE.RESet
+
+;FLASHFILE.CONFIG  <eMMC controller> <0>        <0x0>
+ FLASHFILE.CONFIG  0xD4281000        0x0          0x0
+
+;FLASHFILE.TARGET <<code range>>    <<data range>>        <<algorithm file>>
+ FLASHFILE.TARGET 0xD100A000++0x2fff  0xD100D000++0x2fff   ~~\demo\arm\flash\byte\emmc_pxa.bin  /KEEP 
+
+ Data.Set SD:0xD428102C %LE %Long 0xEFF07   ; lower clk for the initialization
+ FLASHFILE.GETID
+ Data.Set SD:0xD428102C %LE %Long 0xE0107   ; higher clk for the data transfer
+ FLASHFILE.GetEXTCSD
+
+//When you access to the other partition on the flash
+; FLASHFILE.SETEXTCSD 179. 0x48  ; access: partition null
+; FLASHFILE.SETEXTCSD 179. 0x49  ; access: partition boot 1
+; FLASHFILE.SETEXTCSD 179. 0x4A  ; access: partition boot 2
+
+;FLASHFILE.DUMP 0x0               ; Read eMMC
+;FLASHFILE.ERASE 0x0--0xFFFFF     ; Erase eMMC
+;FLASHFILE.LOAD * 0x0             ; Write eMMC
+ 
+ENDDO
+
+MMC_Enable:
+
+// Turn ALL clocks on;
+Data.Set 0xD4050024 %Long 0xFFFFFFFF
+Data.Set 0xD4051024 %Long 0xFFFFFFFF
+Data.Set 0xD42828DC %Long 0x0001ffff
+
+//clock/reset control register for AIB
+Data.Set 0xD4015064 %Long 0x7
+Data.Set 0xD4015064 %Long 0x3
+
+//APB RTC clock/reset control register
+Data.Set 0xD4015000 %Long  0x3
+//APB clock/reset control register for TIMER1
+Data.Set 0xd4015024 %Long  0x5
+Data.Set 0xd4015024 %Long 0x33
+
+//Enable GPIO Clock
+Data.Set 0xd4015038 %Long 0x3;
+
+//ND_RE = MMC5_DAT0	0xd401E234
+Data.Set 0xd401E238 %Long 0xD8C4   ;ND_CLE = MMC5_CLK	0xd401E238
+Data.Set 0xd401E254 %Long 0xD8C4   ;SM_INT = MMC5_CMD	0xd401E254
+Data.Set 0xd401E23C %Long 0xD8C4   ;ND_ALE = MMC5_DAT7	0xd401E23C
+Data.Set 0xd401E220 %Long 0xD8C4   ;ND_CS0 = MMC5_DAT6	0xd401E220
+Data.Set 0xd401E240 %Long 0xD8C4   ;SM_SCLK = MMC5_DAT5	0xd401E240
+Data.Set 0xd401E224 %Long 0xD8C4   ;ND_CS1 = MMC5_DAT4	0xd401E224
+Data.Set 0xd401E244 %Long 0xD8C4   ;ND_RDY0 = MMC5_DAT3	0xd401E244
+Data.Set 0xd401E230 %Long 0xD8C4   ;ND_WE_N = MMC5_DAT2	0xd401E230
+Data.Set 0xd401E248 %Long 0xD8C4   ;SM_BEH_N = MMC5_DAT1	0xd401E248
+Data.Set 0xd401E234 %Long 0xD8C4   ;ND_RE = MMC5_DAT0	0xd401E234
+
+Data.Set 0xd401E214 %Long 0xd8c2	 ;ND_IO<13> - MMC3_CLK
+Data.Set 0xd401E200 %Long 0xd8c2 	 ;ND_IO<08> - MMC3_CMD
+Data.Set 0xd401E210 %Long 0xd8c2 	 ;ND_IO<12> - MMC3_DAT7
+Data.Set 0xd401E228 %Long 0xd8c2 	 ;SM_CS0_N - MMC_DAT6
+Data.Set 0xd401E20c %Long 0xd8c2 	 ;ND_IO<11> - MMC_DAT5
+Data.Set 0xd401E22c %Long 0xd8c2	 ;SM_CS1_N - MMC_DAT4
+Data.Set 0xd401E208 %Long 0xd8c2	 ;ND_IO<10> - MMC_DAT3
+Data.Set 0xd401E21c %Long 0xd8c2	 ;ND_IO<15> - MMC_DAT2
+Data.Set 0xd401E204 %Long 0xd8c2	 ;ND_IO<09> - MMC_DAT1
+Data.Set 0xd401E218 %Long 0xd8c2	 ;ND_IO<14> - MMC_DAT0
+
+;configure SDHC0 for MMC1
+Data.Set 0xD4282854 %Long (Data.Long(A:0xd4282854)&(~0x3))
+WAIT 10.ms
+
+Data.Set 0xD4282854 %Long 0x41b
+WAIT 10.ms
+
+;configure SDHC1 for MMC2
+Data.Set 0xD4282858 %Long 0x1b
+WAIT 10.ms
+
+;configure SDHC2 for MMC3
+Data.Set 0xd42828E8 %Long 0x1B
+WAIT 10.ms
+
+;configure SDHC3 for MMC4
+Data.Set 0xd42828EC %Long 0x1B
+WAIT 10.ms
+
+;configure SDHC4 for MMC5
+Data.Set 0xd4282960 %Long 0x1B
+WAIT 10.ms
+
+Data.Set  0xd428102C %Word 0XFF05
+PRINT "A:0xd428102C = 0x" Data.Word(A:0xd428102C)
+PRINT "A:0xd428102E = 0x" Data.Word(A:0xd428102E)
+
+;set option /memory=long
+;Make GPIO149 output and and set high to get eMMC out of reset.
+Data.Set 0xD401E238 %Long 0xD8C1
+;set value @temp1 = PHYS(0xd4019110)				
+Data.Set 0xd4019110 %Long  (Data.Long(A:0xd4019110)|0x00200000)	; set bit GPIO149 as output
+PRINT "A:0xd4019110 = 0x" Data.Long(A:0xd4019110)
+Data.Set 0xd401911C %Long 0x00200000
+PRINT "A:0xd4019104 = 0x" Data.Long(A:0xd4019104)
+
+RETURN
+
+
+READ_ID_TEST:
+//MMC interface, not SD(HC)
+//CMD0
+RePeaT 2.
+(
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x0  ;arg 
+Data.Set &MMC_BASE+0xc %Long 0x0  ;cmd
+WAIT 10.ms
+)
+
+//CMD1
+RePeaT 10.
+(
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x40FF8000 ;arg
+Data.Set &MMC_BASE+0xc %Long 0x01020000 ;cmd1
+WAIT 10.ms
+&resp=Data.Long(A:(&MMC_BASE+0x10))
+//print "CMD1 resp: 0x" &resp
+IF (&resp&0x80000000)==0x80000000
+(
+GOTO jump_cmd2
+)
+)
+
+PRINT "CMD1 fail"
+END
+
+jump_cmd2:
+//CMD2
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x0     ;arg
+Data.Set &MMC_BASE+0xc %Long 0x02010000 ;cmd2
+WAIT 10.ms
+
+//CMD3
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x00010000  ; arg, MMC RCA is (0x0001<<16.)
+Data.Set &MMC_BASE+0xc %Long 0x03020000  ;cmd3
+WAIT 10.ms
+
+//CMD10
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x00010000 ; arg, MMC RCA is (0x0001<<16.)
+Data.Set &MMC_BASE+0xc %Long 0x0A010000  ;cmd10
+WAIT 10.ms
+
+//Response2
+PRINT "CID register"
+PRINT "[127:104] 0x" Data.Long(A:(&MMC_BASE+0x1c))
+PRINT "[103:72]  0x" Data.Long(A:(&MMC_BASE+0x18))
+PRINT "[71:40]   0x" Data.Long(A:(&MMC_BASE+0x14))
+PRINT "[39:8]    0x" Data.Long(A:(&MMC_BASE+0x10))
+
+RETURN

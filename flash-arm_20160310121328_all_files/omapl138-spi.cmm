@@ -1,0 +1,100 @@
+; --------------------------------------------------------------------------------
+; @Title: OMAPL138 Serial FLASH Programming Script
+; @Description:
+;   FLASH Type: Serial FLASH(ST, 25P64) connected to SPI1_SCS[0]
+;   by the SPI(Serial Peripheral Interface). 
+; 
+;   SDRAM: 0xC0002000
+;   Serial FLASH Controller Tx Addr: 0x01F0E03C (SPIDAT1)
+;   Serial FLASH Controller Rx Addr: 0x01F0E040 (SPIBUF)
+;   The Chip select register is included in the SPIDAT1 register 
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: OMAP-L138
+; @Keywords: ST 25P64 SPI
+; --------------------------------------------------------------------------------
+; $Id: omapl138-spi.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+; Basic Setup
+
+  SYStem.RESet
+  SYStem.CPU OMAP-L138
+  SYStem.Option EnReset OFF
+  SYStem.JtagClock RTCK
+  SYStem.Mode Up
+
+IF run()
+Break.direct
+
+  PER.Set.simple C15:0x1 %Long  (Data.Long(C15:0x1)&~(0x1005))   ; disable MMU and cache
+
+//PLL configuration
+  Data.Set 0x01C11100 %Long 0x00000049
+
+//enable function for PSC1_SPI1
+//#define PD0                0   /*Power Domain-0*/
+//    PSC1_LPSC_enable(0, LPSC_SPI1);
+&addr_mdctl_spi1=(0x01E27000+0xA00+4*10.)
+&data=Data.Long(AD:&addr_mdctl_spi1)&0xFFFFFFE0
+
+Data.Set &addr_mdctl_spi1 %Long (&data|0x3)
+Data.Set 0x01E27120 %Long (0x1<<0)  ;  0x1<<PD0
+
+//pin configuration for the spi1 ( pinmux5 reg: 0x01C14134 )
+&pinmux5=Data.Long(D:0x01C14134)
+&pinmux5=((&pinmux5&(~0x00FF0FF0))|0x00110110)
+Data.Set 0x01C14134 %Long &pinmux5
+
+  GOSUB enable_SPI
+
+Data.Set 0x1F0E050 %Long 0x00010908   ; clk PRESCALE[15:8] 0x09
+Data.Set 0x1F0E048 %Long 0x06060000   ; delay C2TDELAY = 06h
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASFILE.CONFIG  <Tx Reg>     <Rx Reg>    <CS Reg>    <Port Num>
+  FLASHFILE.CONFIG 0x01F0E03C  0x01F0E040       ,            ,
+
+//FLASHFILE.TARGET <Code Range>       <Data Range>        <Algorithm File>
+//  FLASHFILE.TARGET 0xC0002000++0x1FFF 0xC0004000++0x1FFF  ~~\demo\arm\flash\byte\spi64_dm365.bin  /keep   ; for the SDRAM
+  FLASHFILE.TARGET 0x80002000++0x1FFF 0x80004000++0x1FFF  ~~\demo\arm\flash\byte\spi64_dm365.bin  /KEEP   ; for the SDRAM
+
+  FLASHFILE.GETID   ; Read FLASH Manufacture and Device ID
+  
+//FLASHFILE.ERASE 0x0--0xFFFFF   ; Erase the serial flash 0x0--0xFFFFF
+
+//FLASHFILE.LOAD uboot.bin 0x0   ; Write uboot.bin to 0x0 on the serial flash  
+//FLASHFILE.LOAD uboot.bin 0x0 /ComPare  ; Verify
+
+  FLASHFILE.DUMP 0x0  ; Read out from the serial flash
+
+ENDDO
+
+enable_SPI:
+
+Data.Set 0x01F0E000 %Long 0x0  //Reset SPI
+WAIT 1.s
+Data.Set 0x01F0E000 %Long 0x1  //Release SPI
+
+Data.Set 0x01F0E004 %Long 0x3
+
+Data.Set 0x01F0E014 %Long 0x01010e01
+
+Data.Set 0x01F0E050 %Long 0x19508 
+
+Data.Set 0x01F0E03C %Long 0x10000000
+
+Data.Set 0x01F0E048 %Long 0x32320000
+
+Data.Set 0x01F0E04C %Long 0x1  
+
+Data.Set 0x01F0E008 %Long 0x0  
+
+Data.Set 0x01F0E00C %Long 0x0   
+
+Data.Set 0x01F0E004 %Long 0x01000003  
+
+RETURN

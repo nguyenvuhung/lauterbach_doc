@@ -1,0 +1,113 @@
+; @Title: SBEV-RZ/A1L SPI FLASH Program script
+; @Description:
+; The S25FL512 (Spansion, 256KB block) is on the SPI Multi I/O Bus controller
+;
+; SRAM: 0x20020000
+; SPI Multi I/O Bus(controller) Base: 0x3FEFA000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: R7S721021
+; @Keywords: S25FL512 Spansion Flash SPI
+; $Id: rza1l-spi.cmm 2881 2014-07-07 10:35:48Z kjmal $
+;
+
+RESet
+SYStem.CPU R7S721021
+SYStem.Up
+
+Data.Set A:0xFCFE0438  %Byte  0xF7
+Data.Set A:0xFCFE3410  %Word  0xF0
+Data.Set A:0xFCFE3A10  %Word  0x00
+Data.Set A:0xFCFE3610  %Word  0x00
+Data.Set A:0xFCFE3510  %Word  0xF0
+Data.Set A:0xFCFE7210  %Word  0xF0
+
+Data.Set A:0x3FEFA000 %LE %Long 0x81aa4000   ; SPI operating mode enable
+
+//FLASH READ ID TEST
+AREA.CLEAR
+AREA.view
+GOSUB READ_ID_TEST
+DIALOG.YESNO "the flash id is correct on AREA window?"
+ENTRY &result
+IF !&result
+(
+PRINT "pls, check your register configuration to enable your flash controller"
+ENDDO
+)
+
+//S(D)RAM TEST for algorithm file
+GOSUB SDRAM_INIT
+Data.Test 0x20020000++0x3FFF  /Prime ;s(d)ram test
+IF FOUND()
+( 
+PRINT "s(d)ram is NOT initialized around 0x" ADDRESS.OFFSET(TRACK.ADDRESS())
+ENDDO
+)
+
+programFlash:
+
+  Break.RESet
+
+  FLASHFILE.RESet
+
+  FLASHFILE.BLOCKSIZE 0x40000 ; 256KB uni-block size
+  
+//FLASHFILE.CONFIG <SPI Multi I/O Bus controller Base>
+  FLASHFILE.CONFIG 0x3FEFA000
+
+//FLASHFILE.TARGET <Code_range>        <Data_range>          <Algorithm file>
+  FLASHFILE.TARGET 0x20020000++0x1FFF  0x20022000++0x1FFF    ~~/demo/arm/flash/byte/spi64_shmiobc.bin    /KEEP          ; 3Byte address mode
+; FLASHFILE.TARGET 0x20020000++0x1FFF  0x20022000++0x1FFF    ~~/demo/arm/flash/byte/spi4b64br_shmiobc.bin    /KEEP      ; 4Byte address mode
+
+  FLASHFILE.GETID
+; FLASHFILE.UNLOCK 0x0--0xFFFFFF
+  FLASHFILE.DUMP 0x0
+
+//Erase Serial FLASH  
+  ;FLASHFILE.ERASE 0x0--0xFFFFF
+
+//Write
+  ;FLASHFILE.LOAD   * 0x0
+  ;FLASHFILE.LOAD   * 0x0  /ComPare   ;verify
+
+ENDDO
+
+
+READ_ID_TEST:
+
+&BASE=0x3FEFA000      ;CMNCR, Common Control register
+&SMCR=(&BASE+0x20)    ;SMCR 
+&SMCMR=(&BASE+0x24)   ;SMCMR
+&SMADR=(&BASE+0x28)   ;
+&SMOPR=(&BASE+0x2C)   ;
+&SMENR=(&BASE+0x30)   ;
+&SMRDR=(&BASE+0x38)   ;
+&SMWDR=(&BASE+0x40)   ;
+&SMDMCR=(&BASE+0x60)  ;
+
+Data.Set A:&SMWDR %Long 0x0           ;Tx buffer init
+Data.Set A:&SMCMR %Long (0x9F<<16.)   ;read-id cmd
+Data.Set A:&SMADR %Long 0x0           ;address 0x0
+Data.Set A:&SMOPR %Long 0x0           ;address 0x0
+
+Data.Set A:&SMENR %Long ((0x1<<14.)|0xF) ; enable CMD, 4byte data read operation
+
+//start spi transfer
+Data.Set A:&SMCR %Long (0x1|(0x1<<2.))  ; spie and spire
+
+PRINT %Hex "SMRDR0 : 0x" Data.Long(A:&SMRDR)
+
+PRINT "1st 0x" Data.Long(A:&SMRDR)&0xFF       " (Manufacture)"
+PRINT "2nd 0x" (Data.Long(A:&SMRDR)>>8.)&0xFF " (Device ID)"
+PRINT "3rd 0x" (Data.Long(A:&SMRDR)>>16.)&0xFF
+PRINT "4th 0x" (Data.Long(A:&SMRDR)>>24.)&0xFF
+
+RETURN
+
+SDRAM_INIT:
+
+RETURN
+
+

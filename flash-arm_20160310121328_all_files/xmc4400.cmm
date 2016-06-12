@@ -1,0 +1,149 @@
+; --------------------------------------------------------------------------------
+; @Title: Example script for flash declaration of Infineon XMC4400 internal flash.
+;
+; @Description:
+; Synopsis:
+;
+;   DO xmc4400 [PREPAREONLY] [CPU=<cpu>]
+;
+; Description:
+;
+;   Script arguments are not case sensitive.
+;
+;   PREPAREONLY only declares flash but does not execute flash programming
+;
+;   CPU=<cpu> selects CPU derivative <cpu>. <cpu> can be CPU name out of the
+;             table listed below. For these derivatives the flash declaration
+;             is done by the script.
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/xmc4400 CPU=XMC4400-X512 PREPAREONLY
+;
+; List of XMC4400 derivatives and their configuration:
+;
+;   CPU-Type              Flash
+;   ----------------------------
+;   XMC4400-X256          256kB
+;   XMC4400-X512          512kB
+;   XMC4402-X256          256kB
+;
+; Memories:
+;
+;   00000000--00003FFF BROM (PMU ROM)
+;   08000000--0807FFFF PMU/FLASH (cached)
+;   0C000000--0C07FFFF PMU/FLASH (uncached)
+;   1FFFC000--1FFFFFFF PSRAM (code)
+;   20000000--20007FFF DSRAM1 (system)
+;   20008000--2000FFFF DSRAM2 (comm)
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: xmc4200*
+; --------------------------------------------------------------------------------
+; $Rev: 3472 $
+; $Id: xmc4400.cmm 3472 2015-10-28 14:47:29Z fcaron $
+;
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &param_cpu
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  ; --------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(XMC440*)
+      SYStem.CPU XMC440*
+
+    IF CABLE.TWOWIRE()
+      SYStem.CONFIG.DEBUGPORTTYPE SWD
+    ELSE
+      SYStem.CONFIG.DEBUGPORTTYPE JTAG
+
+    SYStem.CONFIG.CONNECTOR MIPI20T
+    SYStem.Option.ResBreak OFF
+    SYStem.Up
+
+    ; Initialize internal SRAM
+    Data.Set 0x1FFFC000--0x1FFFFFFF %Long 0x0
+    Data.Set 0x20000000--0x2000FFFF %Long 0x0
+  )
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &FlashSize
+  &FlashSize=0x0
+
+  IF CPUIS(XMC440?-X256)
+    &FlashSize=0x40000
+  ELSE IF CPUIS(XMC440?-X512)
+    &FlashSize=0x80000
+  ELSE
+  (
+    IF VERSION.BUILD()<42853.
+    (
+      PRINT %ERROR "Trace32 software version is to old, please request an update"
+      ENDDO
+    )
+
+    PRINT %ERROR "FLASH size of CPU type is not supported by the script"
+    ENDDO
+  )
+
+  IF &FlashSize>=0x40000
+  (
+    FLASH.Create 1. 0x0C000000--0x0C00FFFF  0x4000 TARGET Long
+    FLASH.Create 2. 0x0C010000--0x0C01FFFF  0x4000 TARGET Long
+    FLASH.Create 3. 0x0C020000--0x0C03FFFF 0x20000 TARGET Long
+  )
+  IF &FlashSize>=0x80000
+    FLASH.Create 4. 0x0C040000--0x0C07FFFF 0x40000 TARGET Long
+
+  FLASH.CreateALIAS 0x08000000--0x0807FFFF 0x0c000000
+
+  FLASH.TARGET 0x1FFFC000 0x20000000 0x1000 ~~/demo/arm/flash/long/xmc4000.bin
+
+  RETURN

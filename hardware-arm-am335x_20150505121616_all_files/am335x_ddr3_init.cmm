@@ -1,0 +1,222 @@
+; --------------------------------------------------------------------------------
+; @Title: Script for initializing DDR3 memory for AM335x Boards from TI
+; @Description:
+;   This script is doing DDR3 memory initialization for AM335x
+;   Prerequisites : target already attached
+; @Keywords: AM335x, BeagleBone, DDR3, TI
+; @Author: HDA
+; @Board: BeagleBone
+; @Chip: AM335*
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: am335x_ddr3_init.cmm 7940 2014-12-04 08:37:33Z hdammak $
+
+  LOCAL &CLKIN
+
+  GOSUB GetInputClockFrequency
+  ENTRY &CLKIN
+
+  IF &CLKIN==24.
+  (
+    GOSUB DDR_PLL_Config &CLKIN 23. 303. 1.
+    GOSUB DDR3_EMIF_Config
+  )
+  ELSE
+  (
+    PRINT %ERROR "****  AM335x PLL Config failed!!  Check SYSBOOT[15:14] for proper input freq config "
+  )
+  ENDDO
+
+GetInputClockFrequency:
+  &temp=Data.Long(NSD:0x44E10040)
+  &temp=&temp>>22.
+  &temp=&temp&3.
+  IF "&temp"=="0."
+  (
+    PRINT "Input Clock Read from SYSBOOT[15:14]:19.2MHz"
+    RETURN 19.
+  )
+  IF "&temp"=="1."
+  (
+    PRINT "Input Clock Read from SYSBOOT[15:14]:24MHz"
+    RETURN 24.
+  )
+  IF "&temp"=="2."
+  (
+    PRINT "Input Clock Read from SYSBOOT[15:14]:25MHz"
+    RETURN 25.
+  )
+  IF "&temp"=="3."
+  (
+    PRINT "Input Clock Read from SYSBOOT[15:14]:25MHz"
+    RETURN 26.
+  )
+  RETURN 0.
+
+
+DDR_PLL_Config:
+  ENTRY &CLKIN &N &M &M2
+
+  LOCAL &ref_clk &clk_out
+  LOCAL &clkmode &clksel &div_m2
+  LOCAL &temp
+
+  &ref_clk=&CLKIN/(&N+1)
+  &clk_out=(&ref_clk*&M)/&M2
+
+  &clkmode=Data.Long(NSD:0x44E00494)
+  &clksel=Data.Long(NSD:0x44E00440)
+  &div_m2=Data.Long(NSD:0x44E004A0)
+
+  &clkmode=(&clkmode&0xfffffff8)|0x00000004
+  Data.Set NSD:0x44E00494 %Long &clkmode
+
+  &temp=Data.Long(NSD:0x44E00434)
+  WHILE (&temp&0x100)!=0x100
+  (
+    WAIT 3.ms 		  ;wait for bypass status
+    &temp=Data.Long(NSD:0x44E00434)
+  )
+  PRINT "****  DDR DPLL Bypassed"
+
+  &clksel=&clksel&(~0x7FFFF)
+  &clksel=&clksel|((&M<<0x8)|&N)
+  Data.Set NSD:0x44E00440 %Long &clksel
+
+  &div_m2=(&div_m2&0xFFFFFFE0)|&M2
+  Data.Set NSD:0x44E004A0 %Long &div_m2
+
+  &clkmode=(&clkmode&0xfffffff8)|0x00000007
+  Data.Set NSD:0x44E00494 %Long &clkmode
+
+  &temp=Data.Long(NSD:0x44E00434)
+  WHILE (&temp&0x1)!=0x1
+  (
+    WAIT 3.ms 		  ;wait for bypass status
+    &temp=Data.Long(NSD:0x44E00434)
+  )
+  PRINT "****  DDR DPLL Locked"
+  RETURN
+
+DDR3_EMIF_Config:
+  LOCAL &i
+  LOCAL &temp
+  &i=0.
+
+  GOSUB EMIF_PRCM_CLK_ENABLE
+  PRINT "DDR PHY Configuration in progress"
+  GOSUB VTP_Enable
+  GOSUB PHY_Config_CMD
+  GOSUB PHY_Config_DATA
+  PRINT "Setting IO control registers......."
+
+  Data.Set NSD:0x44E11404 %Long 0x18B ;DDR_CMD0_IOCTRL
+  Data.Set NSD:0x44E11408 %Long 0x18B ;DDR_CMD1_IOCTRL
+  Data.Set NSD:0x44E1140C %Long 0x18B ;DDR_CMD2_IOCTRL
+  Data.Set NSD:0x44E11440 %Long 0x18B ;DDR_DATA0_IOCTRL
+  Data.Set NSD:0x44E11444 %Long 0x18B ;DDR_DATA1_IOCTRL
+
+  ;IO to work for DDR3
+  &temp=Data.Long(NSD:0x44E10E04)
+  &temp=&temp&(~0x10000000)
+  Data.Set NSD:0x44E10E04 %Long &temp 
+
+  ;CKE controlled by EMIF/DDR_PHY
+  &temp=Data.Long(NSD:0x44E1131C)
+  &temp=&temp|0x00000001
+  Data.Set NSD:0x44E1131C %Long &temp 
+
+  PRINT "EMIF Timing register configuration is in progress ....... "
+  Data.Set NSD:0x4C0000E4 %Long 0x6 		;EMIF_DDR_PHY_CTRL_1_REG
+  Data.Set NSD:0x4C0000E8 %Long 0x6 		;EMIF_DDR_PHY_CTRL_1_SHDW_REG
+  Data.Set NSD:0x4C0000EC %Long 0x6 		;EMIF_DDR_PHY_CTRL_2_REG
+  Data.Set NSD:0x4C000018 %Long 0x888A39B		;EMIF_SDRAM_TIM_1_REG
+  Data.Set NSD:0x4C00001C %Long 0x888A39B		;EMIF_SDRAM_TIM_1_SHDW_REG
+  Data.Set NSD:0x4C000020 %Long 0x26517FDA	;EMIF_SDRAM_TIM_2_REG
+  Data.Set NSD:0x4C000024 %Long 0x26517FDA	;EMIF_SDRAM_TIM_2_SHDW_REG
+  Data.Set NSD:0x4C000028 %Long 0x501F84EF	;EMIF_SDRAM_TIM_3_REG
+  Data.Set NSD:0x4C00002C %Long 0x501F84EF	;EMIF_SDRAM_TIM_3_SHDW_REG
+  Data.Set NSD:0x4C000010 %Long 0x93B 		;EMIF_SDRAM_REF_CTRL_REG
+  Data.Set NSD:0x4C000014 %Long 0x93B 		;EMIF_SDRAM_REF_CTRL_SHDW_REG
+  Data.Set NSD:0x4C0000C8 %Long 0x50074BE4	;EMIF_ZQ_CONFIG_REG
+  Data.Set NSD:0x4C000008 %Long 0x61C04BB2	;EMIF_SDRAM_CONFIG_REG
+
+  PRINT "EMIF Timing register configuration is done ......."
+
+  &temp=Data.Long(NSD:0x4C000004)
+  IF (&temp&0x4)==0x4
+    PRINT "PHY is READY!!"
+
+  PRINT "DDR PHY Configuration done"	
+  RETURN
+
+EMIF_PRCM_CLK_ENABLE:
+  LOCAL &temp
+  PRINT "EMIF PRCM is in progress ......."
+  ;Enable EMIF4 clocks
+  Data.Set NSD:0x44E00028 %Long 0x2
+  ;Poll if module is functional
+  &temp=Data.Long(NSD:0x44E00028)
+  WHILE (&temp)!=0x2
+  (
+    WAIT 3.ms 		  ;wait for bypass status
+    &temp=Data.Long(NSD:0x44E00028)
+  )
+  PRINT "EMIF PRCM Done"
+  RETURN
+
+VTP_Enable:
+  LOCAL &temp
+  ;clear the register
+  Data.Set NSD:0x44E10E0C %Long 0x0
+  ;set filter bits to 011b
+  Data.Set NSD:0x44E10E0C %Long 0x6
+  ;Write 1 to enable VTP
+  &temp=Data.Long(NSD:44E10E0C)
+  &temp=&temp|0x00000040
+  Data.Set NSD:0x44E10E0C %Long &temp
+  ;Write 0 to CLRZ bit
+  &temp=Data.Long(NSD:44E10E0C)
+  &temp=&temp&0xFFFFFFFE
+  Data.Set NSD:0x44E10E0C %Long &temp
+  ;Write 1 to CLRZ bit
+  &temp=Data.Long(NSD:44E10E0C)
+  &temp=&temp|0x00000001
+  Data.Set NSD:0x44E10E0C %Long &temp
+
+  ;Check for VTP ready bit
+  PRINT "Waiting for VTP Ready ......."
+
+  &temp=Data.Long(NSD:0x44E10E0C)
+  WHILE (&temp&0x00000020)!=0x00000020
+  (
+    WAIT 3.ms 		  ;wait for bypass status
+    &temp=Data.Long(NSD:0x44E10E0C)
+  )
+  PRINT "VTP is Ready!"
+  RETURN
+
+PHY_Config_CMD:
+  PRINT "DDR PHY CMD 0 Register configuration is in progress ......."
+  Data.Set NSD:0x44E1201C %Long 0x80
+  Data.Set NSD:0x44E1202C %Long 0x0 
+  PRINT "DDR PHY CMD 1 Register configuration is in progress ......."
+  Data.Set NSD:0x44E12050 %Long 0x80
+  Data.Set NSD:0x44E12060 %Long 0x0
+  PRINT "DDR PHY CMD 2 Register configuration is in progress ......."
+  Data.Set NSD:0x44E12084 %Long 0x80
+  Data.Set NSD:0x44E12094 %Long 0x0
+  RETURN
+
+PHY_Config_DATA:
+  PRINT "DDR PHY DATA 0 Register configuration is in progress ......."
+  Data.Set NSD:0x44E120C8 %Long 0x3B 
+  Data.Set NSD:0x44E120DC %Long 0x3C 
+  Data.Set NSD:0x44E12108 %Long 0xA5 
+  Data.Set NSD:0x44E12120 %Long 0x74 
+  PRINT "DDR PHY DATA 1 Register configuration is in progress ......."
+  Data.Set NSD:0x44E1216C %Long 0x3B 
+  Data.Set NSD:0x44E12180 %Long 0x3C 
+  Data.Set NSD:0x44E121AC %Long 0xA5 
+  Data.Set NSD:0x44E121C4 %Long 0x74
+  RETURN

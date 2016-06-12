@@ -1,0 +1,91 @@
+; --------------------------------------------------------------------------------
+; @Title: Serial FLASH Programming script for ADZS-SC584-EZLITE (Analog Device)
+; @Description:
+; Serial FLASH(Winbond,25Q128) is connected to SPI2_SS1 
+;
+; SDRAM: 0x40300000
+;
+; SPI Tx Register : 0x31044058
+; SPI Rx Register : 0x31044050   
+; SPI base Register : 0x31044000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2016 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ADSP-SC58*
+; @Keywords: 25Q128 flash spi
+; --------------------------------------------------------------------------------
+; $Id: adsc584-spi.cmm 3568 2016-01-29 11:12:37Z jjeong $
+
+&SPI_BASE=0x31044000
+
+SYStem.CPU ADSP-SC584
+SYStem.Up
+
+Data.Set ZSD:0x31008000 %LE %Long 0xAD0      ;diable watchdog
+
+//Pin Muxing PC_02, PC_03, PC_01, PC_06
+Data.Set ZSD:0x31004100 %LE %Long 0x4E       ;PORTC_FER
+
+Break.RESet
+
+Data.Set A:&SPI_BASE+0xC %Long 0x0
+
+Data.Set A:&SPI_BASE+0x64 %Long 0x7FFFFFFF   ;SPI2_MMTOP
+Data.Set A:&SPI_BASE+0x18 %Long 0x00         ;SPI2_SLVSEL
+Data.Set A:&SPI_BASE+0x10 %Long 0x0F         ;SPI2_CLK
+Data.Set A:&SPI_BASE+0x0C  %Long 0x05        ;SPI2_TXCTL
+Data.Set A:&SPI_BASE+0x08  %Long 0x01        ;SPI2_RXCTL
+Data.Set A:&SPI_BASE+0x04  %Long 0x03        ;SPI2_CTL
+Data.Set A:&SPI_BASE+0x18 %Long 0xFE02       ;SPI2_SLVSEL
+
+//FLASH READ ID TEST
+AREA.CLEAR
+AREA.view
+GOSUB READ_ID_TEST
+DIALOG.YESNO "the flash id is correct on AREA window?"
+ENTRY &result
+IF !&result
+(
+PRINT "pls, check your register configuration to enable your flash controller"
+ENDDO
+)
+
+  FLASHFILE.RESet
+
+//FLASFILE.CONFIG  <Tx Reg>     <Rx Reg>     <SPI base>   <cs#>
+  FLASHFILE.CONFIG 0x31044058   0x31044050   0x31044000   0x1  
+
+//FLASHFILE.TARGET <Code Range>       <Data Range>             <Algorithm File>
+  FLASHFILE.TARGET 0x20080000++0x1FFF EAHB:0x20082000++0x1FFF  ~~/demo/arm/flash/byte/spi64_sc58x.bin  /KEEP  /DualPort
+
+  FLASHFILE.DUMP 0x0  ; Read out from the serial flash
+
+//Erase Serial FLASH  
+  ;FLASHFILE.ERASE 0x0--0xFFFFF
+
+//Write
+  ;FLASHFILE.LOAD   * 0x0
+  ;FLASHFILE.LOAD   * 0x0  /ComPare   ;verify
+
+ENDDO
+
+READ_ID_TEST:
+
+Data.Set A:&SPI_BASE+0x18 %Long 0xFC02  ;slave assert ss1
+
+Data.Set A:&SPI_BASE+0x58 %Long 0x9F    ;send command 0x9F
+PRINT "Read 1st 0x" Data.Long(A:&SPI_BASE+0x50)&0xFF
+
+Data.Set A:&SPI_BASE+0x58 %Long 0x0  ; send command 0x0
+PRINT "Read 2nd 0x" Data.Long(A:&SPI_BASE+0x50)&0xFF
+
+Data.Set A:&SPI_BASE+0x58 %Long 0x0  ; send command 0x0
+PRINT "Read 3rd 0x" Data.Long(A:&SPI_BASE+0x50)&0xFF
+
+Data.Set A:&SPI_BASE+0x58 %Long 0x0  ; send command 0x0
+PRINT "Read 4th 0x" Data.Long(A:&SPI_BASE+0x50)&0xFF
+
+Data.Set A:&SPI_BASE+0x18 %Long 0xFE02  ;slave de-assert ss1
+Data.Set A:&SPI_BASE+0x18 %Long 0xFE02  ;slave de-assert ss1
+
+RETURN

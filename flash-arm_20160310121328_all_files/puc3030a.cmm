@@ -1,0 +1,94 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Micronas PUC3030A internal flash. 
+; 
+; @Description:
+; Script arguments:
+;
+;   DO puc3030a  [PREPAREONLY]
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/puc3030a PREPAREONLY
+;
+; Flash location:
+;  256kB flash at 0x00000000--0x0003ffff (not remapped) or 
+;                 0x00080000--0x000bffff (always)
+;
+; RAM location:
+;  48kB SRAM at   0x00100000--0x0010bfff (not remapped) or 
+;                 0x00000000--0x0000bfff (remapped)
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: PUC3030A
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: puc3030a.cmm 2881 2014-07-07 10:35:48Z kjmal $
+;
+
+LOCAL &parameters
+ENTRY %LINE &parameters
+
+LOCAL &param_prepareonly
+&param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+; --------------------------------------------------------------------------------
+; Set configuration values out of the CPU table above. If your CPU 
+; derivate is not listed please check the data sheet for matching 
+; flash configuration.
+
+LOCAL &FlashBase
+LOCAL &RamBase
+
+&FlashBase=0x00080000
+&RamBase=0x00100000
+
+; --------------------------------------------------------------------------------
+; Start debugging
+IF SYStem.MODE()<5
+(
+  SYStem.RESet
+  SYStem.CPU ARM7TDMI
+  SYStem.Option.EnReset OFF
+  SYStem.Up
+)
+
+; Check if SRAM is remapped to 0x00000000 by reading MPUREMAP:REMAP bit 
+IF (Data.Long(SD:0x1a0000)&0x0002)==0x0002
+(
+  &RamBase=0x00000000
+)
+
+; --------------------------------------------------------------------------------
+; Flash declaration
+
+FLASH.RESet
+FLASH.Create 1. &FlashBase++0x3ffff 0x800 TARGET Long
+FLASH.TARGET &RamBase+0x1000 &RamBase+0x3000 0x1000 ~~/demo/arm/flash/long/puc3030a.bin
+FLASH.CLocK 14.31818MHz
+
+; Flash script ends here if called with parameter PREPAREONLY
+IF &param_prepareonly
+  ENDDO PREPAREDONE
+
+; --------------------------------------------------------------------------------
+; Flash programming example
+
+DIALOG.YESNO "Program flash memory?"
+LOCAL &progflash
+ENTRY &progflash
+IF !&progflash 
+  ENDDO
+
+; Disable Boot block protection
+Data.Set 0xe0008 %Long 0xabcd
+
+; Example for download 
+
+FLASH.Erase.ALL
+
+FLASH.Program.ALL
+Data.LOAD.Binary *.bin &FlashBase /Long
+FLASH.Program.off
+
+ENDDO

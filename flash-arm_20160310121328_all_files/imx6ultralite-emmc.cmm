@@ -1,0 +1,161 @@
+; --------------------------------------------------------------------------------
+; @Title: i.MX6UltraLite eMMC FLASH Programming Script
+; @Description:
+;   FLASH Type: eMMC FLASH(Numonyx, NAND16GXH) connected to the SDHC1
+; 
+;   S(D)RAM: 0x900000
+;   SDHC CS1 base: 0x2190000
+;
+; @Author: jjeong
+; @Chip: IMX6ULTRALITE
+; @Keywords: eMMC
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: imx6ultralite-emmc.cmm 3517 2015-12-04 16:17:23Z jjeong $
+
+LOCAL &arg1
+ENTRY &arg1
+&arg1=STRing.UPpeR("&arg1")  // for example "PREPAREONLY"
+
+&MMC_BASE=0x2190000
+
+RESet
+SYStem.RESet
+SYStem.CPU IMX6ULTRALITE
+; adjust WaitReset time if a different bootmode is used
+SYStem.Option ResBreak OFF
+SYStem.Option WaitReset 10ms
+SYStem.JtagClock CTCK 10MHz
+SYStem.Up
+
+Data.Set C15:0x1 %Long  (Data.Long(C15:0x1)&~(0x1005))  ; disable cache and mmu
+
+//CCM_CCGR6[CG2] for uSDHC1
+Data.Set A:0x20C4080 %Long Data.Long(A:0x20C4080)|(0x3<<2.)
+
+GOSUB Config_SDHC1
+
+GOSUB READ_ID_TEST
+
+Break.RESet
+
+programFlash:
+
+ FLASHFILE.RESet
+
+;FLASHFILE.CONFIG  <eMMC controller> <0x0>  <0x0>
+ FLASHFILE.CONFIG  &MMC_BASE         0x0  0x0
+
+;FLASHFILE.TARGET <<code range>> <<data range>> <<algorithm file>>
+  FLASHFILE.TARGET  0x900000++0x1fff   EAHB:0x902000++0x1fff   ~~/demo/arm/flash/byte/emmc_imx6.bin  /KEEP  /DualPort
+
+Data.Set &MMC_BASE+0x2C %LE %Long 0x008E10F8 ; 400KHz clk
+  FLASHFILE.GETID
+  
+Data.Set &MMC_BASE+0x2C %LE %Long 0x008E0218  ; 25Mhz clk
+FLASHFILE.GETEXTCSD
+
+//End of the test prepareonly
+IF "&arg1"=="PREPAREONLY"
+ENDDO
+
+ FLASHFILE.DUMP 0x0              ; Read NAND 
+ ;FLASHFILE.ERASE 0x0--0xFFFFF    ; Erase NAND
+ ;FLASHFILE.LOAD * 0x0            ; Write NAND
+
+ENDDO
+
+Config_SDHC1:
+
+; --------------------------------------------------------------------------------
+; Disable WDOG
+; --------------------------------------------------------------------------------
+Data.Set 0x020bc000 %Word 0x30
+
+; --------------------------------------------------------------------------------
+; IO Mux for SDHC1
+; --------------------------------------------------------------------------------
+
+Data.Set ZSD:0x20E01BC %LE %Long 0x0  ; USDHC1_CMD,  IOMUXC_SW_MUX_CTL_PAD_SD1_CMD
+Data.Set ZSD:0x20E01C0 %LE %Long 0x0  ; USDHC1_CLK,  IOMUXC_SW_MUX_CTL_PAD_SD1_CLK
+Data.Set ZSD:0x20E01C4 %LE %Long 0x0  ; USDHC1_DAT0, IOMUXC_SW_MUX_CTL_PAD_SD1_DATA0
+Data.Set ZSD:0x20E01C8 %LE %Long 0x0  ; USDHC1_DAT1, IOMUXC_SW_MUX_CTL_PAD_SD1_DATA1
+Data.Set ZSD:0x20E01CC %LE %Long 0x0  ; USDHC1_DAT2, IOMUXC_SW_MUX_CTL_PAD_SD1_DATA2
+Data.Set ZSD:0x20E01D0 %LE %Long 0x0  ; USDHC1_DAT3, IOMUXC_SW_MUX_CTL_PAD_SD1_DATA3.alt0
+Data.Set ZSD:0x20E01A8 %LE %Long 0x1  ; USDHC1_DAT4, IOMUXC_SW_MUX_CTL_PAD_NAND_READY_B.alt1
+Data.Set ZSD:0x20E01AC %LE %Long 0x1  ; USDHC1_DAT5, IOMUXC_SW_MUX_CTL_PAD_NAND_CE0_B.alt1
+Data.Set ZSD:0x20E01B0 %LE %Long 0x1  ; USDHC1_DAT6, IOMUXC_SW_MUX_CTL_PAD_NAND_CE1_B.alt1
+Data.Set ZSD:0x20E01B4 %LE %Long 0x1  ; USDHC1_DAT7, IOMUXC_SW_MUX_CTL_PAD_NAND_CLE.alt1
+Data.Set ZSD:0x20E0080 %LE %Long 0x6  ; USDHC1_RESET_B, IOMUXC_SW_MUX_CTL_PAD_GPIO1_IO09.alt6
+
+; --------------------------------------------------------------------------------
+; Config SDHC
+; --------------------------------------------------------------------------------
+Data.Set &MMC_BASE+0x04 %LE %Long 0x00010200  ; blk size,cnt
+Data.Set &MMC_BASE+0x28 %LE %Long 0x08800020  ; bus width, endian
+Data.Set &MMC_BASE+0x2C %LE %Long 0x008E1088  ; 400KHz clk
+Data.Set &MMC_BASE+0x34 %LE %Long 0x00000033  ; BRR,BWR, TCI, CCI interrupt enable
+Data.Set &MMC_BASE+0x44 %LE %Long 0x00100010  ;read/write fifo threshold level 64bytes
+
+RETURN
+
+
+READ_ID_TEST:
+
+//CMD0
+RePeaT 2.
+(
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x0  ;arg 
+Data.Set &MMC_BASE+0xc %Long 0x0  ;cmd
+WAIT 10.ms
+)
+
+//CMD1
+RePeaT 10.
+(
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x40FF8000 ;arg
+Data.Set &MMC_BASE+0xc %Long 0x01020000 ;cmd1
+WAIT 100.ms
+&resp=Data.Long(A:(&MMC_BASE+0x10))
+//print "CMD1 resp: 0x" &resp
+IF (&resp&0x80000000)==0x80000000
+(
+GOTO jump_cmd2
+)
+)
+
+PRINT "CMD1 fail"
+END
+
+jump_cmd2:
+//CMD2
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x0     ;arg
+Data.Set &MMC_BASE+0xc %Long 0x02010000 ;cmd2
+WAIT 10.ms
+
+//CMD3
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x00010000  ; arg, MMC RCA is (0x0001<<16.)
+Data.Set &MMC_BASE+0xc %Long 0x03020000  ;cmd3
+WAIT 10.ms
+
+//CMD10
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x00010000 ; arg, MMC RCA is (0x0001<<16.)
+Data.Set &MMC_BASE+0xc %Long 0x0A010000  ;cmd10
+WAIT 10.ms
+
+//Response2
+PRINT "CID register"
+PRINT "[127:104] 0x" Data.Long(A:(&MMC_BASE+0x1c))
+PRINT "[103:72]  0x" Data.Long(A:(&MMC_BASE+0x18))
+PRINT "[71:40]   0x" Data.Long(A:(&MMC_BASE+0x14))
+PRINT "[39:8]    0x" Data.Long(A:(&MMC_BASE+0x10))
+
+RETURN
+
+SDRAM_INIT:
+RETURN

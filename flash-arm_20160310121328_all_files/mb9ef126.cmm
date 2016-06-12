@@ -1,0 +1,85 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Fujitsu MB9EF126 (Calypso) internal flash.
+;
+; @Description: 
+; Script arguments:
+;
+;  DO mb9ef126 [PREPAREONLY]
+;
+;   PREPAREONLY only declares flash but does not execute flash programming example
+;
+; @Chip: MB9EF126
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 3565 $
+; $Id: mb9ef126.cmm 3565 2016-01-28 08:26:21Z fcaron $
+
+  LOCAL &parameters &param_prepareonly
+  ENTRY %LINE &parameters
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  ; --------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU MB9EF126
+    SYStem.Option.ResBreak OFF
+    SYStem.Option.WaitReset 2.ms
+    SYStem.Up
+  )
+  
+  ; Switch MPU and caches off
+  Data.Set C15:0x1 %Long Data.Long(C15:0x1)&~1005
+
+  ; Disable watchdog if needed
+  IF ((Data.Long(C:0xB0608048)&0x01000000)==0)
+  (
+    Data.Set 0xB0608000 %Long 0xEDACCE55
+    Data.Set 0xB0608048 %Long 0x01000000
+  )
+  
+  ; Initialize TCM RAM to have valid ECC
+  Data.Set 0x0--0x1FFFF %Long 0x0
+
+  
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  ; TC Flash large sectors (AXI address range)
+  FLASH.Create 1. 0x01000000--0x011FFFFF 0x40000 TARGET Long
+  ; TC Flash small sectors (AXI address range)
+  FLASH.Create 2. 0x017E0000--0x017E3FFF  0x4000 TARGET Long /CENSORSHIP 0x017E0000--0x017E013F ; SDR 
+  FLASH.Create 2. 0x017E4000--0x017EFFFF  0x4000 TARGET Long
+  FLASH.Create 3. 0x017F0000--0x017F3FFF  0x4000 TARGET Long /CENSORSHIP 0x017F0000--0x017F007F ; SDR
+  FLASH.Create 3. 0x017F4000--0x017FBFFF  0x4000 TARGET Long
+  FLASH.Create 3. 0x017FC000--0x017FFFFF  0x4000 TARGET Long /CENSORSHIP 0x017FFFE0--0x017FFFFF ; BDR
+
+  ; Map TCM address range to AXI address range
+  FLASH.CreateALIAS 0x00800000--0x00FFFFFF 0x01000000
+  ; Map AXI slave core0 address range to AXI address range
+  FLASH.CreateALIAS 0x05800000--0x05FFFFFF 0x01000000
+
+  FLASH.TARGET 0x1000 0x2000 0x1000 ~~/demo/arm/flash/long/fcr4.bin
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+  )
+
+  ENDDO

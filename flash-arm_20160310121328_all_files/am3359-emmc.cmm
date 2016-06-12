@@ -1,0 +1,93 @@
+; --------------------------------------------------------------------------------
+; @Title: eMMC FLASH Programming Script for AM3359 (BeagleBone Black)
+; @Description:
+; eMMC FLASH(Micron, MTFC4GLDEA, 4GB) is connected
+;
+; Internal SRAM: 0x40300000
+;
+; SD/MMC Controller Register : 0x481D8000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: AM3359
+; @Keywords: flash eMMC
+; --------------------------------------------------------------------------------
+; $Id: am3359-emmc.cmm 3138 2015-01-29 17:19:50Z jjeong $
+
+SYStem.CPU AM3359
+SYStem.Up
+
+//Disable cache & mmu
+PER.Set.simple C15:0x1 %Long 0xc50078
+
+//Disable watchdog
+Data.Set A:0x44E35048 %Long  0xAAAA
+Data.Set A:0x44E35048 %Long  0x5555
+
+//Enable OCM memory 
+B::Data.Set A:44E0002C %Long 0x2  
+
+//Pin mux configuration
+Data.Set A:0x44E10880 %Long  0x2A   ; conf_gpmc_csn1, GPMC_CSN1/GPMC_CLK/MMC1_CLK
+Data.Set A:0x44E10884 %Long  0x32   ; conf_gpmc_csn2, GPMC_CSN2/GPMC_BE1N/MMC1_CMD
+Data.Set A:0x44E10800 %Long  0x31   ; GPMC_AD0/MMC1_DAT0
+Data.Set A:0x44E10804 %Long  0x31   ; GPMC_AD1/MMC1_DAT1
+Data.Set A:0x44E10808 %Long  0x31   ; GPMC_AD2/MMC1_DAT2
+Data.Set A:0x44E1080C %Long  0x31   ; GPMC_AD3/MMC1_DAT3
+
+// CM_PER_MMC1_CLKCTRL , This register manages the MMC1 clocks.
+Data.Set A:0x44E000F4 %Long 0x00030002  
+
+// pll configuration if you want to program fast
+;Data.Set A:<addr> %Long <data>
+
+//MMC controller configuration
+&MMC_BASE=0x481D8000
+Data.Set A:(&MMC_BASE+0x0240) %LE %Long 0x2e10080
+Data.Set A:(&MMC_BASE+0x0110) %LE %Long 0x2017 ; SD_SYSCONFIG
+Data.Set A:(&MMC_BASE+0x012C) %LE %Long 0x0600
+Data.Set A:(&MMC_BASE+0x0204) %LE %Long 0x0200
+Data.Set A:(&MMC_BASE+0x0228) %LE %Long 0x0c10  ; select power level 3.0v
+Data.Set A:(&MMC_BASE+0x0228) %LE %Long 0x0d10  ; power on for SD/MMC card
+Data.Set A:(&MMC_BASE+0x0234) %LE %Long 0x307f0033
+Data.Set A:(&MMC_BASE+0x022C) %LE %Long 0xE6807  
+
+FLASHFILE.RESet
+
+//FLASHFILE.CONFIG <MMC Controller Base,(MMCHS_BLK-0x4)>  0x0   0x0
+FLASHFILE.CONFIG (&MMC_BASE+0x200)  0x0   0x0
+
+//FLASHFILE.target <Code_range>       <Data_range>       <Algorithm file>
+FLASHFILE.TARGET 0x40300000++0x1FFF 0x40302000++0x1FFF  ~~/demo/arm/flash/byte/emmc_omap.bin  /KEEP
+
+// the mmc clock has to be < 400khz to pass the MMC init state
+PER.Set.Field A:(&MMC_BASE+0x022C) %Long 0xFFC0  0x1a0 ; <400khz [15:6]=0x1a0
+//Get FLASH info
+FLASHFILE.GETID
+
+// MMC mode is switched to the transfer state (tran) after the FLASHFILE.GETID command
+// MMC allowes to access the higher clk speed on the transfer state
+
+PER.Set.Field A:(&MMC_BASE+0x022C) %Long 0xFFC0  0x2 ; change to the maximum clk [15:6]=0x2
+//Get EXTended CSD registers
+FLASHFILE.GETEXTCSD
+  
+//When you access to the other partition on the flash
+; FLASHFILE.SETEXTCSD  179. 0x00   ; access: partition null, no boot, access: no boot partition
+; FLASHFILE.SETEXTCSD  179. 0x48   ; access: partition null
+; FLASHFILE.SETEXTCSD  179. 0x49   ; access: partition boot 1
+; FLASHFILE.SETEXTCSD  179. 0x4A   ; access: partition boot 2
+
+//Dump FLASH
+ FLASHFILE.DUMP 0x0
+
+//Erase FLASH 
+ ;FLASHFILE.ERASE 0x0--0xFFFFFF  
+
+//Write FLASH
+ ;FLASHFILE.LOAD  * 0x0 
+  
+//Verify FLASH
+ ;FLASHFILE.LOAD  * 0x0  /ComPare
+
+ENDDO 

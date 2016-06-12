@@ -1,0 +1,70 @@
+; --------------------------------------------------------------------------------
+; @Title: QSC6240 NAND FLASH Programming Script
+; @Description:
+; NAND FLASH(HYNIX, 16 bits) is connected EBI2-CS0
+;
+; JTAG: ARM9
+; IRAM: 0x78018000
+; NAND FLASH Controller(CPU-specific): 0x60008000
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ARM926EJ-S
+; @Keywords: HYNIX
+; --------------------------------------------------------------------------------
+; $Id: qsc6240-nand2g16.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+FLASHFILE.RESet
+Break.RESet
+
+TrOnchip.Set DABORT OFF
+TrOnchip.Set PABORT OFF
+TrOnchip.Set UNDEF OFF
+
+SYStem.RESet
+SYStem.CPU ARM926EJ
+SYStem.JtagClock RTCK
+SYStem.Option.EnReset ON
+SYStem.Up
+SYStem.Option.EnReset OFF
+
+Go.direct
+WAIT 1.s
+IF run()
+Break.direct
+
+//PS HOLD
+  Data.Set 0x8000C100 %Long 0x7
+
+//NAND_DEV0_CFG0: Address cycle :5 , row: 3cyc , col:2cyc
+  Data.Set 0x60008020 %Long 0xAA54001A
+
+//NAND_DEV0_CFG1: 16bits  Enable Ecc
+  Data.Set 0x60008024 %Long 0x4745E
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.CONFIG <<NAND Flash Controller Basement Address>> , ,
+  FLASHFILE.CONFIG 0x60008000 , ,
+
+//FLASHFILE.TARGET <<code range>> <<data range>> <<algorithm file>>
+  FLASHFILE.TARGET 0x78018000++0x1FFF 0x7801A000++0x1FFF ~~/demo/arm/flash/word/nand2g16_qsd8650.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//FLASHFILE.ERASE 0x80000--0xFFFFF  /EBB
+
+//FLASHFILE.LOAD * 0x80000
+
+  FLASHFILE.DUMP 0x80000
+
+//FLASHFILE.DUMP /SPARE /TRACK
+
+ ENDDO
+
+
+
+
+
+

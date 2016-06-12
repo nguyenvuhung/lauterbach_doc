@@ -1,0 +1,227 @@
+; --------------------------------------------------------------------------------
+; @Title: Generic script for Freescale S32K internal flash
+;
+; @Description:
+;
+; Example for flash declaration of Freescale S32K internal
+; flash.
+;
+; Script arguments:
+;
+;   DO S32K [PREPAREONLY] [CPU=<cpu>] [MASSERASE]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;
+;     MASSERASE forces mass erase of device before establishing debug connection
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/s32k CPU=S32K144 PREPAREONLY
+;
+; List of S32K derivatives and their configuration:
+;
+;   CPU-Type       ProgFlash   
+;                   [Byte]     
+; --------------------------------------------------------------------------------
+;   S32K142         256 KB  
+;   S32K144         512 KB      
+;   S32K146        1024 KB     
+;   S32K148        2048 KB     
+;
+; @Author: FLC
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 3414 $
+; $Id: s32k.cmm 3414 2015-09-22 11:51:22Z fcaron $
+;
+
+  LOCAL &parameters &param_prepareonly &scscu_content
+  ENTRY %LINE &parameters
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+  
+  ; ------------------------------------------------------------------------------
+  ; Start debugging
+  
+  IF SYStem.MODE()<0x5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+
+   ON.ERROR GOSUB Unsecure
+    SYStem.Up
+    ON.ERROR
+  )
+
+  ; Unsecure device
+  IF (Data.Long(EDBG:0x40000100)&0x04)==0x04
+   GOSUB Unsecure
+
+  ; Disable Bootrom
+  GOSUB DisableBootrom
+  ; Disable watchdog
+  GOSUB DisableWatchdog
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+
+  )
+
+  ENDDO
+
+
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+
+  LOCAL &PFlashSize &DFlashSize
+
+  IF CPUIS("S32K141")
+  (
+    &PFlashSize=0x20000
+    &DFlashSize=0x00
+  )
+  ELSE IF CPUIS("S32K142")
+  (
+    &PFlashSize=0x40000
+    &DFlashSize=0x00
+  )
+  ELSE IF CPUIS("S32K144")
+  (
+    &PFlashSize=0x80000
+    &DFlashSize=0x10000
+  )
+  ELSE IF CPUIS("S32K146")
+  (
+    &PFlashSize=0x100000
+    &DFlashSize=0x00
+  )
+  ELSE IF CPUIS("S32K148")
+  (
+    &PFlashSize=0x200000
+    &DFlashSize=0x00
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is not supported by the script"
+    ENDDO
+  )
+  
+  IF &PFlashSize>=0x20000
+    FLASH.Create 1. 0x00000000--0x0001FFFF 0x1000 TARGET Quad
+  IF &PFlashSize>=0x40000  
+    FLASH.Create 1. 0x00020000--0x0003FFFF 0x1000 TARGET Quad
+  IF &PFlashSize>=0x80000    
+    FLASH.Create 1. 0x00040000--0x0007FFFF 0x1000 TARGET Quad
+  IF &PFlashSize>=0x100000    
+    FLASH.Create 1. 0x00080000--0x000FFFFF 0x1000 TARGET Quad
+  IF &PFlashSize>=0x200000    
+    FLASH.Create 1. 0x00100000--0x001FFFFF 0x1000 TARGET Quad
+    
+  IF &DFlashSize>=0x10000    
+    FLASH.Create 2. 0x10000000--0x1000FFFF 0x800 TARGET Quad
+    
+  FLASH.TARGET 0x1FFFF000 0x20000000 0x1000 ~~/demo/arm/flash/quad/s32k.bin
+  
+  RETURN
+  
+DisableBootrom:
+  Data.Set SD:0x4007F010 %LE %Long 0x6
+  Data.Set SD:0x4007F014 %LE %Long 0x0
+  RETURN
+  
+DisableWatchdog:
+  LOCAL &tmp1 &tmp2
+  &tmp1=Data.Long(ST:0x20000000)
+  &tmp2=Data.Long(ST:0x20000004)
+
+  ; The watchdog has a restrictive timing. It has to be configured and unlocked within a peripod
+  ; of 128 cycles. Therefor the unlock sequence need to be done by a small target program.
+  Data.Assemble ST:0x20000000  strh r1,[r0]  ;SD:0x40052004 = 0xC520   (Key 1)
+  Data.Assemble ,              strh r2,[r0]  ;SD:0x40052004 = 0xD928   (Key 2)
+  Data.Assemble ,              strh r4,[r3]  ;SD:0x40052000 = 0x0000   (Config register)
+  Data.Assemble ,              bkpt #0
+  Register.Set PC 0x20000000
+  Register.Set SP 0x20001000
+  Register.Set R0 0x40052004
+  Register.Set R1 0xC520
+  Register.Set R2 0xD928
+  Register.Set R3 0x40052000
+  Register.Set R4 0x0
+  Go.direct
+  WAIT !RUN()
+
+  Data.Set ST:0x20000000 %Long &tmp1
+  Data.Set ST:0x20000004 %Long &tmp2
+
+  RETURN
+  
+; --------------------------------------------------------------------------------
+; Try to unsecure a secured device
+ 
+Unsecure:
+   IF (Data.Long(EDBG:0x40000104)&0x08)==0x08
+   (
+     Data.Set EDBG:0x40000104 %Long (Data.Long(EDBG:0x40000104)&0xFFFFFFF7)
+   )
+  ; Print security state information
+  SYStem.Mode.Prepare
+  PRINT "MDM-AP Status Register is 0x" Data.Long(EDBG:0x40000100)
+
+  DIALOG.YESNO "Execute mass erase to unsecure chip?"
+  LOCAL &masserase
+  ENTRY &masserase
+  IF &masserase
+  (
+    ON.ERROR DEFault
+
+    ; Unsecure device
+    SYStem.Down
+    FLASH.UNSECUREerase
+    SYStem.Mode.Prepare
+    IF (Data.Long(EDBG:0x40000100)&0x04)==0x04
+    (
+      PRINT %ERROR "Unsecure failed, MDM-AP Status Register is 0x" Data.Long(EDBG:0x40000100)
+      SYStem.Down
+      ENDDO
+    )
+  )
+  ELSE
+    ENDDO
+
+  SYStem.Up
+
+  ; Disable watchdog
+  GOSUB DisableWatchdog
+
+  RETURN

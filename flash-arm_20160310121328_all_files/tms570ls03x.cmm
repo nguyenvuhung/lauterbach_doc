@@ -1,0 +1,116 @@
+; --------------------------------------------------------------------------------
+; @Title: Setup of TMS570LS03x internal flash
+;
+; @Description:
+; Script arguments:
+;
+;   DO tms570ls03x [AUTOECC=0|1] [PREPAREONLY]
+;
+;     AUTOECC default value is 1. If auto ECC generation is disabled with
+;             AUTOECC=0 then flash sectors are programmed without generating
+;             ECC. ECC sectors can be programmed separately or ECC sector
+;             programming can be omitted
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; List of TMS570LS03x derivatives and their configuration:
+;
+;                      Program   EEPROM
+;   CPU-Type            Flash     Flash   RAM
+; --------------------------------------------------------------------------------
+;   TMS570LS0332-PZ     256kB     16kB    32kB
+;
+; HINTS:
+;
+;   Flash programming algorithm is linked to address 0x08000000 and is not
+;   position independent. Code address of FLASH.TARGET command has not be
+;   changed.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: TMS570LS03*   
+; --------------------------------------------------------------------------------
+; $Rev: 2903 $
+; $Id: tms570ls03x.cmm 2903 2014-07-16 11:19:46Z kjmal $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &AutoECCGeneration
+  &AutoECCGeneration=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"AUTOECC=","1")
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    MAP.RESet
+
+    IF !CPUIS(TMS570LS03*)
+      SYStem.CPU TMS570LS03*
+
+    SYStem.Up
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+
+  IF &AutoECCGeneration!=0
+  (
+    ; Program flash
+    FLASH.Create  1. 0x00000000--0x00017FFF  0x2000 TARGET Byte 0.  ; Bank 0
+    FLASH.Create  1. 0x00018000--0x0001FFFF  0x8000 TARGET Byte 0.  ; Bank 0
+    FLASH.Create  1. 0x00020000--0x0003FFFF 0x20000 TARGET Byte 0.  ; Bank 0
+    ; EEPROM emulation flash
+    FLASH.Create  8. 0xF0200000--0xF0203FFF  0x1000 TARGET Byte 7.  ; Bank 7
+
+    FLASH.TARGET 0x08000000 0x08001000 0x2000 ~~/demo/arm/flash/byte_be/f021r4.bin
+  )
+  ELSE
+  (
+    ; Program flash
+    FLASH.Create  1. 0x00000000--0x00017FFF  0x2000 TARGET Byte 0. /EraseALIAS 0xF0400000--0xF0402FFF  ; Bank 0
+    FLASH.Create  1. 0x00018000--0x0001FFFF  0x8000 TARGET Byte 0. /EraseALIAS 0xF0403000--0xF0403FFF  ; Bank 0
+    FLASH.Create  1. 0x00020000--0x0003FFFF 0x20000 TARGET Byte 0. /EraseALIAS 0xF0404000--0xF0407FFF  ; Bank 0
+    ; Program flash ECC
+    FLASH.Create  1. 0xF0400000--0xF0402FFF   0x400 TARGET Byte 0. /EraseALIAS 0x00000000--0x00017FFF  ; Bank 0
+    FLASH.Create  1. 0xF0403000--0xF0403FFF  0x1000 TARGET Byte 0. /EraseALIAS 0x00018000--0x0001FFFF  ; Bank 0
+    FLASH.Create  1. 0xF0404000--0xF0407FFF  0x4000 TARGET Byte 0. /EraseALIAS 0x00020000--0x0003FFFF  ; Bank 0
+    ; EEPROM emulation flash
+    FLASH.Create  8. 0xF0200000--0xF0203FFF  0x1000 TARGET Byte 7. /EraseALIAS 0xF0100000--0xF01007FF  ; Bank 7
+    ; EEPROM emulation flash ECC
+    FLASH.Create  8. 0xF0100000--0xF01007FF   0x200 TARGET Byte 7. /EraseALIAS 0xF0200000--0xF0203FFF  ; Bank 7
+
+    FLASH.TARGET 0x08000000 0x08001000 0x2000 ~~/demo/arm/flash/byte_be/f021r4noecc.bin
+  )
+
+  FLASH.CLocK.AUTO
+
+  MAP.BUS16 0xF0400000--0xF04FFFFF
+  MAP.BUS16 0xF0100000--0xF013FFFF
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+  )
+
+  ENDDO

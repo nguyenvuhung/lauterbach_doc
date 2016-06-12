@@ -1,0 +1,72 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Analog Devices ADuCM301 internal flash.
+; 
+; @Description:
+; DO aducm301 [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/aducm301 PREPAREONLY
+;
+; Memory location:
+;
+;   Program flash starting at 0x00000000
+;   SRAM starting at          0x20000000
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ADuCM301
+; --------------------------------------------------------------------------------
+; $Rev: 2906 $
+; $Id: aducm301.cmm 2906 2014-07-16 15:09:36Z amerkle $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  ; --------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU ADUCM301
+    SYStem.Option.ResBreak OFF
+    SYStem.CONFIG.DEBUGPORTTYPE SWD
+    SYStem.JtagClock 1MHz
+    SYStem.Up
+  )
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  FLASH.Create 1. 0x00000000--0x0001FFFF 0x200 TARGET Long /KEEP 0x1FFEC--0x1FFFF
+  FLASH.TARGET 0x20000000 0x20000800 0x400 ~~/demo/arm/flash/long/aducm360.bin
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO

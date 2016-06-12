@@ -1,0 +1,49 @@
+; --------------------------------------------------------------------------------
+; @Title: Example Script for programming of ST STA2051 (Vespucci) internal flash
+;
+; @Description:
+; by T.Szurmant, ST Microelectronics
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: STA2051 
+; --------------------------------------------------------------------------------
+; $Id: sta2051.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+; --------------------------------------------------------------------------------
+; CPU setup
+IF SYStem.MODE()<5
+(
+  SYStem.RESet
+  SYStem.CPU ARM7TDMI
+   
+  SYStem.Option RESBREAK OFF 
+  SYStem.JtagClock 10MHz
+
+  SYStem.Up
+)
+      
+; --------------------------------------------------------------------------------
+; Flash declaration
+;
+; Tell the Debugger, where Flash is and what Type it has (target). The 
+; Target routines necessary to perform the Flash programming are in the 
+; binary file below. Please make sure str7.bin is located in the 
+; Lauterbach directory 
+
+FLASH.RESet
+FLASH.Create 1. 0x00000000++0x01fff TARGET Long 0x00000001  ; Bank 0 Sector 0
+FLASH.Create 1. 0x00002000++0x01fff TARGET Long 0x00000002  ; Bank 0 Sector 1
+FLASH.Create 1. 0x00004000++0x01fff TARGET Long 0x00000004  ; Bank 0 Sector 2
+FLASH.Create 1. 0x00006000++0x01fff TARGET Long 0x00000008  ; Bank 0 Sector 3
+FLASH.Create 1. 0x00008000++0x07fff TARGET Long 0x00000010  ; Bank 0 Sector 4
+FLASH.Create 1. 0x00010000++0x0ffff TARGET Long 0x00000020  ; Bank 0 Sector 5
+FLASH.Create 1. 0x00020000++0x0ffff TARGET Long 0x00000040  ; Bank 0 Sector 6
+FLASH.Create 1. 0x00030000++0x0ffff TARGET Long 0x00000080  ; Bank 0 Sector 7
+  
+FLASH.Create 2. 0x000C0000++0x01fff TARGET Long 0x00010000  ; Bank 1 Sector 0
+FLASH.Create 2. 0x000C2000++0x01fff TARGET Long 0x00020000  ; Bank 1 Sector 1
+   
+FLASH.TARGET 0x20000000 0x20001000 0x1000 ~~/demo/arm/flash/long/str7.bin
+  
+ENDDO  

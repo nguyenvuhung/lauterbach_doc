@@ -1,0 +1,81 @@
+; --------------------------------------------------------------------------------
+; @Title: QSD8650 NAND FLASH Programming Script
+; @Description:
+; NAND FLASH(SAMSUNG, K9F2G08) is connected CS0
+;
+; JTAG: ARM9+ARM11
+; IRAM: 0xC0000000
+; NAND FLASH Controller(CPU-specific): 0xA0A00000
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ARM926EJ-S
+; @Keywords: SAMSUNG K9F2G08 NAND
+; --------------------------------------------------------------------------------
+; $Id: qsd8650-nand2g08.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+
+  SYStem.RESet
+  SYStem.CPU ARM926EJ
+  SYStem.CONFIG.IRPRE 4.
+  SYStem.CONFIG.DRPRE 1.
+  SYStem.JtagClock RTCK
+
+  TrOnchip.Set UNDEF OFF
+  TrOnchip.Set PABORT OFF
+  TrOnchip.Set DABORT OFF
+
+  SYStem.Up
+
+//MMU Disable
+  PER.Set.simple C15:0x1 %Long 0x5317C      
+
+//Enable IMEM 0xC0000000
+  Data.Set ASD:0xA8500000 %LE %Long 0x1  
+
+//Freeze watchdog
+  Data.Set ASD:0xB8000110 %Long 0x00000001
+
+//Reset and release scorpion and SPSS
+  Data.Set ASD:0xa860020c %Long 0x00000014
+  Data.Set ASD:0xa860020c %Long 0x00000000
+
+//NAND_DEV0_CFG0: Address cycle :5 , row: 3cyc , col:2cyc
+  Data.Set ASD:0xA0A00020 %Long 0xAAD4001A
+
+//NAND_DEV0_CFG1:  8bits,  Enable Ecc
+  Data.Set ASD:0xA0A00024 %Long 0x4745C  
+  
+  Break.RESet
+  FLASHFILE.RESet
+  
+//FLASHFILE.CONFIG <<NAND Flash Controller Basement Address>> , ,
+  FLASHFILE.CONFIG 0xA0A00000 , ,
+
+//FLASHFILE.TARGET <<code range>> <<data range>> <<algorithm file>>
+  FLASHFILE.TARGET 0xC0000000++0x1FFF 0xC0002000++0x1FFF ~~/demo/arm/flash/byte/nand2g08_qsd8650.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+  //Erase NAND FLASH Main and Bad block inforamtion
+    FLASHFILE.Erase 0x0--0x7FFFFF 
+
+  //Skipped way 
+    FLASHFILE.LOAD.binary  * 0x0 
+    ;FLASHFILE.LOADSPARE * 0x0 
+   
+  //Reserved block area way
+    ;FLASHFILE.LOAD  * 0x0   /WriteBadBlocks
+    ;FLASHFILE.LOADSPARE *  0x0   /WriteBadBlocks  
+  )
+
+//Open the Main and SPARE Dump Windows
+;FLASHFILE.DUMP 0x0
+;FLASHFILE.DUMP /SPARE /TRACK
+
+  ENDDO

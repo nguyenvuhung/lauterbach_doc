@@ -1,0 +1,194 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of NXP LPC23xx internal flash.
+;
+; @Description:
+;
+; Script arguments:
+;
+;  DO lpc23xx [PREPAREONLY]
+;
+;   PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/lpc23xx PREPAREONLY
+;
+; List of LPC23xx derivatives and their configuration:
+;
+;   CPU-Type  FlashSize  UserFlash  RamSize
+;                (kB)      (kB)      (kB)
+; --------------------------------------------------------------------------------
+;   LPC2361       64.       64.        8.
+;   LPC2362      128.      128.       32.
+;   LPC2364      128.      128.        8.
+;   LPC2365      256.      256.       32.
+;   LPC2366      256.      256.       32.
+;   LPC2367      512.      504.       32.
+;   LPC2368      512.      504.       32.
+;   LPC2377      512.      504.       32.
+;   LPC2378      512.      504.       32.
+;   LPC2387      512.      504.       64.
+;   LPC2388      512.      504.       64.
+;
+; Boot flash size is 8 kB.
+;
+; HINTS:
+;
+;   With Trace32 software version build 17761 or higher and most recent
+;   flash support package FLASH.CLocK.AUTO can be used for automatic 
+;   flash clock measurement. With older Trace32 software flash module 
+;   input clock has to be set with FLASH.CLocK <freq> command. Flash 
+;   clock has to match System Clock Frequency (CCLK). 
+;
+;   Boot flash cannot be programmed or erased with builtin flash 
+;   algorithm. 
+;
+;   Data has to be loaded to flash alignment to 256 Byte boundaries.
+;
+;   Vector table checksum generation is done by script, so that it 
+;   can be used or switched off, as needed.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: LPC23*
+; --------------------------------------------------------------------------------
+; $Rev: 2903 $
+; $Id: lpc23xx.cmm 2903 2014-07-16 11:19:46Z kjmal $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+  
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU and start debugging
+  
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU LPC2368
+    SYStem.JtagClock RTCK
+    IF VERSION.BUILD()<20711.
+    (
+      SYStem.Option ResBreak OFF
+      SYStem.Option NOIRCHECK ON
+      SYStem.Option BUGFIXV4 ON
+    )
+    SYStem.Up
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  FLASH.CLocK AUTO
+  GOSUB FlashDeclaration &FlashSize &RAMSize
+  
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE 
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    ; Switch memory mapping to user flash mode, so that on-chip flash is 
+    ; mapped to interrupt vectors. Memory Mapping Control Register 
+    ; MEMMAP[1:0] = 01b
+    Data.Set 0xe01fc040 %Byte 0x01
+
+    ; Example for download 
+    FLASH.ReProgram.ALL /Erase
+    ; 1. Download file
+    Data.LOAD.auto *
+    ; 2. Checksum generation
+    Data.Set 0x14 %Long 0x0          ;Zero the reserved vector's spot
+    Data.SUM 0x0--0x1f /Long         ;Calculate checksum of all (other) vectors
+    Data.Set 0x14 %Long -Data.SUM()  ;Write back the 2's complement in reserved vector's spot
+    ; 3. Flash programming
+    FLASH.ReProgram.off
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on configuration 
+
+FlashDeclaration:
+  LOCAL &cpu
+  LOCAL &FlashSize
+  LOCAL &RAMSize
+
+  &cpu=CPU()
+  IF (("&cpu"=="LPC2387")||("&cpu"=="LPC2388"))
+  (
+    &FlashSize=512.
+    &RAMSize=64.
+  )
+  ELSE IF (("&cpu"=="LPC2367")||("&cpu"=="LPC2368")||("&cpu"=="LPC2377")||("&cpu"=="LPC2378"))
+  (
+    &FlashSize=512.
+    &RAMSize=32.
+  )
+  ELSE IF (("&cpu"=="LPC2365")||("&cpu"=="LPC2366"))
+  (
+    &FlashSize=256.
+    &RAMSize=32.
+  )
+  ELSE IF (("&cpu"=="LPC2362"))
+  (
+    &FlashSize=128.
+    &RAMSize=32.
+  )
+  ELSE IF (("&cpu"=="LPC2364"))
+  (
+    &FlashSize=128.
+    &RAMSize=8.
+  )
+  ELSE IF (("&cpu"=="LPC2361"))
+  (
+    &FlashSize=64.
+    &RAMSize=8.
+  )
+  ELSE 
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  IF &FlashSize==64.
+  (
+    FLASH.Create 1. 0x00000--0x07fff 0x1000 TARGET Long
+    FLASH.Create 1. 0x08000--0x0ffff 0x8000 TARGET Long 0x8000
+  )
+  ELSE IF &FlashSize==128.
+  (
+    FLASH.Create 1. 0x00000--0x07fff 0x1000 TARGET Long
+    FLASH.Create 1. 0x08000--0x1ffff 0x8000 TARGET Long 0x8000
+  )
+  ELSE IF &FlashSize==256.
+  (
+    FLASH.Create 1. 0x00000--0x07fff 0x1000 TARGET Long
+    FLASH.Create 1. 0x08000--0x3ffff 0x8000 TARGET Long 0x8000
+  )
+  ELSE IF &FlashSize==512.
+  (
+    FLASH.Create 1. 0x00000--0x07fff 0x1000 TARGET Long
+    FLASH.Create 1. 0x08000--0x77fff 0x8000 TARGET Long 0x8000
+    FLASH.Create 1. 0x78000--0x7dfff 0x1000 TARGET Long
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH configuration is not supported by the script"
+    ENDDO
+  )
+
+  FLASH.TARGET 0x40000000 0x40000800 0x1000 ~~/demo/arm/flash/long/lpc2130.bin
+  
+  RETURN

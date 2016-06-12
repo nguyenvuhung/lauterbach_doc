@@ -1,0 +1,99 @@
+; --------------------------------------------------------------------------------
+; @Title: TI AM3354 NAND FLASH Programming Script
+; @Description:
+; NAND FLASH(S34ML02G2) is connected to CS0 
+; 16-bit BCH ECC writing to the spare Area
+;
+; Internal SRAM    : 0x40300000
+; Command Register : 0x5000007C   
+; Address Register : 0x50000080  
+; Data Register    : 0x50000084
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: AM3354
+; @Keywords: Flash NAND
+; --------------------------------------------------------------------------------
+; $Id: am3354-nand.cmm 3390 2015-09-07 14:54:10Z jjeong $
+
+LOCAL &arg1
+ENTRY &arg1
+&arg1=STRing.UPpeR("&arg1")  // for example "PREPAREONLY"
+
+SYStem.CPU AM3354
+SYStem.Option ResBreak OFF
+SYStem.Up
+
+//disable cache & mmu
+  Data.Set C15:0x1 %Long 0xc50078
+
+//Disable watchdog
+  Data.Set A:0x44E35048 %Long  0xAAAA
+  Data.Set A:0x44E35048 %Long  0x5555
+
+//Enable OCM memory 
+  Data.Set A:44E0002C %Long 0x2  
+
+//Enable GPMC clock
+  Data.Set A:0x44E00030 %Long 0x2  
+
+//pin mux for NAND 8bit
+  Data.Set  A:0x44E10800 %Long 0x30 ;D0
+  Data.Set  A:0x44E10804 %Long 0x30 ;D1
+  Data.Set  A:0x44E10808 %Long 0x30 ;D2
+  Data.Set  A:0x44E1080C %Long 0x30 ;D3
+  Data.Set  A:0x44E10810 %Long 0x30 ;D4
+  Data.Set  A:0x44E10814 %Long 0x30 ;D5
+  Data.Set  A:0x44E10818 %Long 0x30 ;D6
+  Data.Set  A:0x44E1081C %Long 0x30 ;D7
+
+  Data.Set  A:0x44E1087C %Long 0x8  ;cs0
+  Data.Set  A:0x44E1089C %Long 0x8  ;cle
+  Data.Set  A:0x44E10890 %Long 0x8  ;ale
+  Data.Set  A:0x44E10894 %Long 0x8  ;REn
+
+  Data.Set  A:0x44E10870 %Long 0x30 ;R/B0n
+  Data.Set  A:0x44E10898 %Long 0x8  ;WEn
+
+//GPMC configuration
+  Data.Set A:0x50000010 %Long 0x00000008
+  Data.Set A:0x50000018 %Long 0x00000100
+  Data.Set A:0x5000001C %Long 0x00000200
+  Data.Set A:0x50000050 %Long 0x00000012
+
+  Data.Set A:0x50000078 %Long 0x00000000
+  Data.Set A:0x50000060 %Long 0x00000810 ; config1
+  Data.Set A:0x50000064 %Long 0x001e1e00 ; config2
+  Data.Set A:0x50000068 %Long 0x001e1e00 ; config3
+  Data.Set A:0x5000006C %Long 0x16051807 ; config4
+  Data.Set A:0x50000070 %Long 0x00151e1e ; config5
+  Data.Set A:0x50000074 %Long 0x16000f80 ; config6
+  Data.Set A:0x50000078 %Long 0x00000F48 ; enable the config
+
+//ECC  
+ Data.Set A:0x500001F8 %LE %Long 0x101     ; Enable  ECC engine, GPMI_ECC_CONTROL
+;Data.Set A:0x500001F4 %LE %LONG 0x10631   ; BCH-4bit
+;Data.Set A:0x500001F4 %LE %LONG 0x11631   ; BCH-8bit
+ Data.Set A:0x500001F4 %LE %Long 0x12631   ; BCH-16bit
+
+ FLASHFILE.RESet
+ FLASHFILE.CONFIG 0x5000007C 0x50000080 0x50000084
+ FLASHFILE.TARGET 0x40300000++0x1FFF 0x40302000++0x1FFF ~~/demo/arm/flash/byte/nand2g08xs128_tigpmcbch.bin  /KEEP /STACKSIZE 0x500
+
+ FLASHFILE.GETID
+
+//End of the test prepareonly
+IF "&arg1"=="PREPAREONLY"
+ENDDO
+
+//Read FLASH
+  FLASHFILE.DUMP 0x0
+
+//Erase FLASH 
+; FLASHFILE.ERASE 0x0--0xFFFFFF 
+
+//Write FLASH
+; FLASHFILE.LOAD  * 0x0 
+; FLASHFILE.LOAD  * 0x0  /ComPare   ;verify
+   
+ENDDO

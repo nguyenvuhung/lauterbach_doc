@@ -1,0 +1,139 @@
+; --------------------------------------------------------------------------------
+; @Title: Setup script for flash declaration of Infineon XMC1200 internal flash.
+;
+; @Description: 
+; Synopsis:
+;
+;   DO ~~/demo/arm/flash/xmc1200 [PREPAREONLY] [CPU=<cpu>]
+;
+; Description:
+;
+;   Script arguments are not case sensitive.
+;
+;   PREPAREONLY only declares flash but does not execute flash programming
+;
+;   CPU=<cpu> selects CPU derivative <cpu>. <cpu> can be CPU name out of the
+;             table listed below. For these derivatives the flash declaration
+;             is done by the script.
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/xmc1200 CPU=XMC1200-F0200 PREPAREONLY
+;
+; List of XMC1200 derivatives and their configuration:
+;
+;   CPU-Type              Flash
+;   ----------------------------
+;   XMC1200-F0200         200kB
+;   XMC1201-F0016          16kB
+;   XMC1201-F0032          32kB
+;   XMC1201-F0064          64kB
+;   XMC1201-F0128         128kB
+;   XMC1201-F0200         200kB
+;   XMC1202-X0016          16kB
+;   XMC1202-X0032          32kB
+;   XMC1202-X0064          64kB
+;   XMC1202-X0200         200kB
+;
+; Memories:
+;
+;   00000000--00000AFF BROM (user readable)
+;   00000B00--00001FFF BROM (non-user readable)
+;   10000000--10000DFF Flash Sector 0 (non-user readable)
+;   10000E00--10000FFF Flash Sector 0 (user readable)
+;   10001000--10032FFF Flash (200 kByte)
+;   20000000--20003FFF SRAM Block 0..3
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: XMC1200*
+; --------------------------------------------------------------------------------
+; $Id: xmc1200.cmm 3472 2015-10-28 14:47:29Z fcaron $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &param_cpu
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  ; --------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(XMC120*)
+      SYStem.CPU XMC120*
+
+    IF CABLE.TWOWIRE()
+      SYStem.CONFIG.DEBUGPORTTYPE SWD
+    ELSE
+      SYStem.CONFIG.DEBUGPORTTYPE JTAG
+
+    SYStem.CONFIG.CONNECTOR MIPI20T
+    SYStem.Option.ResBreak OFF
+    SYStem.Up
+  )
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+
+  FLASH.Create 1. 0x10000000--0x10000FFF 0x100 NOP Long      ; Sector 0
+
+  IF CPUIS(XMC120*0016)
+    FLASH.Create 2. 0x10001000--0x10004FFF 0x100 TARGET Long
+  ELSE IF CPUIS(XMC120*0032)
+    FLASH.Create 2. 0x10001000--0x10008FFF 0x100 TARGET Long
+  ELSE IF CPUIS(XMC120*0064)
+    FLASH.Create 2. 0x10001000--0x10010FFF 0x100 TARGET Long
+  ELSE IF CPUIS(XMC120*0128)
+    FLASH.Create 2. 0x10001000--0x10020FFF 0x100 TARGET Long
+  ELSE IF CPUIS(XMC120*0200)
+    FLASH.Create 2. 0x10001000--0x10032FFF 0x100 TARGET Long
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is not supported by the script"
+    ENDDO
+  )
+
+  FLASH.TARGET 0x20001000 0x20002000 0x400 ~~/demo/arm/flash/long/xmc1000.bin
+
+  RETURN

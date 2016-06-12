@@ -1,0 +1,105 @@
+; @Title: Arria 10 NAND FLASH Program script
+; @Description:
+; The MT29F1G08ABBEAH (Micron) is on the HPS_DIO9 (NAND_CE)
+;
+; SRAM: 0xFFE00000
+; NAND(controller) Regisetr Base: 0xffb80000
+; NAND(controller) Data Base: 0xffb90000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: arria*
+; @Keywords: Micron altera Flash NAND
+; $Id: arria10-nand1g08.cmm 3369 2015-08-14 10:26:47Z jjeong $
+;
+;Please check BSEL[2:0]
+;The boot select field specifies the boot source. It is read by the Boot ROM code on a cold or warm reset to determine the boot source. 
+;The HPS BSEL pins value are sampled upon deassertion of cold reset.
+;Value Description
+;0x0 Reserved
+;0x1 FPGA (HPS2FPGA Bridge)
+;0x2 NAND Flash (1.8v)
+;0x3 NAND Flash (3.0v)
+;0x4 SD/MMC External Transceiver (1.8v)
+;0x5 SD/MMC Internal Transceiver (3.0v)
+;0x6 QSPI Flash (1.8v)
+;0x7 QSPI Flash (3.0v)
+
+&NAND_REG_BASE=0xffb80000   ; NANDREGS
+&NAND_DATA_BASE=0xffb90000  ; NANDDATA
+&IDX_CTRL_ADDR=&NAND_DATA_BASE
+&IDX_DATA_ADDR=(&NAND_DATA_BASE+0x10)
+
+LOCAL &arg1
+ENTRY &arg1
+&arg1=STRing.UPpeR("&arg1")  // for example "PREPAREONLY"
+
+RESet
+SYStem.RESet
+SYStem.CPU ARRIA10SOC
+SYStem.CONFIG.DAPIRPOST 10.
+SYStem.CONFIG.DAPDRPOST 1.
+SYStem.Option ResBreak OFF
+CORE.ASSIGN 1.
+SYStem.Up
+
+; preboot - bootrom
+Go.direct 0xffe00054 /Onchip
+WAIT !STATE.RUN() 1.s
+IF STATE.RUN()
+  Break.direct
+
+Data.Set C15:0x1 %Long  (Data.Long(C15:0x1)&~(0x1005))  ; disable interrupt and mmu
+
+; disable Watchdog0/1
+Data.Set A:0xFFD05028 %Long Data.Long(A:0xFFD05028)|0x3
+
+GOSUB READ_ID_TEST
+
+  FLASHFILE.RESet
+//FLASHFILE.CONFIG  <nand reg addr>  <nand data addr>
+  FLASHFILE.CONFIG  &NAND_REG_BASE    &NAND_DATA_BASE
+  FLASHFILE.TARGET AZSD:0xffe00000++0x1FFF  AZSD:0xffe02000++0x1FFF   ~~/demo/arm/flash/byte/nand1g08_altera.bin   /KEEP
+
+  FLASHFILE.GETID
+
+//End of the test prepareonly
+IF "&arg1"=="PREPAREONLY"
+  ENDDO
+
+ FLASHFILE.DUMP 0x0                             ; Read NAND 
+
+ ;FLASHFILE.ERASE 0x0--0xFFFFF  /EraseBadBlock   ; Erase NAND
+
+ ;FLASHFILE.LOAD * 0x0                           ; Write NAND
+
+ ;FLASHFILE.DUMP 0x0   /spare                    ; Read NAND spare area
+
+ENDDO
+
+
+READ_ID_TEST:
+
+LOCAL &addr_mode
+
+&addr_mode=0x0C000000   ; MAP11 : 0==cmd, 1==addr , data read/write cycles
+
+GOSUB index_addr  &addr_mode      0x90    ; cmd reg
+
+GOSUB index_addr (&addr_mode|0x1)  0x0    ; addr reg
+
+Data.Set  &IDX_CTRL_ADDR %Long (&addr_mode|0x2)       ; data reg
+PRINT "read 1st : 0x" (Data.Long(A:&IDX_DATA_ADDR)&0xFF) " (Manufacture ID)"
+PRINT "read 2nd : 0x" (Data.Long(A:&IDX_DATA_ADDR)&0xFF) " (Device ID)"
+PRINT "read 3rd : 0x" (Data.Long(A:&IDX_DATA_ADDR)&0xFF)
+PRINT "read 4th : 0x" (Data.Long(A:&IDX_DATA_ADDR)&0xFF)
+
+return
+
+
+index_addr:
+LOCAL &addr &data
+ENTRY &addr &data
+Data.Set &IDX_CTRL_ADDR %Long &addr
+Data.Set &IDX_DATA_ADDR %Long &data
+RETURN

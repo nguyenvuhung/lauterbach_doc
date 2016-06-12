@@ -1,0 +1,215 @@
+; --------------------------------------------------------------------------------
+; @Title: QNX Demo for TRACE32 RTOS Debugger on Xilinx ZC702 Board
+; @Description: 
+;   
+;   This batchfile demonstrates the use of the RTOS Debugger for QNX
+;   
+;   The example is generated for the Xilinx ZC702 using an ICD.
+;   It will NOT run on any other board, but may be used as a template
+;   for others.
+;   
+;   U-Boot on board is used to initialize the board.
+;   QNX is downloaded to the board via ICD.
+;   
+; @Keywords: awareness, zynq
+; @Props: Template
+; @Author: DIE
+; @Board: ZC702
+; @Chip: ZYNQ-7000
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: qnx.cmm 7821 2014-10-29 11:06:58Z kjmal $
+
+
+; Starting QNX example with TRACE32:
+; - Connect USB-UART cable
+; - Start TRACE32
+; - TRACE32: "do qnx"
+; - Switch on the board
+; - Terminal: start "sieve_g"
+
+
+ SCREEN.ALways      ; permanent update for internal terminal window
+ ; screen.on        ; if you use external terminal
+
+
+; Debugger Reset
+
+ WinPAGE.RESet
+ AREA.RESet
+ WinPOS 0. 21. 70. 9. 0. 0. W000
+ AREA.view
+ 
+ PRINT "resetting..."
+
+ RESet
+
+
+; Open serial terminal window
+ 
+ &term="COM4"
+ PRINT "starting terminal on &term"
+ WinPOS 35. 0. ,,,,, TERM.view
+ TERM.METHOD COM &term 115200. 8 NONE 1STOP NONE
+ TERM.SIZE 80. 1000.
+ TERM.Mode VT100
+ TERM.SCROLL ON
+ TERM.view
+ 
+ 
+; Repower target
+
+ IF STATE.POWER()
+ (
+    PRINT "please switch off power!"
+    WAIT !STATE.POWER()
+ )
+ PRINT "please switch on power!"
+ WAIT STATE.POWER()
+ 
+
+; Initialize Target
+
+ ; let bootloader initialize everything
+ PRINT "booting target..."
+ WAIT 8.s
+ 
+
+; Initializing Debugger
+
+ PRINT "initializing debugger..."
+
+ SYStem.CPU ZYNQ-7000
+
+ SYStem.CONFIG DAPIRPRE 6.
+ SYStem.CONFIG DAPIRPOST 0.
+ SYStem.CONFIG DAPDRPRE 1.
+ SYStem.CONFIG DAPDRPOST 0.
+ 
+ SYStem.Option DACR ON          ; give Debugger global write permissions
+ TrOnchip.Set DABORT OFF        ; used by PikeOS for page miss!
+ TrOnchip.Set PABORT OFF        ; used by PikeOS for page miss!
+ TrOnchip.Set UNDEF OFF         ; my be used by PikeOS for FPU detection
+ TrOnchip.Set RESet OFF
+
+ SYStem.Option MMUSPACES ON     ; enable space ids to virtual addresses
+ 
+ MAP.DenyAccess 0x80000000--0x9fffffff  ; prevent bus error
+ 
+ SYStem.Up
+ 
+ SETUP.IMASKASM ON          ; lock interrupts while single stepping
+ 
+ Register.RESet
+ CORE.select 0
+ Register.RESet
+ 
+ 
+; Open a Code Window -- we like to see something
+
+ WinPOS 0. 0. 75. 20.
+ List.auto
+ wintop TERM.view
+ 
+
+; Download QNX IFS
+
+ PRINT "loading QNX image..."
+ Data.LOAD.Elf bsp-xilinx-zynq-zc702.elf
+
+
+; if you want to debug the startup
+ ;Data.LOAD.Elf startup-xzynq-zc702.sym /nocode
+ ;TRANSlation.COMMON 0x0--0xffffffff
+ ;stop
+ 
+
+; Load the symbols of procnto
+ PRINT "loading procnto symbols..."
+ Data.LOAD.Elf procnto-smp-instr.sym /NoCODE 
+
+
+; Configure ETM or STM trace probe
+ ;print "configuring trace probe..."
+ ;do trace.cmm
+ 
+
+; Run over MMU initialization
+
+ Break.Set _main /Program /Onchip   ; use onchip because of virtual address
+ Go
+ PRINT "initilizing QNX..."
+ WAIT !run()
+ Break.Delete _main
+ 
+
+; Declare the MMU format to the debugger
+ PRINT "initializing debugger MMU..."
+ ;MMU.FORMAT QNX
+ MMU.SCAN                                   ; scan initial kernel tables
+ TRANSlation.COMMON 0xe0000000--0xffffffff  ; kernel area is common for all MMU space ids
+ TRANSlation.TableWalk ON   ; debugger uses a table walk to decode virtual addresses
+ TRANSlation.ON             ; switch on debugger(!) address translation 
+ 
+
+; Initialize QNX Support
+
+ PRINT "initializing QNX support..."
+ TASK.CONFIG ~~/demo/arm/kernel/qnx/qnx.t32     ; loads QNX awareness
+ MENU.ReProgram ~~/demo/arm/kernel/qnx/qnx.men  ; loads QNX menu
+ HELP.FILTER.Add rtosqnx    ; add QNX awareness manual to help system
+ 
+ TASK.sYmbol.Option MMUSCAN OFF  ; not necessary with tablewalk
+
+ ; switch on autoloader
+ sYmbol.AutoLoad.CHECKQNX "do ~~/demo/arm/kernel/qnx/autoload "
+
+ ; Group kernel area to be displayed with red bar
+ GROUP.Create "kernel" 0xfc000000--0xffffffff /RED
+
+ ; activate autoloader for processes:
+ TASK.sYmbol.Option AutoLoad Process
+ 
+ 
+; adapt source paths
+ &ppd=OS.PPD()
+ sYmbol.SourcePATH.Translate "C:\ide-4.7-workspace\" "&ppd\workspace\"
+ 
+
+; Now let's boot and start QNX!
+ 
+ wintop TERM.view        ; set terminal window to front
+ Go
+ PRINT "starting QNX... (please wait)"
+ WAIT 5.s       ; let it run for 3 seconds
+ ;Break
+ 
+ PRINT "done."
+ 
+ ENDDO
+ 
+
+; --------------------------------------------------------------------------------
+; Application Debugging
+; e.g. "sieve_g"
+; --------------------------------------------------------------------------------
+
+ PRINT "please start 'sieve_g'"
+
+ ; script based
+   ; using the script based application debugging
+   ; gives more control over the single commands
+   ; see file "app_debug.cmm"
+   
+   ;do ~~/demo/arm/kernel/qnx/app_debug sieve_g
+   
+ ; process watch system
+   ; the process watch system automates the actions
+   ; for application debugging
+   
+   WinPOS 55. 24. 40. 4.
+   TASK.Watch.View  "sieve_g"
+   Go
+
+ENDDO
+ 

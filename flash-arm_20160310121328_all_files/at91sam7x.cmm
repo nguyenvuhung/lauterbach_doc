@@ -1,0 +1,132 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Atmel AT91SAM7X internal flash. 
+;
+; @Description:
+; Script arguments:
+;
+;   DO at91sam7x [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/at91sam7x PREPAREONLY
+; 
+; List of AT91SAM7X derivatives and their configuration:
+;
+; CPU-Type        FlashSize   Pagesize  SRAM size  Algorithm
+;                  (Byte)      (Byte)     (Byte)
+; --------------------------------------------------------------------------------
+; AT91SAM7X128    0x20000      0x100      0x8000   efcs2.bin
+; AT91SAM7XC128   0x20000      0x100      0x8000   efcs2.bin
+; AT91SAM7X256    0x40000      0x100     0x10000   efcs2.bin
+; AT91SAM7XC256   0x40000      0x100     0x10000   efcs2.bin
+; AT91SAM7X512    0x80000      0x100     0x20000   efcs2.bin
+; AT91SAM7XC512   0x80000      0x100     0x20000   efcs2.bin
+;
+; The flash is divided into pages of 256 Byte. 
+;
+; The internal flash is located at 0x00100000.
+; The internal SRAM is located at  0x00200000.
+;
+; Beginning at address 0x0 is located ínternal flash before remap command 
+; or internal SRAM after remap command.
+;
+; HINTS:
+;
+;   Locked pages can be unlocked with FLASH.UNLOCK command and can be 
+;   locked again with FLASH.LOCK command.
+;
+;   Watchdog is critical for flash programming. The flash algorithm is 
+;   serving the watchdog if the watchdog is not used in window mode.
+;
+;   If the watchdog is setup to window mode by a running application 
+;   the watchdog should be either disabled after first power-up or the 
+;   board should be power-up before every flash programming. If the 
+;   watchdog is disabled after power-up it cannot be enabled again by 
+;   the application because WDT_MR register is write once. Please see 
+;   below the command to disable the watchdog.
+;
+;   GPNVM bit values can be changed via at91sam7-nvm.cmm script.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: AT91SAM7*
+; --------------------------------------------------------------------------------
+; $Rev: 2903 $
+; $Id: at91sam7x.cmm 2903 2014-07-16 11:19:46Z kjmal $
+
+LOCAL &parameters
+ENTRY %LINE &parameters
+
+LOCAL &param_prepareonly
+&param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+; --------------------------------------------------------------------------------
+; Configuration information
+;
+; Setup the configuration information out of the table above.
+;
+; Example for AT91SAM7X256
+&flashstart=0x00100000
+&flashsize=0x40000
+&pagesize=0x100
+&flashalgorithm="~~/demo/arm/flash/long/efcs2.bin"
+
+; --------------------------------------------------------------------------------
+; Setup CPU
+IF SYStem.MODE()<5
+(
+  SYStem.RESet
+  SYStem.CPU AT91SAM7X256
+  SYStem.Up
+)
+  
+; Disable watchdog for flash programming if watchdog may be used in 
+; window mode.
+;DATA.SET 0xFFFFFD44 %LONG DATA.LONG(ASD:0xFFFFFD44)|0x00008000
+
+; --------------------------------------------------------------------------------
+; Flash declaration
+FLASH.RESet
+IF &flashsize<=0x40000
+(
+  FLASH.Create 1. &flashstart++(&flashsize-1) &pagesize TARGET Long
+)
+ELSE
+(
+  ; Bank EFC0
+  FLASH.Create 1. &flashstart++0x3ffff &pagesize TARGET Long 0.
+  ; Bank EFC1
+  FLASH.Create 2. (&flashstart+0x40000)++(&flashsize-0x40000-1) &pagesize TARGET Long 1.
+)
+FLASH.TARGET 0x00200000 0x00200800 0x1000 &flashalgorithm
+
+; Flash script ends here if called with parameter PREPAREONLY
+IF &param_prepareonly
+  ENDDO PREPAREDONE
+
+; --------------------------------------------------------------------------------
+; Flash NVM bit programming example
+DIALOG.YESNO "Program flash NVM bits"
+ENTRY &prognvm
+IF &prognvm 
+(
+  DO ~~~~/at91sam7-nvm
+)
+
+; --------------------------------------------------------------------------------
+; Flash programming example
+DIALOG.YESNO "Program flash memory?"
+ENTRY &progflash
+IF !&progflash 
+  ENDDO
+
+; Unlock locked pages if necessary
+;FLASH.UNLOCK ALL
+
+FLASH.Erase.ALL
+FLASH.Program.ALL
+Data.LOAD.auto * /Long
+FLASH.Program.off
+
+ENDDO

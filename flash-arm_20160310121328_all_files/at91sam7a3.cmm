@@ -1,0 +1,94 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Atmel AT91SAM7A3 internal flash. 
+; 
+; @Description: 
+; Script arguments:
+;
+;   DO at91sam7a3 [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/at91sam7a3 PREPAREONLY
+;
+; The flash is divided into pages of 256 Byte. 
+;
+; 256 kByte internal flash at 0x00100000
+; 32 kByte internal SRAM at   0x00200000
+;
+; Beginning at address 0x0 is located ínternal flash before remap command 
+; or internal SRAM after remap command.
+;
+; HINTS:
+;
+;   Locked pages can be unlocked with FLASH.UNLOCK command and can be 
+;   locked again with FLASH.LOCK command.
+;
+;   Watchdog is critical for flash programming. The flash algorithm is 
+;   serving the watchdog if the watchdog is not used in window mode.
+;
+;   If the watchdog is setup to window mode by a running application 
+;   the watchdog should be either disbaled after first power-up or the 
+;   board should be power-up before every flash programming. If the 
+;   watchdog is disabled after power-up it cannot be enabled again by 
+;   the application because WDT_MR register is write once. Please see 
+;   below the command to disable the watchdog.
+;
+; 
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: AT91SAM7A3
+; --------------------------------------------------------------------------------
+; $Id: at91sam7a3.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+; WRD - 13.03.2006
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+; --------------------------------------------------------------------------------
+; Configuration information
+;
+&flashstart=0x00100000
+
+; --------------------------------------------------------------------------------
+; Setup CPU
+IF SYStem.MODE()<5
+(
+  SYStem.RESet
+  SYStem.CPU AT91SAM7A3
+  SYStem.Up
+)
+  
+; Disable watchdog for flash programming if watchdog may be used in 
+; window mode.
+;DATA.SET 0xFFFFFD44 %LONG DATA.LONG(ASD:0xFFFFFD44)|0x00008000
+
+; --------------------------------------------------------------------------------
+; Flash declaration
+FLASH.RESet
+FLASH.Create 1. &flashstart++0x3ffff 0x100 TARGET Long
+FLASH.TARGET 0x00200000 0x00200800 0x1000 ~~/demo/arm/flash/long/efc.bin
+
+; Flash script ends here if called with parameter PREPAREONLY
+IF &param_prepareonly
+  ENDDO PREPAREDONE
+; --------------------------------------------------------------------------------
+; Flash programming example
+DIALOG.YESNO "Program flash memory?"
+ENTRY &progflash
+IF !&progflash 
+  ENDDO
+
+; Unlock locked pages if necessary
+;FLASH.UNLOCK ALL
+
+FLASH.Erase.ALL
+FLASH.Program.ALL
+Data.LOAD.auto * /Long
+FLASH.Program.off
+
+ENDDO

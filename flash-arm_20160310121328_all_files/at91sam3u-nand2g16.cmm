@@ -1,0 +1,78 @@
+; --------------------------------------------------------------------------------
+; @Title: AT91SAM3U4E NAND FLASH Programming Script
+; @Description:
+; NAND FLASH(MICRON,29F2G16) is connected NCS1(PC 12)
+; 
+; Internal SRAM    : 0x20000000
+; Command Register : 0x61400000  
+; Address Register : 0x61200000
+; Data Register    : 0x61000000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: AT91SAM3U4E
+; @Keywords: MICRON 29F2G16 flash NAND
+; --------------------------------------------------------------------------------
+; $Id: at91sam3u-nand2g16.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  SYStem.CPU AT91SAM3U4E
+  SYStem.Up
+
+//PIO block B
+  Data.Set SD:0x400E0E04 %LE %Long 0xFFFFFFFF ; Disable all port B
+  Data.Set SD:0x400E0E00 %LE %Long 0x0100003F ; Enable port B for NAND pin
+  Data.Set SD:0x400E0E70 %LE %Long 0x000001C0 ; Peripheral A selected
+
+//PIO block C
+  Data.Set SD:0x400E1004 %LE %Long 0xFFFFFFFF ; Disable all port C
+  Data.Set SD:0x400E1000 %LE %Long 0xFC0E7000 ; Enable port C for NAND pin
+  Data.Set SD:0x400E1014 %LE %Long 0xFFFFFFFF ; Output Disable all Port C
+  Data.Set SD:0x400E1010 %LE %Long 0x00001000 ; Enable Output Port C (NAND CS)
+  Data.Set SD:0x400E1034 %LE %Long 0x00001000 ; Clear Output Data (NAND CS low)
+  Data.Set SD:0x400E1060 %LE %Long 0x00001000 ; Pull-up Diable NAND CS
+
+  Data.Set SD:0x400E1070 %LE %Long 0x00000000 ; Peripheral A selected
+  Data.Set SD:0x400E0410 %LE %Long 0x00000B00 ; check 48 PMC Peripheral Clock Enable Register
+
+//CS1 Timing setting
+  Data.Set SD:0x400E0084 %LE %Long 0x01000100
+  Data.Set SD:0x400E0088 %LE %Long 0x04030302
+  Data.Set SD:0x400E008C %LE %Long 0x00070004
+  Data.Set SD:0x400E0090 %LE %Long 0x82010121
+  Data.Set SD:0x400E0094 %LE %Long 0x00001003
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.config <Cmd_reg>  <Addr_reg>  <Data_reg>
+  FLASHFILE.CONFIG 0x61400000 0x61200000  0x61000000
+
+// FLASHFILE.TARGET <code range>        <data range>           <Algorithm file>
+  FLASHFILE.TARGET 0x20000000++0x1FFF 0x20002000++0x1FFF ~~/demo/arm/flash/word/nand2g16_cortexm3.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Put a list of bad blocks into area window for 2Gbit (256MB) size
+  FLASHFILE.GETBADBLOCK 0x0--0xFFFFFFF
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+  //Erase NAND FLASH Main and Bad block inforamtion
+    FLASHFILE.Erase 0x0--0xFFFFFFF 
+
+  //Skipped way 
+    FLASHFILE.LOAD.binary  * 0x0 
+    ;FLASHFILE.LOADSPARE * 0x0 
+   
+  //Reserved block area way
+    ;FLASHFILE.LOAD  * 0x0   /WriteBadBlocks
+    ;FLASHFILE.LOADSPARE *  0x0   /WriteBadBlocks  
+  )
+//Open the Dump Windows
+  ;FLASHFILE.DUMP 0x0
+
+ENDDO 

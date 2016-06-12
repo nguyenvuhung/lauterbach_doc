@@ -1,0 +1,97 @@
+; --------------------------------------------------------------------------------
+; @Title: TWR-VF65GS10 VYBRID TOWER SYSTEM MODULE NAND FLASH Program script
+;
+; @Description:
+; NAND (MT29F16ABAEA,MICRON) is connected to CE0
+; SRAM: 0x3F001000
+; NFC Base Register Address : 0x400E0000  
+; NFC BufferRAM(IO) Address : 0x400E0000  
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: VF7*
+; @Board: TWR-VF65GS10
+; @Keywords: MT29F16ABAEA MICRON NAND
+; --------------------------------------------------------------------------------
+; $Id: vybrid-nand2g16.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+// Basic settings for system.up
+  RESet
+  SYStem.CPU VF7xx-CA5
+  ETM.OFF
+  SYStem.CONFIG.CORE 1. 1.
+  SYStem.Up
+
+  PER.Set.simple C15:0x1 %LE %Long  (Data.Long(C15:0x1)&~(0x5))  ; disable interrupt and mmu
+
+//CCM config
+  Data.Set A:0x4006B048 %LE %Long 0xFFFFFFFF
+  Data.Set A:0x4006B04C %LE %Long 0xFFFFFFFF
+  Data.Set A:0x4006B008 %LE %Long 0x01000000   
+  Data.Set A:0x4006b068 %LE %Long 0x3         ;NFC module
+  Data.Set A:0x4006B000 %LE %Long 0x11057     ;CCM Control Register (CCM_CCR)
+  Data.Set A:0x4006b008 %LE %Long 0x10040824  ;CCM Clock Switcher Register (CCM_CCSR)
+  Data.Set A:0x4006B010 %LE %Long 0x00002000
+  Data.Set A:0x4006b018 %LE %Long 0x2210 
+  Data.Set A:0x4006b01C %LE %Long 0x6000
+  Data.Set A:0x4006b038 %LE %Long 0x0A0001
+
+  GOSUB IOMUX_NAND_config
+
+//NFC_config
+  Data.Set A:0x400E3F00 %LE %LE %Long 0x30FF0000
+  Data.Set A:0x400E3F08 %LE %LE %Long 0x00        //COL addr
+  Data.Set A:0x400E3F0C %LE %LE %Long 0x11000000  //Chip Sel & Row addr
+  Data.Set A:0x400E3F2C %LE %LE %Long 0x840      ; Sector Size, (Sector Size)*PageCnt= Real Page Size
+  Data.Set A:0x400E3F30 %LE %LE %Long 0x0EFF81   ; ECC=32-error(60Bytes), BootMode=0, 16bit , PageCnt=1 
+
+	Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.CONFIG <NFC Base> <0x0> <NFC BufferRAM(IO) Address> <CS#>
+  FLASHFILE.CONFIG 0x400E0000  0x0  0x400E0000                   0
+
+//FLASHFILE.TARGET <Code_range>        <Data_range>          <Algorithm file>
+  FLASHFILE.TARGET 0x3f001000++0x1FFF  0x3f004000++0x41FF    ~~/demo/arm/flash/word/nand2g16_vybrid.bin /KEEP
+ 
+  FLASHFILE.GETID
+
+  FLASHFILE.DUMP 0x0                             ; Read NAND 
+
+ ;FLASHFILE.ERASE 0x0--0xFFFFF  /EraseBadBlock   ; Erase NAND
+
+ ;FLASHFILE.LOAD * 0x0                           ; Write NAND
+
+ ;FLASHFILE.DUMP 0x0   /spare                    ; Read NAND spare area
+
+ENDDO
+
+IOMUX_NAND_config:
+
+  Data.Set A:0x4004817c %LE %Long 0x5031E2  ;PTB25, NAND_CE0
+  Data.Set A:0x40048184 %LE %Long 0x6031E2  ;PTB27, NAND_RE 
+  Data.Set A:0x40048178 %LE %Long 0x5031E2  ;PTB24, NAND_WE
+
+  Data.Set A:0x4004818C %LE %Long 0x5031E1  ;PTC26, NAND_RB
+  Data.Set A:0x40048190 %LE %Long 0x6031E2  ;PTC27, NAND_ALE
+  Data.Set A:0x40048194 %LE %Long 0x6031E2  ;PTC28, NAND_CLE
+
+  Data.Set A:0x400480FC %LE %Long 0x2031E3  ;PTD31, NAND_IO15
+  Data.Set A:0x40048100 %LE %Long 0x2031E3  ;PTD30
+  Data.Set A:0x40048104 %LE %Long 0x2031E3  ;PTD29
+  Data.Set A:0x40048108 %LE %Long 0x2031E3  ;PTD28
+  Data.Set A:0x4004810C %LE %Long 0x2031E3  ;PTD27
+  Data.Set A:0x40048110 %LE %Long 0x2031E3  ;PTD26
+  Data.Set A:0x40048114 %LE %Long 0x2031E3  ;PTD25
+  Data.Set A:0x40048118 %LE %Long 0x2031E3  ;PTD24
+  Data.Set A:0x4004811C %LE %Long 0x2031E3  ;PTD23
+  Data.Set A:0x40048120 %LE %Long 0x2031E3  ;PTD22
+  Data.Set A:0x40048124 %LE %Long 0x2031E3  ;PTD21
+  Data.Set A:0x40048128 %LE %Long 0x2031E3  ;PTD20
+  Data.Set A:0x4004812C %LE %Long 0x2031E3  ;PTD19
+  Data.Set A:0x40048130 %LE %Long 0x2031E3  ;PTD18
+  Data.Set A:0x40048134 %LE %Long 0x2031E3  ;PTD17
+  Data.Set A:0x40048138 %LE %Long 0x2031E3  ;PTD16, NAND_IO0
+
+RETURN

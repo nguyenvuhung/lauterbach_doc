@@ -1,0 +1,253 @@
+; --------------------------------------------------------------------------------
+; @Title: BCM4708x Serial FLASH Programming Script
+; @Description:
+; Serial FLASH (Numonyx, N25Q256) is connected the SPI0 
+; (Serial Peripheral Interface)
+;
+; SDRAM    : 0x100000
+; Serial FLASH Controller Addr: 0x18029000  
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: BCM47081
+; @Keywords: Numonyx N25Q256 FLASH SPI
+; --------------------------------------------------------------------------------
+; $Id: bcm47081-spi4b64.cmm 2881 2014-07-07 10:35:48Z kjmal $
+  
+SYStem.CPU BCM47081
+
+SYStem.Mode.Attach
+
+IF run()
+Break.direct
+
+PER.Set.simple C15:0x1 %Long 00C5287A
+
+Data.Set AZSD:0x18029200 %LE %Long 0x0A   ;SPCR0_LSB  Serial Clock, 10Mhz
+
+Data.Set AZSD:0x18029008 %LE %Long 0x1    ;SPI by MSPI not BSPI
+Data.Set AZSD:0x18029204 %LE %Long 0xA3   ;8bits transfer, CPOL=1, CPHA=1
+
+Data.Set AZSD:0x18029210 %LE %Long 0x0    ;new qp
+Data.Set AZSD:0x18029214 %LE %Long 0x7    ;end qp
+
+//FLASH READ ID TEST
+AREA.CLEAR
+AREA.view
+GOSUB READ_ID_TEST
+DIALOG.YESNO "the flash id is correct on AREA window?"
+ENTRY &result
+IF !&result
+(
+PRINT "pls, check your register configuration to enable your flash controller"
+ENDDO
+)
+
+//S(D)RAM TEST for algorithm file
+GOSUB SDRAM_INIT
+Data.Test 0x100000++0x7FFF  /Prime ;s(d)ram test
+IF FOUND()
+( 
+PRINT "s(d)ram is NOT initialized around 0x" ADDRESS.OFFSET(TRACK.ADDRESS())
+ENDDO
+)
+
+programFlash:
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  FLASHFILE.CONFIG  0x18029000  0x0 0x0
+
+// FLASHFILE.TARGET <<code range>>    <<data range>>    <<algorithm file>>
+  FLASHFILE.TARGET 0x100000++0x3FFF  0x104000++0x41FF    ~~/demo/arm/flash/byte/spi4b64_bcm4708x.bin   /KEEP
+
+  FLASHFILE.GETID
+  FLASHFILE.DUMP 0x0
+
+  ;FLASHFILE.unlock 0x0--0xFFFFFF
+  ;FLASHFILE.erase 0x0--0xFFFFF
+  ;FLASHFILE.load * 0x0
+  ;FLASHFILE.load * 0x0  /ComPare
+ENDDO
+
+READ_ID_TEST:
+
+//write
+Data.Set AZSD:0x18029240 %LE %Long 0x9F  ;tx
+Data.Set AZSD:0x18029248 %LE %Long 0x01  ;tx
+Data.Set AZSD:0x18029250 %LE %Long 0x02  ;tx
+Data.Set AZSD:0x18029258 %LE %Long 0x03  ;tx
+
+Data.Set AZSD:0x18029340 %LE %Long 0xC0  ;cmd
+Data.Set AZSD:0x18029344 %LE %Long 0xC0  ;cmd
+Data.Set AZSD:0x18029348 %LE %Long 0xC0  ;cmd
+Data.Set AZSD:0x1802934C %LE %Long 0xC0  ;cmd
+Data.Set AZSD:0x18029350 %LE %Long 0xC0  ;cmd
+Data.Set AZSD:0x18029358 %LE %Long 0xC0  ;cmd
+
+Data.Set AZSD:0x18029210 %LE %Long 0x0  ;new qp
+Data.Set AZSD:0x18029214 %LE %Long 0x3  ;end qp
+
+Data.Set AZSD:0x18029218 %LE %Long 0x40  ; QSPI_MSPI_SPCR2  //enable
+
+//Read
+PRINT "Read 1st = 0x" Data.Long(A:0x180292C4)
+PRINT "Read 2nd = 0x" Data.Long(A:0x180292CC) " (Manufacture ID)"
+PRINT "Read 3rd = 0x" Data.Long(A:0x180292D4) " (Device ID)"
+PRINT "Read 4th = 0x" Data.Long(A:0x180292DC)
+
+RETURN
+
+//ddr3_init_tab_1333
+SDRAM_INIT:
+
+Data.Set 0x18108408 %LE %Long 0x3
+Data.Set 0x18108800 %LE %Long 0x0
+Data.Set 0x18108408 %LE %Long 0x1
+Data.Set 0x18109408 %LE %Long 0x3
+Data.Set 0x18109800 %LE %Long 0x0
+Data.Set 0x18109408 %LE %Long 0x1
+Data.Set 0x18108408 %LE %Long 0x1900001
+//print "DDR PHY is up"
+Data.Set 0x18010814 %LE %Long 0x10
+//print "DDR PHY is locked"
+Data.Set 0x18010b60 %LE %Long 0x2
+Data.Set 0x18010bac %LE %Long 0x3
+Data.Set 0x1801083c %LE %Long 0x100000
+Data.Set 0x18010848 %LE %Long 0x101
+Data.Set 0x18010848 %LE %Long 0x8000101
+Data.Set 0x18010038 %LE %Long 0x5051001
+Data.Set 0x1801003c %LE %Long 0xa0a05
+Data.Set 0x18010090 %LE %Long 0x1000000
+Data.Set 0x18010094 %LE %Long 0x10000000
+Data.Set 0x18010098 %LE %Long 0x100400
+Data.Set 0x1801009c %LE %Long 0x400
+Data.Set 0x180100a0 %LE %Long 0x100
+Data.Set 0x180100a8 %LE %Long 0x1
+Data.Set 0x180100f4 %LE %Long 0x10100
+Data.Set 0x18010138 %LE %Long 0x1000200
+Data.Set 0x1801013c %LE %Long 0x2000040
+Data.Set 0x18010140 %LE %Long 0x400100
+Data.Set 0x18010144 %LE %Long 0x200
+Data.Set 0x1801014c %LE %Long 0x1ffff0a
+Data.Set 0x18010150 %LE %Long 0x1010101
+Data.Set 0x18010154 %LE %Long 0x3010101
+Data.Set 0x18010158 %LE %Long 0x1000003
+Data.Set 0x1801015c %LE %Long 0x10c
+Data.Set 0x18010160 %LE %Long 0x10000
+Data.Set 0x180101c0 %LE %Long 0x200
+Data.Set 0x180101d0 %LE %Long 0x19000000
+Data.Set 0x180101d4 %LE %Long 0x28
+Data.Set 0x180101dc %LE %Long 0x10001
+Data.Set 0x180101e0 %LE %Long 0x10001
+Data.Set 0x180101e4 %LE %Long 0x10001
+Data.Set 0x180101e8 %LE %Long 0x10001
+Data.Set 0x180101ec %LE %Long 0x10001
+Data.Set 0x18010208 %LE %Long 0x1
+Data.Set 0x1801022c %LE %Long 0x1
+Data.Set 0x18010250 %LE %Long 0xffff0001
+Data.Set 0x18010254 %LE %Long 0xffff00
+Data.Set 0x18010258 %LE %Long 0xffff
+Data.Set 0x18010260 %LE %Long 0x3030303
+Data.Set 0x18010264 %LE %Long 0x3030303
+Data.Set 0x18010270 %LE %Long 0x2006400
+Data.Set 0x18010274 %LE %Long 0x2020202
+Data.Set 0x18010278 %LE %Long 0x2020202
+Data.Set 0x18010280 %LE %Long 0x1020202
+Data.Set 0x18010284 %LE %Long 0x1010064
+Data.Set 0x18010288 %LE %Long 0x1010101
+Data.Set 0x1801028c %LE %Long 0x1010101
+Data.Set 0x18010294 %LE %Long 0x20101
+Data.Set 0x18010298 %LE %Long 0x64
+Data.Set 0x180102a0 %LE %Long 0xa0a00
+Data.Set 0x180102a8 %LE %Long 0x2000200
+Data.Set 0x180102ac %LE %Long 0x2000200
+Data.Set 0x180102bc %LE %Long 0x2000200
+Data.Set 0x180102c0 %LE %Long 0x2000200
+Data.Set 0x180102d0 %LE %Long 0x80000100
+Data.Set 0x180102d4 %LE %Long 0x4070303
+Data.Set 0x180102d8 %LE %Long 0xa
+Data.Set 0x180102e4 %LE %Long 0x10ffff
+Data.Set 0x180102ec %LE %Long 0xf
+Data.Set 0x18010308 %LE %Long 0x204
+Data.Set 0x18010334 %LE %Long 0x40
+Data.Set 0x18010000 %LE %Long 0x600
+Data.Set 0x1801000c %LE %Long 0x1046b
+Data.Set 0x18010010 %LE %Long 0x28b0b
+Data.Set 0x18010014 %LE %Long 0xc050c00
+Data.Set 0x18010018 %LE %Long 0x4040405
+Data.Set 0x1801001c %LE %Long 0x5040e14
+Data.Set 0x18010020 %LE %Long 0x40e1404
+Data.Set 0x18010024 %LE %Long 0xc040405
+Data.Set 0x18010028 %LE %Long 0x3005b68
+Data.Set 0x1801002c %LE %Long 0xc040404
+Data.Set 0x18010030 %LE %Long 0x3005b68
+Data.Set 0x18010034 %LE %Long 0x1000004
+Data.Set 0x18010040 %LE %Long 0x3000200
+Data.Set 0x18010044 %LE %Long 0xf0f
+Data.Set 0x18010048 %LE %Long 0x5050000
+Data.Set 0x18010050 %LE %Long 0x7801
+Data.Set 0x18010054 %LE %Long 0x780a20
+Data.Set 0x18010058 %LE %Long 0x50a20
+Data.Set 0x1801005c %LE %Long 0x300
+Data.Set 0x18010060 %LE %Long 0xa0003
+Data.Set 0x18010064 %LE %Long 0xa
+Data.Set 0x1801006c %LE %Long 0x2000000
+Data.Set 0x18010070 %LE %Long 0x200005a
+Data.Set 0x18010074 %LE %Long 0x5a
+Data.Set 0x18010078 %LE %Long 0x5000001
+Data.Set 0x1801007c %LE %Long 0x50505
+Data.Set 0x180100b0 %LE %Long 0x22000
+Data.Set 0x180100b4 %LE %Long 0x46
+Data.Set 0x180100b8 %LE %Long 0x460210
+Data.Set 0x180100c0 %LE %Long 0x2100000
+Data.Set 0x180100c4 %LE %Long 0x46
+Data.Set 0x180100c8 %LE %Long 0x460210
+Data.Set 0x180100d0 %LE %Long 0x2100000
+Data.Set 0x180100d4 %LE %Long 0x46
+Data.Set 0x180100d8 %LE %Long 0x460210
+Data.Set 0x180100e0 %LE %Long 0x2100000
+Data.Set 0x180100e4 %LE %Long 0x46
+Data.Set 0x180100e8 %LE %Long 0x460210
+Data.Set 0x18010148 %LE %Long 0x1010001
+Data.Set 0x180101b0 %LE %Long 0x2040108
+Data.Set 0x180101b4 %LE %Long 0x8010402
+Data.Set 0x180101b8 %LE %Long 0x2020202
+Data.Set 0x180101bc %LE %Long 0x1000201
+Data.Set 0x18010200 %LE %Long 0x212100
+Data.Set 0x18010204 %LE %Long 0x21210001
+Data.Set 0x18010214 %LE %Long 0x12121
+Data.Set 0x18010218 %LE %Long 0x12121
+Data.Set 0x18010224 %LE %Long 0x212100
+Data.Set 0x18010228 %LE %Long 0x21210001
+Data.Set 0x18010238 %LE %Long 0x12121
+Data.Set 0x1801023c %LE %Long 0x12121
+Data.Set 0x18010248 %LE %Long 0x212100
+Data.Set 0x1801024c %LE %Long 0x21210001
+Data.Set 0x180102a4 %LE %Long 0xa200000
+Data.Set 0x180102b0 %LE %Long 0xa20
+Data.Set 0x180102b4 %LE %Long 0x32a0
+Data.Set 0x180102b8 %LE %Long 0xa200505
+Data.Set 0x180102c4 %LE %Long 0xa20
+Data.Set 0x180102c8 %LE %Long 0x32a0
+Data.Set 0x180102cc %LE %Long 0x2020505
+Data.Set 0x180102e8 %LE %Long 0x16070303
+Data.Set 0x18010328 %LE %Long 0x4
+Data.Set 0x1801032c %LE %Long 0x4
+Data.Set 0x18010338 %LE %Long 0x1040401
+Data.Set 0x1801033c %LE %Long 0x1
+Data.Set 0x18010148 %LE %Long 0x1000001
+Data.Set 0x18010014 %LE %Long 0xc050c00
+Data.Set 0x18010018 %LE %Long 0x4040405
+Data.Set 0x180102b8 %LE %Long 0xa200505
+Data.Set 0x180100b0 %LE %Long 0x26000
+Data.Set 0x180102e8 %LE %Long 0x16070303
+Data.Set 0x180100b0 %LE %Long 0x22000
+Data.Set 0x180100b4 %LE %Long 0x46
+Data.Set 0x18010338 %LE %Long 0x1040401
+Data.Set 0x18010000 %LE %Long 0x20410601
+//print "DDR initialized, 128 MBytes"
+
+RETURN
+

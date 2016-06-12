@@ -1,0 +1,64 @@
+; --------------------------------------------------------------------------------
+; @Title: i.MX53 NAND FLASH Programming Script
+; @Description:
+; NAND FLASH(MICRON, MT29F8G08 : 4096/218 (main/spare) ) is connected 
+; 
+; For the BISW : Badblock Information byte is swapped 
+;
+; S(D)RAM: 0xF8000000
+; NFC_AXI_BASE = 0xF7FF0000 
+; NFC_IP_BASE  = 0x63FDB000 
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: iMX53*
+; @Keywords: MICRON MT29F8G08 NAND
+; --------------------------------------------------------------------------------
+; $Id: imx53-nand8g08xs.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+
+  RESet
+
+  SYStem.CPU iMX53
+  SYStem.JtagClock 20.MHz
+  SYStem.Option ResBreak OFF
+  SYStem.Option DACR ON 
+  SYStem.Up 
+
+  Go.direct
+  WAIT 2.s
+  IF run()
+  Break.direct
+
+  PER.Set.simple C15:0x1 %Long  (Data.Long(C15:0x1)&~(0x5))  ; disable interrupt and mmu
+
+  Data.Set 0x53FD407C %LE %Long 0x03FFFC00  ; Enable clk for the NAND
+  Data.Set 0x63FDB000 %LE %Long 0x80        ; NFC_WR_PROTECT (unlock buffer)
+  Data.Set 0xF7FF1E34 %LE %Long 0x0C00000   ; NFC Configuration, active CS [14:12]
+
+// for nand8g08xs
+  PER.Set.simple AD:0x63FDB024 %Long 0x706d2d7F   ; NFC_CONFIG2, 4KB page, 8bit ECC , 64 page per block, 5cycles , spare size 0x6D*2
+  PER.Set.simple AD:0x63FDB028 %Long 0x1a8608     ; NFC_CONFIG3
+
+  Break.RESet
+
+  FLASHFILE.RESet
+//FLASHFILE.CONFIG <<NFC_AXI_BASE Address>> <<NFC_IP_BASE Address>>  0x0   <<bad_block_marker_location_offset (ex. 0x6, 0xB6) >>
+  FLASHFILE.CONFIG   0xF7FF0000               0x63FDB000             0x0   0x6
+
+//FLASHFILE.TARGET <<code range>> <<data range>> <<algorithm file>>
+;  FLASHFILE.TARGET 0xf8000000++0x3fff 0xf8004000++0x41ff ~~/demo/arm/flash/byte/nand8g08xs_imx51.bin /keep    /stacksize 0x400   ; don't need to swap the Badblock marker byte
+  FLASHFILE.TARGET 0xf8000000++0x3fff 0xf8004000++0x41ff ~~/demo/arm/flash/byte/nand8g08xs_imx51bisw.bin /KEEP  /STACKSIZE 0x400  ; need to swap the Badblock marker byte
+
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+  FLASHFILE.DUMP 0x0                             ; Read NAND 
+ ;FLASHFILE.ERASE 0x0--0xFFFFF  /EraseBadBlock   ; Erase NAND
+ ;FLASHFILE.LOAD * 0x0  /WriteBadBlock           ; Write NAND
+
+ENDDO
+
+
+
+

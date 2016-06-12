@@ -1,0 +1,83 @@
+; --------------------------------------------------------------------------------
+; @Title: STM32F103 NAND FLASH Programming Script
+; @Description:
+; NAND FLASH(ST, NAND512-3A) is connected to CE2
+; 
+; Internal SRAM    : 0x20000000
+; Command Register : 0x70010000  //A16  
+; Address Register : 0x70020000  //A17
+; Data Register    : 0x70000000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: STM32F103ZE
+; @Keywords: ST NAND512-3A NAND
+; --------------------------------------------------------------------------------
+; $Id: stm32f103-nand1208.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  RESet
+  SYStem.RESet
+  MAP.DenyAccess 0X20005000--0X2000FFFF
+  SYStem.CPU STM32F103ZE
+  SYStem.CONFIG.ETMBASE  0xE0041000
+; SYStem.CONFIG.SWDP ON
+  SYStem.CONFIG.CONNECTOR MIPI20T 
+  SYStem.Up
+
+//Clock Enable to use FSMC and GPIO group related with NAND Flash.
+  PER.Set.simple SD:0x40021014 %Long 0x114     ; FSCM Clock Enable
+  PER.Set.simple SD:0x40021018 %Long 000001E0  ; GPIOD, GPIOE, GPIOF, GPIOG Enable
+
+//GPIO CONFIGuration
+//CLE, ALE, D0->D3, NOE, NWE and NCE2(Output 50Mhz AF_PP), NWAIT((Input pull-up) NAND pin CONFIGuration 
+  PER.Set.simple SD:0x40011400 %Long 0xB8BB44BB;  //GPIOD_CRL
+  PER.Set.simple SD:0x40011404 %Long 0xBB4BB444 ; //GPIOD_CRH
+  PER.Set.simple SD:0x4001140C %Long 0x00000040;  //GPIOD_ODR pin6
+
+//D4->D7 NAND pin CONFIGuration (Output 50Mhz AF_PP)
+  PER.Set.simple SD:0x40011800 %Long 0xB4444444 ;  //GPIOE
+  PER.Set.simple SD:0x40011804 %Long 0x44444BBB ;  //GPIOE
+
+//INT2 NAND pin CONFIGuration (Input pull-up)
+  PER.Set.simple SD:0x40012000 %Long 0x48444444  ;  // GPIOG pin6
+  PER.Set.simple SD:0x4001200C %Long 0x00000040; 	//GPIOG_ODR pin6
+
+  PER.Set.simple SD:0xA0000068 %Long 0x01020301 ; //FSMC_PMEM2, Common memory space timing register
+  PER.Set.simple SD:0xA000006C %Long 0x01020301 ; //FSMC_PATT2, Attribute memory space timing registers
+  PER.Set.simple SD:0xA0000060 %Long 0x0002004E ; //FSMC_PCR2, 512Byte per page, ECC Enable, 8bit Data width, NAND Type Flash Enable.
+
+  Break.RESet
+
+  FLASHFILE.RESet
+
+//FLASHFILE.CONFIG <Cmd_reg> <Addr_reg> <Data_reg>
+  FLASHFILE.CONFIG 0x70010000 0x70020000 0x70000000
+
+//FLASHFILE.TARGET <Code_range> <Data_range> <Algorithm file>
+  FLASHFILE.TARGET 0x20000000++0x1fff 0x20002000++0x3FFF ~~/demo/arm/flash/byte/nand1208_cortexm3.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Put a list of bad blocks into area window
+  FLASHFILE.GETBADBLOCK 0x0--0x3FFFFFF
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+  //Erase NAND FLASH Main and Bad block inforamtion
+    FLASHFILE.Erase 0x0--0x3FFFFFF  /EraseBadBlocks
+
+  //Skipped way 
+    FLASHFILE.LOAD.binary  * 0x0 
+    ;FLASHFILE.LOADSPARE * 0x0  
+  
+  //Reserved block area way
+    ;FLASHFILE.LOAD  * 0x0   /WriteBadBlocks
+    ;FLASHFILE.LOADSPARE *  0x0   /WriteBadBlocks
+  )
+
+ENDDO 
+
+

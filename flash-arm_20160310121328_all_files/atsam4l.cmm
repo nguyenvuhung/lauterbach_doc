@@ -1,0 +1,179 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Atmel ATSAM4L internal flash.
+; 
+; @Description: 
+; Script arguments:
+;
+;  DO atsam4l [PREPAREONLY] [CPU=<cpu>]
+;
+;    PREPAREONLY only declares flash but does not execute flash programming
+;
+;    CPU=<cpu> selects CPU derivative <cpu>
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/atsam4l CPU=ATSAM4LS8C PREPAREONLY
+;
+; List of ATSAM4L derivatives and their configuration:
+;
+;   CPU-Type        Flash size   Page size    SRAM size
+;                      [Byte]      [Byte]       [Byte]
+; --------------------------------------------------------------------------------
+;   ATSAM4LC2A        0x20000      0x200        0x8000
+;   ATSAM4LC2B        0x20000      0x200        0x8000
+;   ATSAM4LC2C        0x20000      0x200        0x8000
+;   ATSAM4LC4A        0x40000      0x200        0x8000
+;   ATSAM4LC4B        0x40000      0x200        0x8000
+;   ATSAM4LC4C        0x40000      0x200        0x8000
+;   ATSAM4LC8A        0x80000      0x200       0x10000
+;   ATSAM4LC8B        0x80000      0x200       0x10000
+;   ATSAM4LC8C        0x80000      0x200       0x10000
+;   ATSAM4LS2A        0x20000      0x200        0x8000
+;   ATSAM4LS2B        0x20000      0x200        0x8000
+;   ATSAM4LS2C        0x20000      0x200        0x8000
+;   ATSAM4LS4A        0x40000      0x200        0x8000
+;   ATSAM4LS4B        0x40000      0x200        0x8000
+;   ATSAM4LS4C        0x40000      0x200        0x8000
+;   ATSAM4LS8A        0x80000      0x200       0x10000
+;   ATSAM4LS8B        0x80000      0x200       0x10000
+;   ATSAM4LS8C        0x80000      0x200       0x10000
+;
+; The internal flash is located at 0x00000000
+; The internal SRAM is located at  0x20000000
+;
+; HINTS:
+;
+;   Locked pages can be unlocked with FLASH.UNLOCK command and can be
+;   locked again with FLASH.LOCK command.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ATSAM4L*
+; --------------------------------------------------------------------------------
+; $Rev: 2903 $
+; $Id: atsam4l.cmm 2903 2014-07-16 11:19:46Z kjmal $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly &param_cpu
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(ATSAM4L*)
+      SYStem.CPU ATSAM4L*
+
+    SYStem.Option.ResBreak OFF
+    IF CABLE.TWOWIRE()
+      SYStem.CONFIG.DEBUGPORTTYPE SWD
+    ELSE
+      SYStem.CONFIG.DEBUGPORTTYPE JTAG
+
+    SYStem.Up
+  )
+
+  ; Disable watchdog for flash programming if watchdog may be used in 
+  ; window mode.
+  //Data.Set 0x400F0C00 %Long 0x55000000
+  //Data.Set 0x400F0C00 %Long 0xAA000000
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration
+
+  ; Setup wait states in FLASHCALW FCR register
+  //Data.Set ASD:0x400A0000 %Long (Data.Long(ASD:0x400A0000)&0xFFFFFFBF)|0x00000040
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash NVM bit programming example
+
+  DIALOG.YESNO "Program flash NVM bits"
+  LOCAL &prognvm
+  ENTRY &prognvm
+  IF &prognvm 
+  (
+    DO ~~~~/atsam4-nvm
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    ; Unlock locked pages if necessary
+    //FLASH.UNLOCK ALL
+
+    FLASH.ReProgram.ALL
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+    
+ 		; Reset device
+		SYStem.Down
+		SYStem.Up
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &FlashSize &FlashDriver
+
+  IF CPUIS("ATSAM4L?1?")
+  (
+    &FlashSize=0x10000
+    &FlashDriver="atsam4l1.bin"
+  )
+  ELSE IF CPUIS("ATSAM4L?2?")
+  (
+    &FlashSize=0x20000
+    &FlashDriver="atsam4l2.bin"
+  )
+  ELSE IF CPUIS("ATSAM4L?4?")
+  (
+    &FlashSize=0x40000
+    &FlashDriver="atsam4l4.bin"
+  )
+  ELSE IF CPUIS("ATSAM4L?8?")
+  (
+    &FlashSize=0x80000
+    &FlashDriver="atsam4l8.bin"
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  IF &FlashSize>=0x10000
+    FLASH.Create  1. 0x00400000--0x0040FFFF 0x200 TARGET Long
+  IF &FlashSize>=0x20000
+    FLASH.Create  1. 0x00410000--0x0041FFFF 0x200 TARGET Long
+  IF &FlashSize>=0x40000
+    FLASH.Create  1. 0x00420000--0x0043FFFF 0x200 TARGET Long
+  IF &FlashSize>=0x80000
+    FLASH.Create  1. 0x00440000--0x0047FFFF 0x200 TARGET Long
+
+  FLASH.TARGET 0x20000000 0x20000800 0x400 ~~/demo/arm/flash/long/&FlashDriver
+
+  RETURN

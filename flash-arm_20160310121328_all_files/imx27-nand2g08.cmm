@@ -1,0 +1,139 @@
+; --------------------------------------------------------------------------------
+; @Title: i.MX27 NAND FLASH Programming Script
+; @Description:
+;   FLASH Type: NAND FLASH(SAMSUNG, K9F2G08)
+; 
+;   SDRAM: 0xA0008000
+;   NAND FLASH Controller(CPU-specific): 0xDB000000
+; 
+; @Author: jjeong
+; @Chip: IMX27
+; @Keywords: SAMSUNG K9F2G08
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: imx27-nand2g08.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+
+ PRINT "initializing..."
+ SYStem.CPU MCIMX27             ; set your CPU here
+ SYStem.Option DACR ON          ; give Debugger global write permissions
+ SYStem.Option ResBreak OFF     ; board specific, see documentation
+ SYStem.JtagClock 10.0MHz       ; board specific, see documentation
+ TrOnchip.Set DABORT OFF        ; used by Linux for page miss!
+ TrOnchip.Set PABORT OFF        ; used by Linux for page miss!
+ TrOnchip.Set UNDEF OFF         ; my be used by Linux for FPU detection
+ SYStem.Option MMUSPACES ON     ; enable space ids to virtual addresses
+ 
+ SYStem.Up
+
+//Call SDRAM initialization
+  GOSUB sdram_init
+
+//NAND FLASH Controller Clk divide for i.MX27
+  PER.Set.simple AD:0x10027018 %Long 0x13C401C3  
+
+  Break.RESet
+
+  FLASHFILE.RESet
+//FLASHFILE.CONFIG <NAND Flash Controller Base Address> , ,
+  FLASHFILE.CONFIG 0xDB000000  , ,  , ,
+
+//FLASHFILE.TARGET <code range> <data range> <Algorithm file>
+  FLASHFILE.TARGET 0xA0008000++0x3fff 0xA000C000++0x4FFF ~~/demo/arm/flash/byte/nand2g08_imx.bin  /KEEP
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Put a list of bad blocks into area window for 2Gbit (256MB) size
+  FLASHFILE.GETBADBLOCK 0x0--0xFFFFFFF
+
+//Erase NAND FLASH Main and Bad block inforamtion
+ ;FLASHFILE.ERASE 0x0--0x7FFFFFF  /EraseBadBlocks
+
+//Write NAND FLASH
+  ;FLASHFILE.LOAD  * 0x0 //WriteBadBlocks 
+
+//Read NAND FLASH
+  FLASHFILE.DUMP 0x0
+
+  ENDDO
+
+; --------------------------------------------------------------------------------
+; Initialization script for 32 bit DDR on Tortola EVB 
+; --------------------------------------------------------------------------------
+
+sdram_init:
+
+; Start-up script for i.MX27 ADS board from Freescale
+
+Data.Set c15:0x01 %Long 0x00050078
+; configuring CP15 for enabling the pripheral bus
+Data.Set c15:0x042f %Long 0x40000015
+
+Data.Set sd:0x10000000 %LE %Long 0x20040304
+Data.Set sd:0x10020000 %LE %Long 0x00000000
+Data.Set sd:0x10000004 %LE %Long 0xDFFBFCFB
+Data.Set sd:0x10020004 %LE %Long 0xFFFFFFFF
+
+; Enable clko
+Data.Set sd:0x10027018 %LE %Long 0x22087403
+; clko = a-7 h-8 i-9 p1-a p2-b p3-c p4-d
+Data.Set sd:0x10027028 %LE %Long 0x00000007
+
+Data.Set sd:0x10027854 %LE %Long 0x03
+Data.Set sd:0x10027814 %LE %Long 0xFFFFFFC9
+
+; Configure DDR on CSD0 -- initial reset
+;Data.Set sd:0xD8001010 %le %long 0x00000008
+
+; Configure PSRAM on CS5 
+Data.Set sd:0xd8002050 %LE %Long 0x0000DCF6
+Data.Set sd:0xd8002054 %LE %Long 0x444A4541
+Data.Set sd:0xd8002058 %LE %Long 0x44443302
+
+; Configure16 bit NorFlash on CS0
+;Data.Set sd:0xd8002000 %le %long 0x0000CC03
+;Data.Set sd:0xd8002004 %le %long 0xa0330D01
+;Data.Set sd:0xd8002008 %le %long 0x00220800
+
+; Configure CPLD on CS4 
+;Data.Set sd:0xd8002040 %le %long 0x0000DCF6
+;Data.Set sd:0xd8002044 %le %long 0x444A4541
+;Data.Set sd:0xd8002048 %le %long 0x44443302
+
+// ========================================
+//  Configure DDR on CSD0 -- wait 5000 cycle 
+// ========================================
+Data.Set sd:0xD8001010 %LE %Long 0x80000008
+Data.Set sd:0x10027828 %LE %Long 0x55555555
+Data.Set sd:0x10027830 %LE %Long 0x55555555
+Data.Set sd:0x10027834 %LE %Long 0x55555555
+Data.Set sd:0x10027838 %LE %Long 0x00005005
+Data.Set sd:0x1002783C %LE %Long 0x15555555
+Data.Set sd:0xD8001010 %LE %Long 0x80000004
+Data.Set sd:0xD8001004 %LE %Long 0x00795429
+;Data.Set sd:0xD8001004 %le %long 0x0076eb3a
+Data.Set sd:0xD8001000 %LE %Long 0x92100000
+Data.Set sd:0xA0000F00 %LE %Long 0x12344321
+Data.Set sd:0xD8001000 %LE %Long 0xA2100000
+Data.Set sd:0xA0000F00 %LE %Long 0x12344321
+Data.Set sd:0xA0000F00 %LE %Long 0x12344321
+Data.Set sd:0xD8001000 %LE %Long 0xB2100000
+Data.Set sd:0xA0000033 %LE %Byte 0xda
+Data.Set sd:0xA1000000 %LE %Byte 0xff
+Data.Set sd:0xD8001000 %LE %Long 0x82128485
+
+RETURN
+
+
+
+
+
+
+
+
+
+
+
+
+

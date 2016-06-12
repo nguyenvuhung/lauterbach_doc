@@ -1,0 +1,196 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of NXP LPC40xx Cortex-M4 internal flash.
+;
+; @Description: 
+; Script arguments:
+;
+;   DO lpc40xx [PREPAREONLY] [CPU=<cpu>]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/lpc40xx CPU=LPC4088 PREPAREONLY
+;
+; List of LPC40xx derivatives and their configuration:
+;
+;   CPU-Type          Flash   EEPROM   RamSize
+;                      [kB]     [B]      [kB]
+; --------------------------------------------------------------------------------
+;   LPC4072             64.    2048.      24.
+;   LPC4074            128.    2048.      40.
+;   LPC4076            256.    2048.      80.
+;   LPC4078            512.    4032.      96.
+;   LPC4088            512.    4032.      96.
+;
+; Memories:
+;
+;   Flash at                              0x00000000
+;   32/64 kB Main SRAM at                 0x10000000
+;   Boot ROM at                           0x1FFF0000
+;   Driver ROM at                         0x1FFF8000
+;   8/16 kB Peripheral SRAM bank 0 at     0x20000000
+;   16 kB Peripheral SRAM bank 1 at       0x20004000
+;
+; Code Read Protection (CRP):
+;
+;  CRP is invoked by programming a specific pattern in flash bank A or B 
+;  at offset 0x000002FC.
+;
+;  Name     Pattern      Description
+; --------------------------------------------------------------------------------
+;  CRP1     0x12345678   Access to chip via the JTAG pins is disabled. This mode
+;                        allows partial flash update using the following ISP
+;                        commands and restrictions:
+;                        • Write to RAM command can not access RAM below 
+;                          0x10000200. This is due to use of the RAM by the ISP 
+;                          code.
+;                        • Read Memory command: disabled.
+;                        • Copy RAM to Flash command: cannot write to Sector 0.
+;                        • Go command: disabled.
+;                        • Erase sector(s) command: can erase any individual 
+;                          sector except sector 0 only, or can erase all sectors 
+;                          at once.
+;                        • Compare command: disabled
+;                          This mode is useful when CRP is required and flash 
+;                          field updates are needed but all sectors can not be 
+;                          erased. The compare command is disabled, so in the 
+;                          case of partial flash updates the secondary loader 
+;                          should implement a checksum mechanism to verify the 
+;                          integrity of the flash.
+;  CRP2     0x87654321   This is similar to CRP1 with the following additions:
+;                        • Write to RAM command: disabled.
+;                        • Copy RAM to Flash: disabled.
+;                        • Erase command: only allows erase of all sectors.
+;  CRP3     0x43218765   This is similar to CRP2, but ISP entry by pulling
+;                        P2[10] LOW is disabled if a valid user code is present
+;                        in flash sector 0.
+;                        This mode effectively disables ISP override using the
+;                        P2[10] pin. It is up to the user’s application to
+;                        provide for flash updates by using IAP calls or by
+;                        invoking ISP with UART0.
+;                        CAUTION: If CRP3 is selected, no future factory testing
+;                        can be performed on the device.
+;
+;  Flash programming commands use 32 bytes of space in the top portion of the
+;  on-chip RAM for execution.
+;
+; HINTS:
+;
+;  Flash clock has to match System Clock Frequency (M4_CLK). 
+;  FLASH.CLocK.AUTO can be used for automatic flash clock measurement.
+;
+;  Boot flash cannot be programmed or erased with builtin flash 
+;  algorithm. 
+;
+;  Data has to be loaded into flash aligned to page boundaries.
+;
+;  Vector table checksum generation is done by script, so that it 
+;  can be used or switched off, as needed.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: LPC40*
+; --------------------------------------------------------------------------------
+; $Rev: 3139 $
+; $Id: lpc40xx.cmm 3139 2015-02-02 10:13:19Z amerkle $
+
+  LOCAL &parameters &param_prepareonly
+  ENTRY %LINE &parameters
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &param_cpu
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(LPC40*)
+      SYStem.CPU LPC40*
+
+    SYStem.CONFIG.DEBUGPORTTYPE JTAG
+    SYStem.CONFIG.CONNECTOR MIPI20T
+    SYStem.Option.ResBreak OFF
+
+    SYStem.Up
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    ; ensure BootROM Remap shows FLASH at 0x0
+    Data.Set 0x400fc040 %Long %LE 0x1
+    ; Example for download 
+    FLASH.ReProgram.ALL /Erase
+    ; 1. Download file
+    Data.LOAD.auto *
+    ; 2. Checksum generation
+    Data.SUM 0x00000000--0x0000001B /Long  ; Calculate checksum of all (other) vectors
+    Data.Set 0x0000001C %Long -Data.SUM()  ; Write the 2's complement in reserved vector's spot
+    ; 3. Flash programming
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &FlashSize
+
+  IF CPUIS("LPC40?2*")
+    &FlashSize=0x10000
+  ELSE IF CPUIS("LPC40?4*")
+    &FlashSize=020000
+  ELSE IF CPUIS("LPC40?6*")
+    &FlashSize=0x40000
+  ELSE IF CPUIS("LPC40?8*")
+    &FlashSize=0x80000
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  IF &FlashSize>=0x10000
+    FLASH.Create 1. 0x00000000--0x0000FFFF 0x1000 TARGET Long
+  IF &FlashSize>=0x20000
+    FLASH.Create 1. 0x00010000--0x0001FFFF 0x8000 TARGET Long
+  IF &FlashSize>=0x40000
+    FLASH.Create 1. 0x00020000--0x0003FFFF 0x8000 TARGET Long
+  IF &FlashSize>=0x80000
+    FLASH.Create 1. 0x00040000--0x0007FFFF 0x8000 TARGET Long
+
+  FLASH.TARGET 0x10000000 0x10001000 0x1000 ~~/demo/arm/flash/long/lpc4000.bin
+  FLASH.CLocK.AUTO
+
+  RETURN

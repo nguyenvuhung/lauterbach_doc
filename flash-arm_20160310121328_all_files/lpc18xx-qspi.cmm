@@ -1,0 +1,180 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of NXP LPC18xx.
+;
+; @Description:
+;
+; Example for flash declaration of NXP LPC18xx external QSPI flash connected
+; via SPIFI interface.
+;
+; Script arguments:
+;
+;   DO lpc18xx-qspi [PREPAREONLY] [CPU=<cpu>] [QSPI=<flashdevice>]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;
+;     QSPI=<flashdevice> declares flash sectors depending on QSPI flash device
+;
+; Memories:
+;
+;   SPIFI memory is mapped to               0x80000000--0x87FFFFFF
+;     and lower half of range also to       0x14000000--0x17FFFFFF
+;   at least 32 kB local SRAM is located at 0x10000000
+;
+; HINTS:
+;
+;   Flash clock has to match SPIFI Clock Frequency. Example script is using
+;   12 MHz IRC oscillator.
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: LPC18*
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: lpc18xx-qspi.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  LOCAL &parameters &param_prepareonly
+  ENTRY %LINE &parameters
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &param_cpu
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  LOCAL &param_qspi
+  &param_qspi=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"QSPI=","")
+
+  ; --------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(LPC18*)
+      SYStem.CPU LPC18*
+
+    SYStem.CONFIG.DEBUGPORTTYPE JTAG
+    SYStem.CONFIG.CONNECTOR MIPI20T
+    SYStem.Option.ResBreak OFF
+
+    SYStem.Up
+  )
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration and configuration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration &param_qspi
+
+  ; Use 12 MHz Internal RC (IRC) oscillator for SPIFI clock
+  PER.Set.simple SD:0x40050070 %Long 0x01000000
+  FLASH.CLocK 12MHz
+
+  ; Setup SPIFI I/O pins
+  PER.Set.simple SD:0x4008618C %Long 0xF3   ; SPIFI_SCK
+  PER.Set.simple SD:0x40086190 %Long 0xD3   ; SPIFI_SIO3
+  PER.Set.simple SD:0x40086194 %Long 0xD3   ; SPIFI_SIO2
+  PER.Set.simple SD:0x40086198 %Long 0xD3   ; SPIFI_SIO1
+  PER.Set.simple SD:0x4008619C %Long 0xD3   ; SPIFI_SIO0
+  PER.Set.simple SD:0x400861A0 %Long 0x13   ; SPIFI_CS
+
+  ; Setup SPIFI memory command register to enable read access
+  ; 256 Mbit devices have 4 byte addressing, smaller devices have 3 byte
+  ; addressing.
+  IF STRing.SCAN(STRing.UPpeR("&param_qspi"),"256",0)!=-1
+    PER.Set.simple SD:0x40003018 %LE %Long (3.<<24.)|(5.<<21.)
+  ELSE
+    PER.Set.simple SD:0x40003018 %LE %Long (3.<<24.)|(4.<<21.)
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &QSPIflash
+  ENTRY &QSPIflash
+
+  LOCAL &FlashSize &SectorSize
+
+  IF STRing.SCAN(STRing.UPpeR("&QSPIflash"),"N25Q256",0)!=-1
+  (
+    ; Micron N25Q256
+    &FlashSize=0x2000000
+    &SectorSize=0x10000
+  )
+  ELSE IF STRing.SCAN(STRing.UPpeR("&QSPIflash"),"MX25L256",0)!=-1
+  (
+    ; Macronix MX25L25635FMI-10G
+    &FlashSize=0x2000000
+    &SectorSize=0x10000
+  )
+  ELSE IF STRing.SCAN(STRing.UPpeR("&QSPIflash"),"S25FL032P",0)!=-1
+  (
+    ; Spansion S25FL032P1F
+    &FlashSize=0x400000
+    &SectorSize=0x10000
+  )
+  ELSE IF STRing.SCAN(STRing.UPpeR("&QSPIflash"),"S25FL064P",0)!=-1
+  (
+    ; Spansion S25FL064P1F
+    &FlashSize=0x800000
+    &SectorSize=0x10000
+  )
+  ELSE IF STRing.SCAN(STRing.UPpeR("&QSPIflash"),"S25FL256S",0)!=-1
+  (
+    ; Spansion S25FL256SAGMFI001
+    &FlashSize=0x2000000
+    &SectorSize=0x10000
+  )
+  ELSE IF STRing.SCAN(STRing.UPpeR("&QSPIflash"),"S25FL129P",0)!=-1
+  (
+    ; Spansion S25FL129P0XNFI01
+    &FlashSize=0x1000000
+    &SectorSize=0x10000
+  )
+  ELSE IF STRing.SCAN(STRing.UPpeR("&QSPIflash"),"W25Q80",0)!=-1
+  (
+    ; Winbond W25Q80BVSSIG
+    &FlashSize=0x100000
+    &SectorSize=0x10000
+  )
+  ELSE IF STRing.SCAN(STRing.UPpeR("&QSPIflash"),"N25Q064",0)!=-1
+  (
+    ; Micron (Numonyx) N25Q064A
+    &FlashSize=0x800000
+    &SectorSize=0x10000
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of QSPI flash is unknown"
+    ENDDO
+  )
+
+  FLASH.Create 10. 0x80000000++(&FlashSize-1) &SectorSize TARGET Byte
+
+  FLASH.CreateALIAS 0x14000000--0x17FFFFFF 0x80000000
+
+  FLASH.TARGET 0x10000000 0x10001000 0x2000 ~~/demo/arm/flash/byte/lpcspifi.bin /STACKSIZE 0x200
+
+  RETURN

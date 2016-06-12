@@ -1,0 +1,97 @@
+; @Title: R-CAR-H2 SPI FLASH Program script
+; @Description:
+; Serial FLASH(ST,25P64) is connected
+;
+; SRAM: 0xE63A0000
+; SPI(controller) Base: 0xE6B10000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: RCARH2-CA15
+; @Keywords: RCAR RCARH2 Flash SPI
+; $Id: rcarh2-spi.cmm 3359 2015-08-06 12:57:14Z jjeong $
+
+&pfc_base=0xE6060000
+&GPSR1=&pfc_base+0x0008
+&IPSR3=&pfc_base+0x002C
+&IPSR4=&pfc_base+0x0030
+
+  RESet
+  SYStem.CPU RCARH2-CA15 ; use RCARH2-CA7 in case CA7 is active (see boot mode above)
+  CORE.ASSIGN 1
+  TrOnchip.Set DABORT OFF
+  TrOnchip.Set PABORT OFF
+  TrOnchip.Set UNDEF OFF
+  SYStem.Option PWRCHECKFIX ON ; use OFF in case of CA7 is active
+  SYStem.Mode Up
+
+  GOSUB QSPI_INIT
+
+  FLASHFILE.RESet
+
+//FLASHFILE.CONFIG <SPI Base AddRESs> ,, ,,
+ FLASHFILE.CONFIG 0xE6B10000
+
+//FLASHFILE.TARGET <code range>      <data range>         <Algorithm file>
+ FLASHFILE.TARGET 0xE63A0000++0x1FFF 0xE63A2000++0x21FF   ~~\demo\arm\flash\byte\spi64_rcarh2.bin   /KEEP  
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Read FLASH
+  FLASHFILE.DUMP 0x0
+
+//Erase FLASH 
+; FLASHFILE.ERASE 0x0--0xFFFFFF  /EraseBadBlocks
+
+//Write FLASH
+; FLASHFILE.LOAD  * 0x0 
+; FLASHFILE.LOAD  * 0x0  /ComPare   ;verify
+   
+   
+ENDDO
+
+QSPI_INIT:
+
+GOSUB WRITE_AND  &IPSR3  0x3FFFFFFF
+GOSUB WRITE_OR   &IPSR3  0x20000000
+GOSUB WRITE_OR   &GPSR1  0x10
+GOSUB WRITE_AND  &IPSR4  0xFFFFFFF9
+GOSUB WRITE_OR   &IPSR4  0x1
+GOSUB WRITE_OR   &GPSR1  0x20
+
+GOSUB WRITE_AND  &IPSR4  0xFFFFFFCF
+GOSUB WRITE_OR   &IPSR4  0x00000008 
+GOSUB WRITE_OR   &GPSR1  0x00000040 
+GOSUB WRITE_AND  &IPSR4  0xFFFFFE7F
+GOSUB WRITE_OR   &IPSR4  0x00000040 
+GOSUB WRITE_OR   &GPSR1  0x00000080 
+GOSUB WRITE_AND  &IPSR4  0xFFFFF3FF 
+GOSUB WRITE_OR   &IPSR4  0x00000200 
+GOSUB WRITE_OR   &GPSR1  0x00000100 
+GOSUB WRITE_AND  &IPSR4  0xFFFF9FFF 
+GOSUB WRITE_OR   &IPSR4  0x00001000 
+GOSUB WRITE_OR   &GPSR1  0x00000200 
+
+Data.Set AZSD:0xE6B10000 %LE 0x48
+Data.Set AZSD:0xE6B10002 %LE 0x6
+Data.Set AZSD:0xE6B1000A %LE 0x1
+Data.Set AZSD:0xE6B10010 %Word 0xe084
+
+RETURN 
+
+WRITE_AND:
+ENTRY &addr &data
+&data=((&data)&(Data.Long(A:&addr)))
+&not_data=~(&data)
+Data.Set &pfc_base %Long &not_data
+Data.Set &addr %Long &data
+RETURN
+
+WRITE_OR:
+ENTRY &addr &data
+&data=((&data)|(Data.Long(A:&addr)))
+&not_data=~(&data)
+Data.Set &pfc_base %Long &not_data
+Data.Set &addr %Long &data
+RETURN

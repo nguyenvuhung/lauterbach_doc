@@ -1,0 +1,119 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Texas Instruments CC26xx internal flash
+; @Description:
+;   Script arguments:
+;
+;    DO cc2600 [PREPAREONLY] [CPU=<cpu>]
+;
+;      PREPAREONLY only declares flash but does not execute flash programming
+;
+;      CPU=<cpu> selects CPU derivative <cpu>
+;
+;   Example:
+;
+;   DO ~~/demo/arm/flash/cc2600 CPU=CC2650F128 PREPAREONLY
+;
+;   List of CC26xx derivatives and their configuration:
+;
+;     CPU-Type        Flash size   Page size    
+;                        [Byte]      [Byte]      
+;     CC2630F128        0x20000      0x1000    
+;     CC2640F128        0x20000      0x1000       
+;     CC2650F128        0x20000      0x1000   
+;
+; @Author: FLC
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 3408 $
+; $Id: cc2600.cmm 3408 2015-09-21 09:24:15Z fcaron $
+
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly &param_cpu
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(CC26*)
+      SYStem.CPU CC26*
+    
+    SYStem.CONFIG DEBUGPORTTYPE CJTAG
+    SYStem.Option ResBreak OFF
+    SYStem.JtagClock CTCK 1MHz
+    SYStem.Mode.Attach
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+ ; -------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+    
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &FlashSize &FlashDriver
+
+  IF CPUIS("CC2630F128")
+  (
+    &FlashSize=0x20000
+    &FlashDriver="cc2600.bin"
+  )
+  ELSE IF CPUIS("CC2640F128")
+  (
+    &FlashSize=0x20000
+    &FlashDriver="cc2600.bin"
+  )
+  ELSE IF CPUIS("CC2650F128")
+  (
+    &FlashSize=0x20000
+    &FlashDriver="cc2600.bin"
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  IF &FlashSize>=0x20000
+    FLASH.Create  1. 0x00000000--0x0001FFFF 0x1000 TARGET Long
+ 
+  
+  FLASH.TARGET 0x20000000 0x20000800 0x800 ~~/demo/arm/flash/long/&FlashDriver
+  
+  RETURN

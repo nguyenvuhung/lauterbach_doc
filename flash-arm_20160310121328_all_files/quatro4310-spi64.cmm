@@ -1,0 +1,85 @@
+; --------------------------------------------------------------------------------
+; @Title: Quatro4310(CSR,Zoran) Serial FLASH Programming Script
+; @Description:
+; Serial FLASH(Winbond, W25Q16) is connected to SPI0
+;
+; SPIMST base Register: 0xF0400000
+; FIFO DATA ADDRESS   : 0x8D000400
+;
+; internal ram : 0xF4A10000,  8KB
+; internal ram : 0x98000000,  5KB
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ARM926EJ-S
+; @Keywords: Winbond W25Q16 SPI
+; --------------------------------------------------------------------------------
+; $Id: quatro4310-spi64.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+; Start-up script for Zoran Quatro4310 on 4300 LP Board
+; PEG, September 2013
+
+; Supply ATX power at J6
+; Connect Debug Cable to J2
+; Push power button S7
+
+  SYStem.CPU ARM926EJ
+  SYStem.CONFIG.IRPOST 6
+  SYStem.CONFIG.DRPOST 1
+  SYStem.Option ResBreak OFF
+  SYStem.Option WaitReset ON
+  SYStem.JtagClock 1.Mhz
+  SYStem.Up
+  
+  PER.Set.simple C15:0x1 %Long 0x51078                   ;disable MMU and Cache 
+
+  GOSUB setup_pll
+
+  SYStem.JtagClock 20.Mhz
+
+  Data.Set A:0xF0400010 %LE %Long 0x70A         ;SPICLK0
+  Data.Set A:0xF0400020 %LE %Long 0x90004007    ;SPICFG0
+  Data.Set A:0xF040007C %LE %Long 0x0           ;SPIFCTL
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASFILE.CONFIG  <SPI controller address>     <fifo data address>
+  FLASHFILE.CONFIG 0xF0400000                   0x8D000400
+
+  FLASHFILE.TARGET 0xF4A10000++0x17FF  0x98000000++0x12FF ~~/demo/arm/flash/byte/spi64_quatro43xx.bin   /KEEP
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Dump window for Serial FLASH
+  FLASHFILE.DUMP 0x0
+
+//Unlock Serial FLASH
+;  FLASHFILE.UNLOCK 0x0--0xFFFFF 
+
+//Erase Serial FLASH
+; FLASHFILE.ERASE 0x0--0xFFFFF
+
+//Write Serial FLASH
+;  FLASHFILE.LOAD  * 0x0
+
+ENDDO 
+
+setup_pll:
+
+Data.Set SD:0xF0C00000 %LE %Long 0x7F
+Data.Set SD:0xF0C0000C %LE %Long 0x5Dc1
+Data.Set SD:0xF0C00010 %LE %Long 0x20b0960B
+Data.Set SD:0xF0C00014 %LE %Long 0x80b04e40
+Data.Set SD:0xF0C00020 %LE %Long 0x12
+Data.Set SD:0xF0C00024 %LE %Long 0x8
+Data.Set SD:0xF0C00028 %LE %Long 0x10
+Data.Set SD:0xF0C0002C %LE %Long 0x8
+Data.Set SD:0xF0C00030 %LE %Long 0x8
+Data.Set SD:0xF0C00034 %LE %Long 0x10
+Data.Set SD:0xF0C00038 %LE %Long 0x20
+
+RETURN
+

@@ -1,0 +1,99 @@
+; --------------------------------------------------------------------------------
+; @Title: ATSAMA5D36 NAND FLASH Programming Script with BCH ECC
+; @Description:
+; NAND FLASH(MICRON,MT29F2G08ABAEAWP) is connected  EBI_CS3
+; 
+; Internal SRAM    : 0x00300000
+; EBI_CS3_BASE     : 0x60000000  
+; PMECC_BASE       : 0xFFFFC070
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ATSAMA5D36
+; @Keywords: ATMEL MICRON 29F2G08 flash NAND
+; --------------------------------------------------------------------------------
+; $Id: at91sama5d3x-nand2g08.cmm 3407 2015-09-18 10:05:19Z jjeong $
+
+LOCAL &arg1
+ENTRY &arg1
+&arg1=STRing.UPpeR("&arg1")  // for example "PREPAREONLY"
+
+&PMECC_BASE=0xFFFFC070
+&PMECC_CFG=&PMECC_BASE
+&PMECC_CTRL=&PMECC_BASE+0x14  ;write only
+
+  RESet
+  SYStem.RESet
+  SYStem.CPU ATSAMA5D36
+  SYStem.CONFIG.DEBUGPORTTYPE JTAG
+  SYStem.Option.ResBreak OFF
+  SYStem.Option.WaitReset 30.ms
+  SYStem.MemAccess DAP
+
+  SYStem.Up
+
+  Data.Set  C15:0x1 %Long Data.Long(C15:0x1)&~0x1005   ;disable mmu, i/d cache
+
+//BCH ECC configuration
+  Data.Set AD:&PMECC_CTRL %Long (0x1<<5.)   //PMECC_CTRL, Disable bch
+  Data.Set AD:&PMECC_CTRL %Long (0x1)       //PMECC_CTRL, Reset pmecc
+  Data.Set AD:&PMECC_CFG  %Long 0x1201      //PMECC_CFG ,  nand write,  4bit bch ecc, spare skipped
+  Data.Set AD:(&PMECC_BASE+0x4) %Long 0x3F  //PMECC_SPARE size
+  Data.Set AD:(&PMECC_BASE+0x8) %Long 0x24  //PMECC_SADDR , start ecc
+  Data.Set AD:(&PMECC_BASE+0xC) %Long 0x3F  //PMECC_EADDR , end ecc
+  Data.Set AD:(&PMECC_BASE+0x20) %Long 0xFF //PMECC_IDR
+  Data.Set AD:&PMECC_CTRL %Long (0x1<<4.)   //PMECC_CTRL, Enable BCH
+
+GOSUB READ_ID_TEST
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.config   <NAND_BASE, EBI_CS3>   <PMECC_BASE,PMECC_CFG>
+  FLASHFILE.CONFIG   0x60000000             0xFFFFC070
+
+// FLASHFILE.TARGET <code range>        <data range>       <Algorithm file>
+  FLASHFILE.TARGET 0x00300000++0x1FFF 0x00302000++0x1FFF   ~~/demo/arm/flash/byte/nand2g08_pmecc.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//End of the test prepareonly
+IF "&arg1"=="PREPAREONLY"
+  ENDDO
+
+//Put a list of bad blocks into area window for 2Gbit (256MB) size
+  FLASHFILE.GETBADBLOCK 0x0--0xFFFFFFF
+
+  ;FLASHFILE.Erase 0x0--0xFFFFFFF 
+  ;FLASHFILE.LOAD  * 0x0   /WriteBadBlocks
+  ;FLASHFILE.LOAD  * 0x0   /WriteBadBlocks  /ComPare
+
+//Open the Dump Windows
+  FLASHFILE.DUMP 0x0
+
+ENDDO
+
+READ_ID_TEST:
+
+&NAND_BASE=0x60000000  ; AT91C_BASE_CS3 on the SAMA5D3X 
+&NAND_ALE=&NAND_BASE+(0x1<<21.)
+&NAND_CLE=&NAND_BASE+(0x1<<22.)
+
+Data.Set  A:0xFFFFC004 %Long 0x2  ;HSMC_CTRL[1], disable NFC (intenal NFC)
+
+Data.Set &NAND_CLE %Byte 0x90   ;command reg
+WAIT 100.ms
+
+Data.Set &NAND_ALE %Byte 0x00   ; addr reg
+WAIT 100.ms
+
+PRINT "read 1st : 0x" Data.Byte(A:&NAND_BASE)  " (Manufacture ID)"
+PRINT "read 2nd : 0x" Data.Byte(A:&NAND_BASE)  " (Device ID)"
+PRINT "read 3rd : 0x" Data.Byte(A:&NAND_BASE)
+PRINT "read 4th : 0x" Data.Byte(A:&NAND_BASE)
+PRINT "read 5th : 0x" Data.Byte(A:&NAND_BASE)
+PRINT "read 6th : 0x" Data.Byte(A:&NAND_BASE)
+
+RETURN

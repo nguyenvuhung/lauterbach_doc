@@ -1,0 +1,61 @@
+; --------------------------------------------------------------------------------
+; @Title: Real-Time Trace Configuration for the PandaBoard
+; @Description: -
+; @Author: DIE
+; @Chip: OMAP4430
+; @Board: PandaBoard
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: trace.cmm 7022 2014-04-28 15:08:24Z kjmal $
+
+
+   ; off-chip trace port analyzer (preprocessor) is connected to capture program trace
+   IF Analyzer()
+   (
+   ; configure PAD: EMU[2:19] for 16-bit TPIU (PADx_DPM_EMUx)
+     Data.Set ASD:0x4A1001B0 %Long Data.Long(ASD:0x4A1001B0)&0x0000FFFF
+     Data.Set ASD:0x4A1001B4 %Long 0
+     Data.Set ASD:0x4A1001B8 %Long 0
+     Data.Set ASD:0x4A1001BC %Long 0
+     Data.Set ASD:0x4A1001C0 %Long 0
+     Data.Set ASD:0x4A1001C4 %Long 0
+     Data.Set ASD:0x4A1001C8 %Long 0
+     Data.Set ASD:0x4A1001CC %Long 0
+     Data.Set ASD:0x4A1001D0 %Long 0
+     Data.Set ASD:0x4A1001d4 %Long 0
+   
+   ; initialize trace tool for 16-bit program trace
+     DO omap4430_tpiu.cmm 0
+     DO omap4430_tpiu.cmm 4
+ 
+     ETM.PortSize 16a
+     Analyzer.AutoFocus
+     
+     ETM.ContextID 32
+     
+     ;WinPOS 50% 50% 50% 50%
+     ;Analyzer.List
+   )
+   
+   
+   ; CombiProbe is connected to capture 4-bit system trace (STM)
+   IF CAnalyzer()
+   (
+   ; configure STM clock (PDLO_STM_CTL)
+     Data.Set ASD:0x54160030 %Long 0x3f0846
+   
+   ; configure PAD: PAD=EMU[15:19] (PADx_DPM_EMUx)
+     Data.Set ASD:0x4A1001CC %Long 0
+     Data.Set ASD:0x4A1001D0 %Long 0
+     Data.Set ASD:0x4A1001d4 %Long 0
+   
+   ; initialize CombiProbe for STM
+     SYStem.CONFIG.STM STP
+     STM.PortRoute CAnalyzer.state
+     STM.ON
+     CAnalyzer.THreshold 0.9
+     CAnalyzer.Init
+   
+     WinPOS 50% 50% 50% 50%
+     STMCAnalyzer.List
+  )

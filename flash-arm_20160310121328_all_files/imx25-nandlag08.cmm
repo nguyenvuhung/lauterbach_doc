@@ -1,0 +1,52 @@
+; --------------------------------------------------------------------------------
+; @Title: i.MX25 NAND FLASH Programming Script
+; @Description:
+;   FLASH Type: NAND FLASH(SAMSUNG, K9LAG08UM ) connected to CS0
+; 
+;   SRAM: 0x78000000
+;   NAND FLASH Controller(CPU-specific): 0xBB000000
+; 
+; @Author: jjeong
+; @Chip: IMX25
+; @Keywords: SAMSUNG K9LAG08UM
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: imx25-nandlag08.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+
+  AREA.RESet
+  AREA.view
+  
+  SYStem.RESet
+  SYStem.CPU IMX25
+  SYStem.JtagClock RTCK
+  SYStem.Option ResBreak OFF
+  SYStem.Option WaitReset ON
+  SYStem.Up
+
+//Disable MMU & Cache
+PER.Set.simple C15:0x1 %Long (Data.Long(C15:0x1)&~(0x5))
+
+//NAND FLASH SPare Area Size (SPAS)
+Data.Set 0xBB001E10 %Word 0x0020
+
+//NAND_FLASH_CONFIG1 ( 128 pages per block, Little Endian )
+Data.Set 0xBB001E1A %Word 0x0C1B  
+
+  FLASHFILE.RESet
+//FLASHFILE.CONFIG <NAND Flash Controller Base Address> , ,
+  FLASHFILE.CONFIG 0xBB000000 , ,
+
+// FLASHFILE.TARGET <code range> <data range> <Algorithm file>
+  FLASHFILE.TARGET  0x78000000++0x1FFF 0x78002000++0x1FFF ~~/demo/arm/flash/byte/nandlag08_imx25.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+  FLASHFILE.DUMP 0x0                             ; Read NAND 
+ ;FLASHFILE.DUMP /Spare /Track                   ; Read NAND Spare Area
+ ;FLASHFILE.ERASE 0x0--0xFFFFF  /EraseBadBlock   ; Erase NAND
+ ;FLASHFILE.LOAD * 0x0  /WriteBadBlock           ; Write NAND
+
+  ENDDO
+

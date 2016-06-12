@@ -1,0 +1,154 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Toshiba TMPM36x internal flash. 
+;
+; @Description: 
+; Script arguments:
+;
+;   DO tmpm36x [PREPAREONLY] [CPU=<cpu>]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;             example
+;
+;     CPU=<cpu> selects CPU derivative <cpu>. <cpu> can be CPU name out of the
+;             table listed below. For these derivatives the flash declaration
+;             is done by the script.
+;
+; For example:
+;
+;   DO ~~/demo/arm/flash/tmpm36x CPU=TMPM36BF10FG PREPAREONLY
+;
+; List of TMPM36x derivatives and their configuration:
+;
+;   CPU-Type        Flash size   SRAM size   Page size
+;                     [Byte]       [Byte]      [Byte]
+; --------------------------------------------------------------------------------
+;   TMPM361F10FG     0x100000     0x10000      0x200
+;   TMPM361FDFG       0x80000      0xA000      0x200
+;   TMPM361FYFG       0x40000      0x8000      0x200
+;   TMPM362F10FG     0x100000     0x10000      0x200
+;   TMPM363F10FG     0x100000     0x10000      0x200
+;   TMPM364F10FG     0x100000     0x10000      0x200
+;   TMPM365FYXBG      0x40000      0x6000      0x200
+;   TMPM366FDFG       0x80000     0x10000      0x200
+;   TMPM366FDXBG      0x80000     0x10000      0x200
+;   TMPM366FWFG       0x20000      0x8000      0x200
+;   TMPM366FWXBG      0x20000      0x8000      0x200
+;   TMPM366FYFG       0x40000      0xC000      0x200
+;   TMPM366FYXBG      0x40000      0xC000      0x200
+;   TMPM367FDFG       0x80000     0x20000      0x200
+;   TMPM367FDXBG      0x80000     0x20000      0x200
+;   TMPM367FWFG       0x20000      0xC000      0x200
+;   TMPM367FWXBG      0x20000      0xC000      0x200
+;   TMPM367FYFG       0x40000     0x10000      0x200
+;   TMPM367FYXBG      0x40000     0x10000      0x200
+;   TMPM368FDFG       0x80000     0x20000      0x200
+;   TMPM368FDXBG      0x80000     0x20000      0x200
+;   TMPM369FDFG       0x80000     0x20000      0x200
+;   TMPM369FDXBG      0x80000     0x20000      0x200
+;   TMPM369FYFG       0x40000     0x10000      0x200
+;   TMPM369FYXBG      0x40000     0x10000      0x200
+;   TMPM36BF10FG     0x100000     0x40800      0x200
+;   TMPM36BFYFG       0x40000     0x10800      0x200
+;
+; The internal flash is located at 0x00000000 (User boot mode)
+;                               or 0x3F800000 (Single boot mode)
+; The internal RAM is located at   0x20000000
+; The BOOTROM is located at        0x00000000 (Single boot mode)
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: TMPM36*
+; --------------------------------------------------------------------------------
+; $Rev: 3535 $
+; $Id: tmpm36x.cmm 3535 2015-12-15 16:27:01Z fcaron $
+
+  LOCAL &flashbase
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(TMPM36*)
+      SYStem.CPU TMPM36*
+
+    SYStem.Option.EnReset OFF
+    SYStem.Up
+  )
+
+  ; Disable watchdog
+  Data.Set 0x400F2000 %Long 0x00000000   ; disable timer
+  Data.Set 0x400F2004 %Long 0x000000B1   ; write key
+
+  ; Setup flash base address depending on boot mode
+  &flashbase=0x00000000
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &flashsize
+
+  IF CPUIS("TMPM36?F10*")
+    &flashsize=0x100000
+  ELSE IF CPUIS("TMPM36?FD*")
+    &flashsize=0x80000
+  ELSE IF CPUIS("TMPM36?FY*")
+    &flashsize=0x40000
+  ELSE IF CPUIS("TMPM36?FW*")
+    &flashsize=0x20000
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  IF &flashsize>=0x20000
+  (
+    FLASH.Create 1. (&flashbase+0x00000)--(&flashbase+0x0FFFF) 0x08000 TARGET Long
+    FLASH.Create 1. (&flashbase+0x10000)--(&flashbase+0x1FFFF) 0x10000 TARGET Long
+  )
+  IF &flashsize>=0x40000
+    FLASH.Create 1. (&flashbase+0x20000)--(&flashbase+0x3FFFF) 0x20000 TARGET Long
+  IF &flashsize>=0x80000
+    FLASH.Create 1. (&flashbase+0x40000)--(&flashbase+0x7FFFF) 0x20000 TARGET Long
+  IF &flashsize>=0x100000
+    FLASH.Create 1. (&flashbase+0x80000)--(&flashbase+0xFFFFF) 0x20000 TARGET Long
+
+  FLASH.TARGET 0x20000400 0x20001000 0x2000 ~~/demo/arm/flash/long/tmpm360.bin
+
+  RETURN

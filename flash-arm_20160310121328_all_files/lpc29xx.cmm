@@ -1,0 +1,358 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of NXP LPC29xx internal flash.
+;
+; @Description: 
+; Script arguments:
+;
+;   DO lpc29xx [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/lpc29xx PREPAREONLY
+;
+; List of LPC29xx derivatives and their configuration:
+;
+;   CPU-Type  FlashSize  EepromSize RamSize
+;                (KB)       (KB)     (KB)
+; --------------------------------------------------------------------------------
+;   LPC2915      512.         0.      32.
+;   LPC2917      512.         0.      48.
+;   LPC2917/01   512.        16.      48.
+;   LPC2919      768.         0.      48.
+;   LPC2919/01   768.        16.      48.
+;   LPC2921      128.        16.      16.
+;   LPC2923      256.        16.      16.
+;   LPC2925      512.        16.      32.
+;   LPC2926      256.        16.      48.
+;   LPC2927      512.        16.      48.
+;   LPC2929      768.        16.      48.
+;   LPC2930        0.         0.      48.
+;   LPC2939      512.        16.      48.
+;
+; Internal flash is located at: 0x20000000
+; Internal RAM is located at:   0x80000000
+;
+; Small sector size is 8kB. Large sector size is 64 kB.
+;
+; A Flash page is the unit in which the Flash is programmed: 512 bytes.
+; Therefore an alignment of 512 Byte has to be used for flash programming.
+;
+; NOTE:
+;   This example script is based on SYS_CLK connected to 10MHz 
+;   crystal oscillator. With &optimize flag PLL is used to setup SYS_CLK
+;   to 80 MHz. For different hardware configuration PLL setup may need to
+;   be adapted.
+;
+;   FLASH.CLocK setup should match SYS_CLK frequency. If FLASH.CLocK AUTO 
+;   is used instead of fix frequency the debugger is executing time 
+;   measurent loop to detect SYS_CLK frequency and to setup FLASH.CLocK
+;   value automatically.
+;
+;   Data has to be loaded to flash alignment to 512 Byte boundaries.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: LPC29*
+; --------------------------------------------------------------------------------
+; $Rev: 2903 $
+; $Id: lpc29xx.cmm 2903 2014-07-16 11:19:46Z kjmal $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+  
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &FlashSize
+  LOCAL &EepromSize
+  LOCAL &RamSize
+  LOCAL &optimize
+
+  ; ------------------------------------------------------------------------------
+  ; Start debugging
+  
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU LPC2919/01
+    SYStem.JtagClock 1.5Mhz
+    SYStem.Option ResBreak OFF
+    SYStem.Up
+  )
+
+  ; Setup flash parameter
+  GOSUB Setup_FlashParameter
+  ; Optimize flash programming time by switching on PLL
+  &optimize=0
+
+  ; Setup XTAL_OSC_CONTROL crystal oscillator control register
+  ;   XTAL-Osc = enabled
+  ;   Bypass = crystal oscillator connected
+  ;   HF = low frequency mode
+  Data.Set 0xFFFF8020 %Long 0x00000001
+
+  ; Setup SYS_CLK_CONF register to use crystal oscillator
+  ;   CLK_SEL = crystal oscillator
+  ;   IDIV = 1
+  Data.Set 0xFFFF8070 %Long 0x01000000
+
+  IF &optimize!=0
+  (
+    ; Set Core frequency SYS_CLK to 80Mhz based on 10MHz crystal oscillator
+    ;
+    ; When JTAG = 1, crystal oscillator will be the default value for 
+    ; BASE_SYS_CLK 
+
+    ; PLL control register, disable PLL
+    ;   P23EN = disabled
+    ;   PD = Power-down mode
+    Data.Set 0xFFFF8028 %Long 0x00000001
+
+    ; PLL control register, enable PLL
+    ; fclkin = 10MHz, fclkout = 160Mhz, fcco = 320Mhz
+    ;   CLK_SEL = crystal oscillator
+    ;   MSEL = 15 (M=16)
+    ;   AUTOBLOK = OFF
+    ;   PSEL = 0 (P=2)
+    ;   DIRECT = OFF, Clock output goes through post-divider
+    ;   P23EN = ON, PLL +120° and PLL +240° outputs enabled
+    ;   BYPASS = OFF
+    ;   PD = Normal mode
+    Data.Set 0xFFFF8028 %Long 0x010F0004
+
+    ; Wait until PLL is present
+    LOCAL &pllstat &rdet
+    &pllstat=Data.Long(P:0xFFFF8024)
+    &rdet=Data.Long(P:0xFFFF8018)
+    ; PLL locked?
+    Var.WHILE ((&pllstat&0x00000001)!=0x00000001)
+    (
+      &pllstat=Data.Long(P:0xFFFF8024)
+    )
+    ; PLL present?
+    Var.WHILE ((&rdet&0x00000004)!=0x00000004)
+    (
+      &rdet=Data.Long(P:0xFFFF8018)
+    )
+
+    ; Setup SYS_CLK_CONF register to use PLL
+    ;   CLK_SEL = PLL
+    ;   IDIV = 2
+    Data.Set 0xFFFF8070 %Long 0x02000004
+
+    ; Setup JTAG clock to 80Mhz/6
+    SYStem.JtagClock 13Mhz
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Index sector programming
+
+  &ProgramIndexSector=0.
+  IF &ProgramIndexSector!=0
+  (
+    DIALOG.YESNO "Index sector is write only!" "Enabled features cannot be disabled again." " " "Do you really want to program the index sector?" 
+    LOCAL &progflash
+    ENTRY &progflash
+    IF &progflash
+    (
+      GOSUB ProgramIndexSector
+      ENDDO
+    )
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+
+  IF &FlashSize!=0.
+  (
+    FLASH.Create 1. 0x20000000--0x2000ffff                      0x02000 TARGET Long
+    FLASH.Create 1. 0x20010000--(0x20000000+&FlashSize*0x400-1) 0x10000 TARGET Long
+    FLASH.TARGET 0x80000000 0x80001000 0x1000 ~~/demo/arm/flash/long/lpc2900.bin
+    FLASH.CLocK AUTO
+  )
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE   
+  
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  IF &FlashSize!=0.
+  (
+    DIALOG.YESNO "Program flash memory?"
+    LOCAL &progflash
+    ENTRY &progflash
+    IF &progflash
+    (
+      FLASH.ReProgram.ALL /Erase
+      ; 1. Download file
+      Data.LOAD.auto *
+      ; 2. Checksum generation
+      Data.Set 0x20000014 %Long 0x0          ;Zero the reserved vector's spot
+      Data.SUM 0x20000000--0x2000001f /Long  ;Calculate checksum of all (other) vectors
+      Data.Set 0x20000014 %Long -Data.SUM()  ;Write back the 2's complement in reserved vector's spot
+      ; 3. Execute flash programming
+      FLASH.ReProgram.off
+    )
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; EEPROM programming example
+  ;
+  ; Preliminary USR: access memory class is used for EEPROM programming.
+  ; Some unused RAM has to used for USR: access algorithm.
+
+  IF &EepromSize!=0.
+  (
+    DIALOG.YESNO "Program EEPROM memory?"
+    LOCAL &progflash
+    ENTRY &progflash
+    IF &progflash
+    (
+      ; As above for flash programming example crystal oscillator has 10MHz
+      ; and with &optimize flag PLL is setup to 80 MHz.
+      LOCAL &sys_clk
+      &sys_clk=10000000.
+      IF &optimize!=0
+      (
+        &sys_clk=80000000.
+      )
+      ; Setup EECLKDIV (EEPROM clock divider register) to 375kHz +- 6.67%
+      PER.Set.simple ASD:0x20200094 %Long ((&sys_clk+375000./2)/375000.)-1
+      ; Setup EEWSTATE (EEPROM wait state register)
+      PER.Set.simple ASD:0x20200090 %Long ((35./(1000000000./&sys_clk))<<16.)|((55./(1000000000./&sys_clk))<<8.)|(15./(1000000000./&sys_clk))
+
+      ; Setup USR: access to read and write EEPROM memory
+      ; A reserved space of RAM has to be used for USR: access algorithm.
+      ; In this example is used the last 1 kByte of internal RAM.
+      Data.USRACCESS (0x80000000+(&RamSize-1)*0x400)++0x3ff ,, ~~/demo/arm/flash/byte/lpc2900ee_usr.bin
+      ; Open EEPROM memory dump window
+      Data.dump USR:0++(&EepromSize*0x400-1) /Byte
+    )
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Setup flash configuration depending on selected CPU.
+Setup_FlashParameter:
+
+    &cpu=CPU()
+    IF (("&cpu"=="LPC2919/01")||("&cpu"=="LPC2929")||("&cpu"=="LPC2939"))
+    (
+      &FlashSize=768.
+      &EepromSize=16.
+      &RamSize=48.
+    )
+    ELSE IF (("&cpu"=="LPC2919"))
+    (
+      &FlashSize=768.
+      &EepromSize=0.
+      &RamSize=48.
+    )
+    ELSE IF (("&cpu"=="LPC2917/01"))
+    (
+      &FlashSize=512.
+      &EepromSize=16.
+      &RamSize=48.
+    )
+    ELSE IF (("&cpu"=="LPC2925"))
+    (
+      &FlashSize=512.
+      &EepromSize=16.
+      &RamSize=32.
+    )
+    ELSE IF (("&cpu"=="LPC2917")||("&cpu"=="LPC2927"))
+    (
+      &FlashSize=512.
+      &EepromSize=0.
+      &RamSize=48.
+    )
+    ELSE IF (("&cpu"=="LPC2915"))
+    (
+      &FlashSize=512.
+      &EepromSize=0.
+      &RamSize=32.
+    )
+    ELSE IF (("&cpu"=="LPC2926"))
+    (
+      &FlashSize=256.
+      &EepromSize=16.
+      &RamSize=48.
+    )
+    ELSE IF (("&cpu"=="LPC2923"))
+    (
+      &FlashSize=256.
+      &EepromSize=16.
+      &RamSize=16.
+    )
+    ELSE IF (("&cpu"=="LPC2921"))
+    (
+      &FlashSize=128.
+      &EepromSize=16.
+      &RamSize=16.
+    )
+    ELSE IF (("&cpu"=="LPC2930"))
+    (
+      &FlashSize=0.
+      &EepromSize=0.
+      &RamSize=48.
+    )
+    ELSE
+    (
+      PRINT %ERROR "FLASH size of CPU type is unknown"
+      ENDDO
+    )
+
+    RETURN
+
+
+; --------------------------------------------------------------------------------
+; Index sector programming example
+;
+; Index sector is containing 
+; - sector security
+; - customer information 
+; - JTAG access protection
+;
+; The index sector cannot be erased!!! As a result the sector is write-only
+; and enabled features cannot be disabled again.
+;
+; Take care when writing locations in the index sector. The sector cannot be
+; erased, and using unspecified values or locations might result in a 
+; corrupted or malfunctioning device which cannot be recovered.
+
+ProgramIndexSector:
+
+  FLASH.RESet
+
+  ; Set FS_ISS bit in FCTR register so that index sector becomes visible 
+  Data.Set ASD:0x20200000 %Long Data.Long(ASD:0x20200000)|0x40
+  
+  ; Declare index sectors, reserved sectors are declared as NOP
+  FLASH.Create 1. 0x20000000--0x200007ff 0x200 NOP Long
+  FLASH.Create 1. 0x20000800--0x20000fff 0x200 TARGET Long
+  FLASH.TARGET 0x80000000 0x80001000 0x1000 ~~/demo/arm/flash/long/lpc2900iss.bin
+  FLASH.CLocK AUTO
+  FLASH.AUTO ALL
+
+  ; List of index sectors
+  WinPOS 0% 0% 50% 45%
+  FLASH.List
+  ; Index sector customer info
+  WinPOS 0% 45% 50% 55%
+  Data.dump 0x20000a40--0x20000bff
+  ; Flash memory sector protection
+  WinPOS 50% 15% 50% 85%
+  Data.dump 0x20000c00--0x20000fff
+  ; JTAG security
+  WinPOS 50% 0% 50% 15%
+  Data.dump 0x20000a30--0x20000a3f
+
+  RETURN

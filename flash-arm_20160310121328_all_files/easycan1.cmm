@@ -1,0 +1,74 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration for Scaleo easyCAN1 F256K-16 internal flash 
+;
+; @Description: 
+; Script arguments:
+;
+;  DO easycan1 [PREPAREONLY]
+;
+;   PREPAREONLY only declares flash but does not execute flash programming example
+;
+; Memory ranges (reset values):
+;
+;   256 kByte code flash at 0x00000000--0x0007ffff
+;   8 kByte internal RAM at 0x00300000--0x00303fff
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: EASYCAN1
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: easycan1.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  LOCAL &parameters &param_prepareonly
+  ENTRY %LINE &parameters
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &ifcbase &rambase
+
+  ; --------------------------------------------------------------------------------
+  ; CPU setup
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU EASYCAN1
+    SYStem.JtagClock 3Mhz
+    SYStem.Up
+  )
+
+  ; Disable Watchdog 
+  //DATA.SET SD:0xFFE14050 %LE %LONG 0x80000000
+  //DATA.SET SD:0xFFE14060 %LE %LONG 0x0000C071
+  //DATA.SET SD:0xFFE14068 %LE %LONG 0x00002340
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+
+  &ifcbase=Data.Long(SD:0xffe04064)&0xff000000
+  &rambase=Data.Long(SD:0xffff0000)&0xfff00000
+
+  FLASH.Create 1. (&ifcbase+0x000000)--(&ifcbase+0x03ffff) 0x4000 TARGET Long 0xffe04000
+
+  FLASH.TARGET &rambase+0x400 &rambase+0x1000 0x800 ~~/demo/arm/flash/byte/easycan.bin
+
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram 1. /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+  )
+
+  ENDDO

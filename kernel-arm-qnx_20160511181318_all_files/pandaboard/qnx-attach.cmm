@@ -1,0 +1,138 @@
+; --------------------------------------------------------------------------------
+; @Title: QNX Demo for TRACE32 RTOS Debugger on the PandaBoard
+; @Description: 
+;   
+;   This batchfile demonstrates the use of the RTOS Debugger for QNX
+;   
+;   The example is generated for the OMAP4430 PandaBoard using an ICD.
+;   It will NOT run on any other board, but may be used as a template
+;   for others.
+;   The debugger attaches to an already running QNX system
+;   
+; @Keywords: awareness
+; @Props: Template
+; @Author: DIE
+; @Board: PandaBoard
+; @Chip: OMAP4430
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: qnx-attach.cmm 7821 2014-10-29 11:06:58Z kjmal $
+
+
+; Starting QNX example with TRACE32:
+; - Connect STRAIGHT modem cable to RS232
+;   - 115200 baud, 8/N/1, no(!) handshake
+; - Switch on the board, boot QNX
+; - Start TRACE32
+; - TRACE32: "do qnx-attach"
+
+
+ SCREEN.ON
+
+
+; Debugger Reset
+
+ WinPAGE.RESet
+ AREA.RESet
+ WinPOS 0. 25. 75. 9. 0. 0. W000
+ AREA.view
+ 
+ PRINT "resetting..."
+
+ RESet
+ 
+
+; setup of ICD
+ 
+ PRINT "initializing..."
+ SYStem.CPU OMAP4430
+ SYStem.JtagClock RTCK
+ SYStem.Option DACR ON          ; give Debugger global write permissions
+ SYStem.Option ResBreak OFF     ; hardware dependent (see manual)
+ SYStem.Option WaitReset ON     ; hardware dependent (see manual)
+ TrOnchip.Set DABORT OFF        ; used by Linux for page miss!
+ TrOnchip.Set PABORT OFF        ; used by Linux for page miss!
+ TrOnchip.Set UNDEF OFF         ; my be used by Linux for FPU detection
+ SYStem.Option MMUSPACES ON     ; enable space ids to virtual addresses
+ SETUP.IMASKASM ON              ; lock interrupts while single stepping
+
+ MAP.DenyAccess 0xC0000000--0xDFFFFFFF  ; disable access to non-existent memory
+
+ SYStem.Mode Attach
+ 
+ Break
+
+ 
+; Open a Code Window -- we like to see something
+ WinPOS 0. 0. 75. 20.
+ List.auto
+ SCREEN.display
+ 
+
+; Configure ETM or STM trace probe
+ PRINT "configuring trace probe..."
+ DO trace.cmm
+ 
+
+; Load the symbols of procnto
+ PRINT "loading procnto symbols..."
+ Data.LOAD.Elf procnto-smp-instr-201007091524.sym /NoCODE 
+
+
+; Declare the MMU format to the debugger
+ PRINT "initializing debugger MMU..."
+ ;MMU.FORMAT QNX
+ MMU.SCAN                                   ; scan initial kernel tables
+ TRANSlation.COMMON 0xe0000000--0xffffffff  ; kernel area is common for all MMU space ids
+ TRANSlation.TableWalk ON   ; debugger uses a table walk to decode virtual addresses
+ TRANSlation.ON             ; switch on debugger(!) address translation 
+
+
+; Initialize QNX Support
+
+ PRINT "initializing QNX support..."
+ TASK.CONFIG ~~/demo/arm/kernel/qnx/qnx.t32     ; loads QNX awareness
+ MENU.ReProgram ~~/demo/arm/kernel/qnx/qnx.men  ; loads QNX menu
+ HELP.FILTER.Add rtosqnx    ; add QNX awareness manual to help system
+ 
+ TASK.sYmbol.Option MMUSCAN OFF  ; not necessary with tablewalk
+
+ ; switch on autoloader
+ sYmbol.AutoLoad.CHECKQNX "do ~~/demo/arm/kernel/qnx/autoload "
+
+ ; Group kernel area to be displayed with red bar
+ GROUP.Create "kernel" 0xfc000000--0xffffffff /RED
+
+ ; activate autoloader for processes:
+ TASK.sYmbol.Option AutoLoad Process
+ 
+
+ PRINT "done."
+
+ ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Application Debugging
+; e.g. "sieve_g"
+; --------------------------------------------------------------------------------
+
+ PRINT "please start 'sieve_g'"
+
+ ; script based
+   ; using the script based application debugging
+   ; gives more control over the single commands
+   ; see file "app_debug.cmm"
+   
+   ;do ~~/demo/arm/kernel/qnx/app_debug sieve_g
+   
+ ; process watch system
+   ; the process watch system automates the actions
+   ; for application debugging
+   
+   WinPOS 55. 24. 40. 4.
+   TASK.Watch.View  "sieve_g"
+   Go
+
+ENDDO
+

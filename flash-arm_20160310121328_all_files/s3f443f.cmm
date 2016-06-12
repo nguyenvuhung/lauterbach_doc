@@ -1,0 +1,24 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Samsung S3F443FX internal flash 
+;
+; @Description:
+; 256 kBytes internal Flash organized in 512 sectors, 512 Byte each.
+; Flash start address is 0x0 or 0x1f00000. Select your setting with
+; LOCAL variable flashbase as required.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 3152 $
+; $Id: s3f443f.cmm 3152 2015-02-06 16:35:19Z kjmal $
+
+  LOCAL &flashbase
+
+  &flashbase=0x0
+  ; &flashbase=0x1f00000
+
+  FLASH.RESet
+  FLASH.TARGET 0x1ff0000 0x1ff0800 0x1000 ~~/demo/arm/flash/long/s3f441fx.bin
+  FLASH.Create 1. &flashbase++0x3ffff 0x200 TARGET Long
+
+  ENDDO

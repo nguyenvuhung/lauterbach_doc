@@ -1,0 +1,104 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of NXP LPC28xx internal flash.
+;
+; @Description: 
+; Script arguments:
+;
+;   DO lpc28xx [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/lpc28xx PREPAREONLY
+;
+; List of LPC28xx derivatives and their configuration:
+;
+;   CPU-Type  FlashSize  RamSize
+;                (KB)     (KB)
+;   -----------------------------
+;   LPC2880        -       64.
+;   LPC2888     1024.      64.
+;
+; Internal flash is located at: 0x10400000
+; Internal RAM is located at:   0x00400000
+;
+; Small sector size is 8kB. Large sector size is 64 kB.
+;
+; A Flash page is the unit in which the Flash is programmed: 512 bytes.
+; Therefore an alignment of 512 Byte has to be used for flash programming.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: LPC28*
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: lpc28xx.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+  
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  ; --------------------------------------------------------------------------------
+  ; Set configuration values out of the CPU table above. 
+
+  LOCAL &CpuType
+  LOCAL &FlashSize
+
+  ; Example for LPC2888
+  &CpuType="LPC2888"
+  &FlashSize=1024.
+
+  ; --------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU &CpuType
+    SYStem.JtagClock RTCK
+    SYStem.Option ResBreak OFF
+    SYStem.Option NOIRCHECK ON
+    SYStem.Option BUGFIXV4 ON
+    SYStem.Up
+  )
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+
+  FLASH.Create 1. 0x10400000--0x104effff 0x10000 TARGET Long
+  FLASH.Create 1. 0x104f0000--0x104fffff 0x02000 TARGET Long
+  FLASH.TARGET 0x400000 0x401000 0x1000 ~~/demo/arm/flash/long/lpc2800.bin
+  
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE 
+
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  IF &FlashSize!=0.
+  (
+    DIALOG.YESNO "Program flash memory?"
+    LOCAL &progflash
+    ENTRY &progflash
+    IF &progflash
+    (
+      ; Example for download 
+      FLASH.ReProgram.ALL /Erase
+      ; 1. Download file
+      Data.LOAD.auto *
+      ; 2. Checksum generation
+      Data.Set 0x14 %Long 0x0          ;Zero the reserved vector's spot
+      Data.SUM 0x0--0x1f /Long         ;Calculate checksum of all (other) vectors
+      Data.Set 0x14 %Long -Data.SUM()  ;Write back the 2's complement in reserved vector's spot
+      ; 3. Flash programming
+      FLASH.ReProgram.off
+    )
+  )
+
+  ENDDO

@@ -1,0 +1,79 @@
+; --------------------------------------------------------------------------------
+; @Title: NAND FLASH Programming script for the Marvell DB-78100-A-BP target
+; @Description:
+; NAND FLASH Programming script for the Marvell DB-78100-A-BP target
+; (MV76100/MV78100/MV78200)
+;
+; The chip contains an 88FR571 for MMU mode or an 88FR521 for MPU mode
+; Additionally it contains a Marvell L2 cache controller and a VFP
+;
+; NAND FLASH(SAMSUNG,K9F5608) is connected to DEV_CS[3]
+;
+; SDRAM: 0x00100000
+; Command Register : 0xFC000001  
+; Address Register : 0xFC000002
+; Data Register    : 0xFC000000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: 88FR571 MV76100 MV78100 MV78200
+; @Board: DB-78100-A-BP
+; @Keywords: SAMSUNG K9F5608 NAND
+; --------------------------------------------------------------------------------
+; $Id: mv78100-nand5608.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+// Basic setup
+  SYStem.RESet
+  SYStem.CPU 88FR571
+  SYStem.JtagClock 1Mhz
+  SYStem.Up
+  
+// increase JTAG clock after reset
+  SYStem.JtagClock CTCK 40Mhz
+  
+// Let the target boot loader initialize the SDRAM
+  Go.direct
+  WAIT 3s
+IF run()
+  Break.direct
+
+// NAND FLASH controller initialization 
+  Data.Set SD:0xF1010470 %LE %Long 0x0007d9c0
+  Data.Set SD:0xF1010208 %LE %Long 0xFEDCBA98
+  Data.Set SD:0xF101020C %LE %Long 0x000100FF
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.config <Cmd_reg>  <Addr_reg>  <Data_reg>
+  FLASHFILE.CONFIG 0xFC000001 0xFC000002  0xFC000000
+
+// FLASHFILE.TARGET <code range>        <data range>           <Algorithm file>
+  FLASHFILE.TARGET 0x00100000++0x1FFF 0x00102000++0x1FFF ~~/demo/arm/flash/byte/nand5608.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Put a list of bad blocks into area window for 2Gbit (256MB) size
+  FLASHFILE.GETBADBLOCK 0x0--0xFFFFFFF
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+  //Erase NAND FLASH Main and Bad block inforamtion
+    FLASHFILE.Erase 0x0--0xFFFFFFF 
+
+  //Skipped way 
+    FLASHFILE.LOAD.binary  * 0x0 
+    ;FLASHFILE.LOADSPARE * 0x0 
+   
+  //Reserved block area way
+    ;FLASHFILE.LOAD  * 0x0   /WriteBadBlocks
+    ;FLASHFILE.LOADSPARE *  0x0   /WriteBadBlocks  
+  )
+//Open the Dump Windows
+  FLASHFILE.DUMP 0x0
+
+ENDDO 
+
+

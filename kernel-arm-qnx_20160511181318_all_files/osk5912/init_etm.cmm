@@ -1,0 +1,20 @@
+; --------------------------------------------------------------------------------
+; @Title: Script to Initialze the ETM Pins of the OMAP5912 Board
+; @Description: -
+; @Author: DIE
+; @Chip: OMAP5912
+; @Board: OSK5912
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: init_etm.cmm 7022 2014-04-28 15:08:24Z kjmal $
+
+
+; enable ETM pins
+
+; ETM pin multiplexing - normal mode
+  Data.Set a:0xfffe1014 %Long 0x09200000 ; FUNC_MUX_CTRL_4
+  Data.Set a:0xfffe1018 %Long 0x09249249 ; FUNC_MUX_CTRL_5
+; ETM pin multiplexing - demux mode
+  ;Data.Set a:0xfffe101c %Long 0x00b40000 ; FUNC_MUX_CTRL_6
+  ;Data.Set a:0xfffe1020 %Long 0x0000002d ; FUNC_MUX_CTRL_7
+

@@ -1,0 +1,219 @@
+; --------------------------------------------------------------------------------
+; @Title: Example Script for programming of ST STM32L1xx internal flash
+;
+; @Description: 
+; Script arguments:
+;
+;  do stm32l1xx [PREPAREONLY] [CPU=<cpu>]
+;
+;   PREPAREONLY only declares flash but does not execute flash programming example
+;
+;   CPU=<cpu> selects CPU derivative <cpu>
+;
+; List of STM32L1xx derivatives and their configuration:
+;
+;   CPU-Type      Flash size   EEPROM size   SRAM size 
+;                   (kByte)      (kByte)      (kByte)
+; --------------------------------------------------------------------------------
+;   STM32L151C6       32.           4.          10.
+;   STM32L151C8       64.           4.          10.
+;   STM32L151CB      128.           4.          16.
+;   STM32L151QC      256.           8.          32.
+;   STM32L151QD      384.          12.          48.
+;   STM32L151R6       32.           4.          10.
+;   STM32L151R8       64.           4.          10.
+;   STM32L151RB      128.           4.          16.
+;   STM32L151RC      256.           8.          32.
+;   STM32L151RD      384.          12.          48.
+;   STM32L151V8       64.           4.          10.
+;   STM32L151VB      128.           4.          16.
+;   STM32L151VC      256.           8.          32.
+;   STM32L151VD      384.          12.          48.
+;   STM32L151ZC      256.           8.          32.
+;   STM32L151ZD      384.          12.          48.
+;   STM32L151ZE      512.          16.          80.
+; --------------------------------------------------------------------------------
+;   STM32L152C6       32.           4.          10.
+;   STM32L152C8       64.           4.          10.
+;   STM32L152CB      128.           4.          16.
+;   STM32L152QC      256.           8.          32.
+;   STM32L152QD      384.          12.          48.
+;   STM32L152R6       32.           4.          10.
+;   STM32L152R8       64.           4.          10.
+;   STM32L152RB      128.           4.          16.
+;   STM32L152RC      256.           8.          32.
+;   STM32L152RD      384.          12.          48.
+;   STM32L152V8       64.           4.          10.
+;   STM32L152VB      128.           4.          16.
+;   STM32L152VC      256.           8.          32.
+;   STM32L152VD      384.          12.          48.
+;   STM32L152ZC      256.           8.          32.
+;   STM32L152ZD      384.          12.          48.
+;   STM32L152ZE      512.          16.          80.
+; --------------------------------------------------------------------------------
+;   STM32L162QD      384.          12.          48.
+;   STM32L162RD      384.          12.          48.
+;   STM32L162VD      384.          12.          48.
+;   STM32L162ZD      384.          12.          48.
+;
+; Flash base address is 0x08000000
+; SRAM base address is  0x20000000
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: STM32L1*
+; --------------------------------------------------------------------------------
+; $Rev: 3536 $
+; $Id: stm32l1xx.cmm 3536 2015-12-16 13:43:52Z fcaron $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &param_cpu
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  ; ------------------------------------------------------------------------------
+  ; CPU setup
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(STM32L1*)
+      SYStem.CPU STM32L1*
+    SYStem.Up
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  
+  LOCAL &FlashSize &EEPROMSize
+  GOSUB FlashDeclaration
+  ENTRY &FlashSize &EEPROMSize
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+
+  IF &progflash 
+  (
+    FLASH.ReProgram 0x08000000++(&FlashSize-1) /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  DIALOG.YESNO "Program data EEPROM memory?"
+  ENTRY &progflash
+
+  IF &progflash 
+  (
+    ; EEPROM memory can be reprogrammed without erase command 
+    FLASH.Program 0x08080000++(&EEPROMSize-1)
+    Data.dump 0x08080000++(&EEPROMSize-1)
+    Data.Set
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &FlashSize
+  LOCAL &EEPROMSize
+
+  IF CPUIS("STM32L1???6*")
+  (
+    &FlashSize=0x8000
+    &EEPROMSize=0x1000
+  )
+  ELSE IF CPUIS("STM32L1???8*")
+  (
+    &FlashSize=0x10000
+    &EEPROMSize=0x1000
+  )
+  ELSE IF CPUIS("STM32L1???B*")
+  (
+    &FlashSize=0x20000
+    &EEPROMSize=0x1000
+  )
+  ELSE IF CPUIS("STM32L1???C*")
+  (
+    &FlashSize=0x40000
+    &EEPROMSize=0x2000
+  )
+  ELSE IF CPUIS("STM32L1???D*")
+  (
+    &FlashSize=0x60000
+    &EEPROMSize=0x3000
+  )
+  ELSE IF CPUIS("STM32L1???E*")
+  (
+    &FlashSize=0x80000
+    &EEPROMSize=0x4000
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  ; Program memory flash
+  IF &FlashSize>=0x8000
+    FLASH.Create 1. 0x08000000--0x08007FFF  0x100 TARGET Long
+  IF &FlashSize>=0x10000
+    FLASH.Create 1. 0x08008000--0x0800FFFF  0x100 TARGET Long
+  IF &FlashSize>=0x20000
+    FLASH.Create 1. 0x08010000--0x0801FFFF  0x100 TARGET Long
+  IF &FlashSize>=0x40000
+    FLASH.Create 1. 0x08020000--0x0803FFFF  0x100 TARGET Long
+  IF &FlashSize>=0x60000
+    FLASH.Create 2. 0x08040000--0x0805FFFF  0x100 TARGET Long
+  IF &FlashSize>=0x80000
+    FLASH.Create 2. 0x08060000--0x0807FFFF  0x100 TARGET Long
+  
+  
+  ; Data/EEPROM memory
+  IF &EEPROMSize>=0x1000
+    FLASH.Create 3. 0x08080000--0x08080FFF TARGET Byte
+  IF &EEPROMSize>=0x2000
+    FLASH.Create 3. 0x08081000--0x08081FFF TARGET Byte
+  IF &EEPROMSize>=0x3000
+    FLASH.Create 4. 0x08082000--0x08082FFF TARGET Byte
+  IF &EEPROMSize>=0x4000
+    FLASH.Create 4. 0x08083000--0x08083FFF TARGET Byte
+  
+  
+  ; For Main Flash memory boot mode flash memory is aliased to address 0x0
+  ; Because SYSCFG_MEMRMP:MEM_MODE[1:0] is not indicating active memory remap
+  ; we are comparing flash reset vector against reset vector at alias address
+  Data.ComPare 0x0--0x7 0x08000000
+  IF !FOUND()
+    FLASH.CreateALIAS 0x00000000++(&FlashSize-1) 0x08000000
+
+  IF &FlashSize>=0x60000
+    FLASH.TARGET 0x20000000 0x20001000 0x400 ~~/demo/arm/flash/byte/stm32l100hd.bin
+  ELSE IF &FlashSize>=0x40000
+    FLASH.TARGET 0x20000000 0x20001000 0x400 ~~/demo/arm/flash/byte/stm32l100mdp.bin
+  ELSE
+    FLASH.TARGET 0x20000000 0x20001000 0x400 ~~/demo/arm/flash/byte/stm32l100md.bin
+
+  RETURN &FlashSize &EEPROMSize

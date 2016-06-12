@@ -1,0 +1,133 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of EnergyMicro EFM32 Gecko internal flash.
+;
+; @Description: 
+; Script arguments:
+;
+;   DO efm32g [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; List of EFM32 Gecko derivatives and their configuration:
+;
+;   CPU                           FlashSize  RamSize
+;   Derivative      CpuType          [kB]      [kB]
+; --------------------------------------------------------------------------------
+;   EFM32G200F16    EFM32G200F        16.        8.
+;   EFM32G200F32    EFM32G200F        32.        8.
+;   EFM32G200F64    EFM32G200F        64.       16.
+;   EFM32G210F128   EFM32G210F       128.       16.
+;   EFM32G230F32    EFM32G230F        32.        8.
+;   EFM32G230F64    EFM32G230F        64.       16.
+;   EFM32G230F128   EFM32G230F       128.       16.
+;   EFM32G280F32    EFM32G280F        32.        8.
+;   EFM32G280F64    EFM32G280F        64.       16.
+;   EFM32G280F128   EFM32G280F       128.       16.
+;   EFM32G290F32    EFM32G290F        32.        8.
+;   EFM32G290F64    EFM32G290F        64.       16.
+;   EFM32G290F128   EFM32G290F       128.       16.
+;   EFM32G840F32    EFM32G840F        32.        8.
+;   EFM32G840F64    EFM32G840F        64.       16.
+;   EFM32G840F128   EFM32G840F       128.       16.
+;   EFM32G880F32    EFM32G880F        32.        8.
+;   EFM32G880F64    EFM32G880F        64.       16.
+;   EFM32G880F128   EFM32G880F       128.       16.
+;   EFM32G890F32    EFM32G890F        32.        8.
+;   EFM32G890F64    EFM32G890F        64.       16.
+;   EFM32G890F128   EFM32G890F       128.       16.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: EFM32G???F
+; --------------------------------------------------------------------------------
+; $Rev: 3503 $
+; $Id: efm32g.cmm 3503 2015-11-20 15:57:45Z fcaron $
+
+  LOCAL &parameters &param_prepareonly
+  ENTRY %LINE &parameters
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &FlashSize
+
+  ; ------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF !CPUIS(EFM32G???F)
+    (
+      IF VERSION.BUILD()>=37389.
+        SYStem.CPU EFM32G???F
+      ELSE
+      (
+        PRINT %ERROR "Please select EFM32GxxxF CPU derivative"
+        ENDDO
+      )
+    )
+
+    SYStem.Option.ResBreak OFF
+    IF CABLE.TWOWIRE()
+    (
+      SYStem.CONFIG.DEBUGPORTTYPE SWD
+    )
+    ELSE
+    (
+      PRINT %ERROR "Serial Wire Debug (SWD) not supported by debug cable"
+      ENDDO
+    )
+    SYStem.JtagClock 500Khz
+
+    SYStem.Up
+
+    ; After SYStem.Up the JTAG clock can be set to higher frequency.
+    SYStem.JtagClock 10Mhz
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  ; Detect flash size in kByte via device information page
+  &FlashSize=Data.Long(SD:0x0fe081f8)>>16.
+  PRINT "Detected flash size is "+FORMAT.Decimal(1.,&FlashSize)+"kB"
+  IF &FlashSize==0x00
+  (
+    &FlashSize=16.
+  )
+
+  FLASH.RESet
+
+  IF &FlashSize>=16.
+    FLASH.Create 1. 0x00000--0x03fff 0x200 TARGET Long
+  IF &FlashSize>=32.
+    FLASH.Create 1. 0x04000--0x07fff 0x200 TARGET Long
+  IF &FlashSize>=64.
+    FLASH.Create 1. 0x08000--0x0ffff 0x200 TARGET Long
+  IF &FlashSize>=128.
+    FLASH.Create 1. 0x10000--0x1ffff 0x200 TARGET Long
+
+  FLASH.TARGET 0x20000000 0x20001000 0x200 ~~/demo/arm/flash/long/efm32.bin
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO

@@ -1,0 +1,66 @@
+; --------------------------------------------------------------------------------
+; @Title: MXC91311 NAND FLASH Programming Script
+; @Description:
+; NAND FLASH(SAMSUNG, K9F5608, 32MB) is connected
+; 
+; internal SRAM: 0x78000000
+; NAND FLASH Controller(CPU-specific): 0xB8000000
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: MXC913*
+; @Keywords: SAMSUNG K9F5608 NAND
+; --------------------------------------------------------------------------------
+; $Id: mxc91311-nand5608.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+//SYStemtem Configuration 
+  SYStem.CPU MXC91311
+  SYStem.Up
+
+  PRINT "Set MCU to Little Endian"
+// Set MCU to Little Endian
+  PER.Set.simple C15:0x1 %Long (Data.Long(C15:0x1)&~0x80)|0x0
+
+// NAND FLASH Controller Enable on MXC91311
+// configuring CP15 for enabling the pripheral bus
+  Data.Set C15:0x042f %Long 0x40000015
+
+// ARM=399MHz HCLK=100MHz IPG=50MHz NFC=19.95MHz
+  Data.Set SD:0x53f80004 %LE %Long 0xFF800458
+
+//Reset Control and Source Register (RCSR)
+//Define NAND FLASH Device 8 bits width ( bit 19 = 0 )
+  Data.Set 0x53F8000C %LE %Long 0x00000000
+
+  Break.RESet
+
+  FLASHFILE.RESet
+//FLASHFILE.CONFIG <NAND Flash Controller Base Address> , ,
+  FLASHFILE.CONFIG 0xB8000000 , ,
+
+// FLASHFILE.TARGET <code range> <data range> <Algorithm file>
+  FLASHFILE.TARGET 0x78000000++0x1FFF 0x78002000++0x1FFF ~~/demo/arm/flash/byte/nand5608l_imx.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Put a list of bad blocks into area window for 32MB size
+  FLASHFILE.GETBADBLOCK 0x0--0x1FFFFFF
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+  //Erase NAND FLASH Main and Bad block inforamtion
+    FLASHFILE.Erase 0x0--0x7FFFFFF  /EraseBadBlocks
+
+  //Skipped way 
+    FLASHFILE.LOAD.binary  * 0x0 
+    ;FLASHFILE.LOADSPARE * 0x0 
+   
+  //Reserved block area way
+    ;FLASHFILE.LOAD  * 0x0   /WriteBadBlocks
+    ;FLASHFILE.LOADSPARE *  0x0   /WriteBadBlocks
+  )
+  
+  ENDDO

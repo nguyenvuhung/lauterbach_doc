@@ -1,0 +1,108 @@
+; @Title: Arria10 Board Quad SPI FLASH Program script
+; @Description:
+; The MT25QU01 (Micron, Quad SPI flash Daughter Card) is on the HPSQSPI0_SS0
+;
+; SRAM: 0xffe00000
+; QuadSPI(controller) Base: 0xFF809000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: Arria10*
+; @Keywords: Micron MT25QU01 altera Flash SPI QuadSPI
+; $Id: arria10-qspi.cmm 3366 2015-08-12 15:47:39Z jjeong $
+;
+;Please check BSEL[2:0]
+;The boot select field specifies the boot source. It is read by the Boot ROM code on a cold or warm reset to determine the boot source. 
+;The HPS BSEL pins value are sampled upon deassertion of cold reset.
+;Value Description
+;0x0 Reserved
+;0x1 FPGA (HPS2FPGA Bridge)
+;0x2 NAND Flash (1.8v)
+;0x3 NAND Flash (3.0v)
+;0x4 SD/MMC External Transceiver (1.8v)
+;0x5 SD/MMC Internal Transceiver (3.0v)
+;0x6 QSPI Flash (1.8v)
+;0x7 QSPI Flash (3.0v)
+
+LOCAL &arg1
+ENTRY &arg1
+&arg1=STRing.UPpeR("&arg1")  // for example "PREPAREONLY"
+
+
+&QSPI_BASE=0xFF809000
+
+RESet
+SYStem.RESet
+SYStem.CPU ARRIA10SOC
+SYStem.CONFIG.DAPIRPOST 10.
+SYStem.CONFIG.DAPDRPOST 1.
+SYStem.Option ResBreak OFF
+CORE.ASSIGN 1.
+SYStem.Up
+
+; preboot - bootrom
+Go.direct 0xffe00054 /Onchip
+WAIT !STATE.RUN() 1.s
+IF STATE.RUN()
+  Break.direct
+
+Data.Set C15:0x1 %Long  (Data.Long(C15:0x1)&~(0x10005))  ; disable interrupt and mmu
+
+; disable Watchdog0/1
+Data.Set A:0xFFD05028 %Long Data.Long(A:0xFFD05028)|0x3
+
+//pin mux
+Data.Set ZSD:0xFFD0720C %LE %Long 0x4 ; pinmux_dedicated_io_4,  qspi.clk, HPS_DIO0
+Data.Set ZSD:0xFFD07210 %LE %Long 0x4 ; pinmux_dedicated_io_5,  qspi.io0, HPS_DIO1
+Data.Set ZSD:0xFFD07214 %LE %Long 0x4 ; pinmux_dedicated_io_6,  qspi.cs,  HPS_DIO2
+Data.Set ZSD:0xFFD07218 %LE %Long 0x4 ; pinmux_dedicated_io_7,  qspi.io1, HPS_DIO3
+
+Data.Set A:&QSPI_BASE %LE %Long 0x80583807   ; Enable Qspi: bit[0] and qspi clock configure bit[22:19]
+
+//FLASH READ ID TEST
+//AREA.CLEAR
+AREA.view
+GOSUB READ_ID_TEST
+
+  FLASHFILE.RESet
+  FLASHFILE.CONFIG A:&QSPI_BASE 0x0 0x0
+  FLASHFILE.TARGET AZSD:0xffe00000++0x1FFF  AZSD:0xffe02000++0x1FFF   ~~/demo/arm/flash/byte/spi64fs_cyclone5qspi.bin  /KEEP
+  FLASHFILE.GETID
+
+//End of the test prepareonly
+if "&arg1"=="PREPAREONLY"
+ENDDO
+
+  FLASHFILE.UNLOCK 0x0--0xFFFFFF
+  FLASHFILE.DUMP 0x0
+
+//Erase Serial FLASH  
+  ;FLASHFILE.ERASE 0x0--0xFFFFF
+
+//Write
+  ;FLASHFILE.LOAD   * 0x0
+  ;FLASHFILE.LOAD   * 0x0  /ComPare   ;verify
+
+ENDDO
+
+READ_ID_TEST:
+
+&cmd=0x9F; read ID JEDEC Manufacture ID and JEDEC CFI
+
+&temp=(&cmd<<24.)      ; cmd
+&temp=&temp|(1<<23.)   ; enable read
+&temp=&temp|(3.<<20.)  ; read length
+
+Data.Set A:(&QSPI_BASE+0x90) %Long (&temp|0x1)  ; execute command
+
+PRINT "1st 0x" Data.Long(A:(&QSPI_BASE+0xA0))&0xFF        " (Manufacture)"
+PRINT "2nd 0x" (Data.Long(A:(&QSPI_BASE+0xA0))>>8.)&0xFF " (Device ID)"
+PRINT "3rd 0x" (Data.Long(A:(&QSPI_BASE+0xA0))>>16.)&0xFF 
+PRINT "4th 0x" (Data.Long(A:(&QSPI_BASE+0xA0))>>24.)&0xFF 
+
+RETURN
+
+
+SDRAM_INIT:
+
+RETURN

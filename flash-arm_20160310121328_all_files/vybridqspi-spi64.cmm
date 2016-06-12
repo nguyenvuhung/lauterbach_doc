@@ -1,0 +1,156 @@
+; --------------------------------------------------------------------------------
+; @Title: TWR-VF65GS10  VYBRID TOWER SYSTEM MODULE SPI FLASH Program script
+; @Description:
+; The S25FL128 (Spansion SPI flash) is on the QuadSPI0_A controller
+;
+; SRAM: 0x3F001000
+; QuadSPI(controller) Base: 0x40044000
+; FLASH BASE ADDRESS: 0x20000000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: VF7*
+; @Keywords: S25FL128 Spansion Flash SPI QuadSPI
+; --------------------------------------------------------------------------------
+; $Id: vybridqspi-spi64.cmm 3260 2015-04-17 11:55:19Z jjeong $
+;
+
+LOCAL &QSPI_BASE
+
+&QSPI_BASE=0x20000000  ; QSPI0_A_base=0x20000000,  QSPI0_B_base=0x28000000
+
+// Basic settings for system.up
+ RESet
+ SYStem.CPU VF7xx-CA5
+ SYStem.CONFIG.CORE 1. 1.
+ SYStem.Up
+
+ PER.Set.simple C15:0x1 %LE %Long  (Data.Long(C15:0x1)&~(0x5)) ; disable interrupt and mmu
+
+//CCM config
+Data.Set A:0x4006B048 %LE %Long 0xFFFFFFFF
+Data.Set A:0x4006B04C %LE %Long 0xFFFFFFFF
+
+//QuadSPI0 Clk configuration
+Data.Set A:0x4006B000 %LE %Long 0x11057
+Data.Set A:0x4006B008 %LE %Long 0x80040824 ;CCSR
+Data.Set A:0x4006B010 %LE %Long 0x400000  ; CCM->CSCMR1 |= CCM_CSCMR1_QSPI1_CLK_SEL(0x0);
+Data.Set A:0x4006B01C %LE %Long 0x1d1d    ; CCM->CSCDR3 |= CCM_CSCDR3_QSPI1_X4_DIV(0x1)|CCM_CSCDR3_QSPI1_X2_DIV_MASK|CCM_CSCDR3_QSPI1_DIV_MASK|CCM_CSCDR3_QSPI1_EN_MASK; 
+
+
+//QuadSPI0_A
+Data.Set A:0x4004813C %LE %Long 0x001030C3 ;PTD0
+Data.Set A:0x40048140 %LE %Long 0x001030FF ;PTD1
+Data.Set A:0x40048144 %LE %Long 0x001030C3 ;PTD2
+Data.Set A:0x40048148 %LE %Long 0x001030C3 ;PTD3
+Data.Set A:0x4004814C %LE %Long 0x001030C3 ;PTD4
+Data.Set A:0x40048150 %LE %Long 0x001030C3 ;PTD5
+
+//QuadSPI0_B
+if &QSPI_BASE==0x28000000 ; enabled QSPI0_B
+(
+Data.Set A:0x40048158 %LE %LONG 0x001030C3 ;PTD7
+Data.Set A:0x4004815C %LE %LONG 0x001030FF ;PTD8
+Data.Set A:0x40048160 %LE %LONG 0x001030C3 ;PTD9
+Data.Set A:0x40048164 %LE %LONG 0x001030C3 ;PTD10
+Data.Set A:0x40048168 %LE %LONG 0x001030C3 ;PTD11
+Data.Set A:0x4004816C %LE %LONG 0x001030C3 ;PTD12
+)
+
+Data.Set A:0x40044000 %LE %Long 0xF4000   ; QuadSPI0->MCR = QuadSPI_MCR_MDIS_MASK;
+Data.Set A:0x4004400C %LE %Long 0x0303    ; QuadSPI0->FLSHCR = QuadSPI_FLSHCR_TCSH(3) | QuadSPI_FLSHCR_TCSS(3);
+Data.Set A:0x40044010 %LE %Long 0x0       ; QuadSPI0->BUF0CR = QuadSPI_BUF0CR_MSTRID(0) | QuadSPI_BUF0CR_ADATSZ(0);
+Data.Set A:0x40044014 %LE %Long 0x0       ; QuadSPI0->BUF1CR = QuadSPI_BUF1CR_MSTRID(0) | QuadSPI_BUF1CR_ADATSZ(0);     
+Data.Set A:0x40044018 %LE %Long 0x0 
+Data.Set A:0x4004401C %LE %Long 0x80000000 ; QuadSPI0->BUF3CR = QuadSPI_BUF3CR_MSTRID(0) | QuadSPI_BUF3CR_ADATSZ(0) | QuadSPI_BUF3CR_ALLMST_MASK; 
+Data.Set A:0x40044030 %LE %Long 0x0        ; QuadSPI0->BUF0IND = 0x0; 
+
+Data.Set A:0x40044000 %LE %Long 0xF4000    ; QuadSPI0->MCR |= QuadSPI_MCR_MDIS_MASK;  
+Data.Set A:0x40044108 %LE %Long 0x00010000 ;  // for 33MHz clock ,   QuadSPI0->SMPR = 0x10000;  
+Data.Set A:0x40044180 %LE %Long 0x24000000 ;QuadSPI0->SFA1AD
+Data.Set A:0x40044184 %LE %Long 0x28000000
+Data.Set A:0x40044188 %LE %Long 0x2C000000
+Data.Set A:0x4004418C %LE %Long 0x30000000
+
+Data.Set A:0x40044000 %Long 0xF0000     ; QuadSPI0->MCR &= ~QuadSPI_MCR_MDIS_MASK ; Enable QuadSPI0 controller with Quad SPI DDR MODE
+
+//FLASH READ ID TEST
+AREA.CLEAR
+AREA.view
+GOSUB READ_ID_TEST
+DIALOG.YESNO "the flash id is correct on AREA window?"
+ENTRY &result
+IF !&result
+(
+PRINT "pls, check your register configuration to enable your flash controller"
+ENDDO
+)
+
+//S(D)RAM TEST for algorithm file
+GOSUB SDRAM_INIT
+Data.Test 0x3f001000++0x7FFF  /Prime ;s(d)ram test
+IF FOUND()
+( 
+PRINT "s(d)ram is NOT initialized around 0x" ADDRESS.OFFSET(TRACK.ADDRESS())
+ENDDO
+)
+
+programFlash:
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.CONFIG <QuadSPI Base>   <FLASH_BASE_ADDR>
+  FLASHFILE.CONFIG 0x40044000       &QSPI_BASE
+
+//FLASHFILE.TARGET <Code_range>        <Data_range>          <Algorithm file>
+  FLASHFILE.TARGET 0x3f001000++0x2FFF  0x3f004000++0x1FFF    ~~/demo/arm/flash/byte/spi64_vybridqspi.bin    /KEEP
+
+  FLASHFILE.GETID
+  FLASHFILE.UNLOCK 0x0--0xFFFFFF
+  FLASHFILE.DUMP 0x0
+
+//Erase Serial FLASH  
+  ;FLASHFILE.ERASE 0x0--0xFFFFF
+
+//Write
+  ;FLASHFILE.LOAD   * 0x0
+  ;FLASHFILE.LOAD   * 0x0  /ComPare   ;verify
+
+ENDDO
+
+READ_ID_TEST:
+
+&temp=Data.Long(A:0x40044000)
+Data.Set A:0x40044000 %Long (&temp|0x0c00)   //clear Tx/Rx buffer
+
+Data.Set A:0x40044300 %LE %Long 0x5AF05AF0  ;  LUTKEY
+Data.Set A:0x40044304 %LE %Long 0x2  ;  LCKCR
+
+//SEQID 5. LUT 5*4
+Data.Set A:0x40044360 %LE %Long 0x1c04049f   ; LUT0, SEQID0
+Data.Set A:0x40044364 %LE %Long 0x0
+Data.Set A:0x40044368 %LE %Long 0x0
+Data.Set A:0x4004436C %LE %Long 0x0
+
+Data.Set A:0x40044100 %Long  &QSPI_BASE      ; SFAR , FLASH BASE ADDRESS
+
+// assert Read id command
+Data.Set A:0x40044008 %Long  (5.<<24.) ;    (5.<<24.)
+WAIT 100.ms
+
+&temp=Data.Long(A:0x40044000)
+Data.Set A:0x40044000 %Long (&temp|0x0800)   //clear Tx buffer
+
+PRINT "1st 0x" Data.Long(A:0x40044200)>>24.        " (Manufacture)"
+PRINT "2nd 0x" (Data.Long(A:0x40044200)>>16.)&0xFF " (Device ID)"
+PRINT "3rd 0x" (Data.Long(A:0x40044200)>>8.)&0xFF 
+PRINT "4th 0x" Data.Long(A:0x40044200)&0xFF 
+
+RETURN
+
+SDRAM_INIT:
+
+RETURN
+

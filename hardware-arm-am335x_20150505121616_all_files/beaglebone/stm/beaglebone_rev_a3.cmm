@@ -1,0 +1,20 @@
+; --------------------------------------------------------------------------------
+; @Title: PIN Multiplexing Setup Script for STM on the BeagleBone Board
+; @Description: 
+;   Set up pad multiplexers. This configuration applies to an AM3359ZCZ
+;   on the BeagleBone Rev. A3 only. Other revisions/boards/packages need
+;   to be set up separately, where applicable!
+; @Keywords: AM335x, Cortex-A8, STM, trace
+; @Author: JBO
+; @Board: BeagleBone
+; @Chip: AM335*
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: beaglebone_rev_a3.cmm 6750 2014-04-07 21:27:07Z servera $
+
+
+Data.Set AHB:0x44e109e4 0x20 ;emu0: pin c14, EMU0, mode 0
+Data.Set AHB:0x44e109e8 0x20 ;emu1: pin b14, EUM1, mode 0
+Data.Set AHB:0x44e109b0 0x26 ;emu2: pin a15, XDMA_EVENT_INTR0, mode 6
+Data.Set AHB:0x44e109b4 0x26 ;emu3: pin d14, XDMA_EVENT_INTR1, mode 6
+Data.Set AHB:0x44e10960 0x26 ;emu4: pin c15, SPI0_CS1, mode 6

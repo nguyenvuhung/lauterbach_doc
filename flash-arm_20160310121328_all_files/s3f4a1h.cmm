@@ -1,0 +1,26 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Samsung S3F4A1H internal flash 
+;
+; @Description:
+; 512 kBytes internal Flash organized in 32 sectors, 16 kByte each.
+;
+; S3F4A1H has 16 kByte internal RAM from 0x300000--0x303fff.
+;
+; Processor is working in little endian mode.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 3152 $
+; $Id: s3f4a1h.cmm 3152 2015-02-06 16:35:19Z kjmal $
+
+  LOCAL &flashbase
+
+  ; Read IRC_MR register to detect RAM base address
+  &rambase=Data.Long(SD:0xffff0000)&0xfff00000
+
+  FLASH.RESet
+  FLASH.TARGET &rambase &rambase+0x1000 0x1000 ~~/demo/arm/flash/long/s3f4a1h.bin
+  FLASH.Create 1. 0x0++0x7ffff 0x4000 TARGET Long
+
+  ENDDO

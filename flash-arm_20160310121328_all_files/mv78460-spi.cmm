@@ -1,0 +1,75 @@
+; --------------------------------------------------------------------------------
+; @Title: SPI FLASH Programming script for the Marvell DB-78460 ARMADA XP target
+; @Description:
+; SPI FLASH Programming script for the Marvell DB-78460 ARMADA XP target
+; (MV78130,MV78160,MV78230,MV78260 and MV78460)
+;
+; Serial FLASH(ST,25P64) is connected to SPI_CS0
+;
+; SDRAM: 0x00100000
+; SPI Tx Register : 0xD0010608   
+; SPI Rx Register : 0xD001060C   
+; SPI CS Register : 0xD0010600
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: MV78130V7 MV78160V7 MV78230V7 MV78260V7 MV78460V7
+; @Board: DB-78460-A-BP
+; @Keywords: ST 25P64 SPI
+; --------------------------------------------------------------------------------
+; $Id: mv78460-spi.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+// Basic setup
+    RESet
+    SYStem.RESet
+    SYStem.CPU MV78460V7
+    SYStem.Up
+
+//SDRAM init by running the boot code
+    Step.single 2.
+    Go.direct
+    WAIT 1.s
+    IF run()
+    Break.direct
+
+//SDRAM init by cmm script
+;GOSUB SDRAM_INIT
+
+  Data.Set SD:0xD0020300 %Long 0x0  ;watchdog disable
+
+//SPI controller enable
+  Data.Set SD:0xD00200B8 %LE %Long 0x0F1D11
+  Data.Set SD:0xD0010000 %LE %Long 0x10022222
+ ;Data.Set SD:0xD00100D0 %LE %LONG 0x94010712
+  Data.Set SD:0xD0010600 %LE %Long 0x2
+  Data.Set SD:0xD0010604 %LE %Long 0x215
+  Data.Set SD:0xD0010610 %LE %Long 0x1
+  Data.Set SD:0xD0010614 %LE %Long 0x1
+
+  FLASHFILE.RESet
+ 
+//FLASHFILE.CONFIG  <tx_reg>     <rx_reg>     <cs_reg>      <cs_bit>
+  FLASHFILE.CONFIG  0xD0010608   0xD001060C   0xD0010600    0x0
+
+// FLASHFILE.TARGET <code range>       <data range>        <Algorithm file>
+  FLASHFILE.TARGET 0x00100000++0x1FFF  0x00102000++0x1FFF  ~~/demo/arm/flash/byte/spi64_marvell.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+  FLASHFILE.DUMP 0x0
+
+  FLASHFILE.UNLOCK 0x0--0x7FFFFF
+
+; FLASHFILE.ERASE  0x0--0xFFFFF   
+
+; FLASHFILE.LOAD * 0x0
+; FLASHFILE.LOAD * 0x0  /ComPare  ; Verify
+
+ENDDO 
+
+SDRAM_INIT:
+
+Data.Set <addr> %LE %Long <data>
+
+RETURN

@@ -1,0 +1,164 @@
+; --------------------------------------------------------------------------------
+; @Title: Setup of TMS570LC435x internal flash
+;
+; @Description:
+; Script arguments:
+;
+;   do tms570lc435x [CPU=<cpu>] [AUTOECC=0|1] [PREPAREONLY]
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;
+;     AUTOECC default value is 1 to enable auto ECC generation
+;             If auto ECC generation is disabled then flash sectors are 
+;             programmed without generating ECC. ECC sectors can be programmed
+;             separately or ECC sector programming can be omitted.
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;             example
+;
+; List of TMS570LS435x derivatives and their configuration:
+;
+;   CPU-Type           Flash    RAM
+; --------------------------------------------------------------------------------
+;   TMS570LC4357        4MB    512kB
+;
+; HINTS:
+;
+;   Flash programming algorithm is linked to address 0x08000000 and is not
+;   position independent. Code address of FLASH.TARGET command has not be
+;   changed.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: TMS570LC43*   
+; --------------------------------------------------------------------------------
+; $Rev: 3486 $
+; $Id: tms570lc435x.cmm 3486 2015-11-06 08:42:22Z wdoering $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &AutoECCGeneration
+  &AutoECCGeneration=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"AUTOECC=","1")
+
+  LOCAL &param_cpu
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    MAP.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(TMS570LC435*)
+      SYStem.CPU TMS570LC4357
+
+    ETM.OFF
+    SYStem.Option.EnReset OFF
+
+    SYStem.Up
+
+    ; Clear SRAM to prevent ECC faults
+    Data.Set 0xFFFFFF5C %BE %Long 0x00000005
+    Data.Set 0xFFFFFF5C %BE %Long 0x0000000A
+    Data.Set 0xFFFFFF60 %BE %Long 0x00000001    ; init L2 SRAM only
+    Data.Set 0xFFFFFF5C %BE %Long 0x00000005
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+
+  IF &AutoECCGeneration!=0
+  (
+    ; Program flash
+    FLASH.Create  1. 0x00000000--0x00017FFF  0x4000 TARGET Byte 0.  ; Bank 0
+    FLASH.Create  1. 0x00018000--0x0001FFFF  0x8000 TARGET Byte 0.  ; Bank 0
+    FLASH.Create  1. 0x00020000--0x0007FFFF 0x20000 TARGET Byte 0.  ; Bank 0
+    FLASH.Create  1. 0x00080000--0x001FFFFF 0x40000 TARGET Byte 0.  ; Bank 0
+    FLASH.Create  1. 0xF0400000--0xF043FFFF         NOP             ; Bank 0 ECC
+    FLASH.Create  2. 0x00200000--0x003FFFFF 0x20000 TARGET Byte 1.  ; Bank 1
+    FLASH.Create  2. 0xF0440000--0xF047FFFF         NOP             ; Bank 1 ECC
+    ; EEPROM emulation flash
+    FLASH.Create  8. 0xF0200000--0xF021FFFF  0x1000 TARGET Byte 7.  ; Bank 7
+    FLASH.Create  8. 0xF0100000--0xF0103FFF         NOP             ; Bank 7 ECC
+
+    FLASH.TARGET 0x08000000 0x08002000 0x4000 ~~/demo/arm/flash/byte_be/f021r4l2fmc.bin
+  )
+  ELSE
+  (
+    ; Program flash
+    FLASH.Create  1. 0x00000000--0x00017FFF  0x4000 TARGET Byte 0. /EraseALIAS 0xF0400000--0xF0402FFF  ; Bank 0
+    FLASH.Create  1. 0x00018000--0x0001FFFF  0x8000 TARGET Byte 0. /EraseALIAS 0xF0403000--0xF0403FFF  ; Bank 0
+    FLASH.Create  1. 0x00020000--0x0007FFFF 0x20000 TARGET Byte 0. /EraseALIAS 0xF0404000--0xF040FFFF  ; Bank 0
+    FLASH.Create  1. 0x00080000--0x001FFFFF 0x40000 TARGET Byte 0. /EraseALIAS 0xF0410000--0xF043FFFF  ; Bank 0
+    FLASH.Create  2. 0x00200000--0x003FFFFF 0x20000 TARGET Byte 1. /EraseALIAS 0xF0440000--0xF047FFFF  ; Bank 1
+    ; Program flash ECC
+    FLASH.Create  1. 0xF0400000--0xF0402FFF   0x800 TARGET Byte 0. /EraseALIAS 0x00000000--0x00017FFF  ; Bank 0
+    FLASH.Create  1. 0xF0403000--0xF0403FFF  0x1000 TARGET Byte 0. /EraseALIAS 0x00018000--0x0001FFFF  ; Bank 0
+    FLASH.Create  1. 0xF0404000--0xF040FFFF  0x4000 TARGET Byte 0. /EraseALIAS 0x00020000--0x0007FFFF  ; Bank 0
+    FLASH.Create  1. 0xF0410000--0xF043FFFF  0x8000 TARGET Byte 0. /EraseALIAS 0x00080000--0x001FFFFF  ; Bank 0
+    FLASH.Create  2. 0xF0440000--0xF047FFFF  0x4000 TARGET Byte 1. /EraseALIAS 0x00200000--0x003FFFFF  ; Bank 1
+    ; EEPROM emulation flash
+    FLASH.Create  8. 0xF0200000--0xF021FFFF  0x1000 TARGET Byte 7. /EraseALIAS 0xF0100000--0xF0103FFF  ; Bank 7
+    ; EEPROM emulation flash ECC
+    FLASH.Create  8. 0xF0100000--0xF0103FFF   0x200 TARGET Byte 7. /EraseALIAS 0xF0200000--0xF021FFFF  ; Bank 7
+
+    FLASH.TARGET 0x08000000 0x08002000 0x4000 ~~/demo/arm/flash/byte_be/f021r4l2fmcnoecc.bin
+  )
+
+  ; Preliminary please use explicit flash clock setup until automatic time measurement is corrected.
+  ; Frequency of external oscillator should be used.
+  FLASH.CLocK 16MHz
+  //FLASH.CLocK AUTO
+
+  MAP.BUS16 0xF0400000--0xF045FFFF
+  MAP.BUS16 0xF0100000--0xF0101FFF
+  MAP.BUS16 0xF0040000--0xF0041FFF
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  ; Check flash algorithm version if ECC line configuration is present.
+  ; This is needed to support filling flash with empty value
+  LOCAL &flashalgorithm
+  &flashalgorithm=FLASH.TARGET.FILE()
+  IF FLASH.TARGET.BUILD(&flashalgorithm)<3486.
+  (
+    PRINT "Warning: flash algorithm does not support ECC line configuration"
+    PRINT "         Please request a flash support package update"
+  )
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+
+  IF &progflash 
+  (
+    ; Preliminary reset device to avoid MPU initialization problems
+    SYStem.Down
+    SYStem.Up
+
+    ; Fill erased flash with empty value 0xFF not to get ECC errors on unused
+    ; flash cells. Check Trace32 software version if option is implemented.
+    IF VERSION.BUILD.BASE()<67626.
+      FLASH.ReProgram.ALL /Erase
+    ELSE
+      FLASH.ReProgram.ALL /Erase /FILL
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+  )
+
+  ENDDO

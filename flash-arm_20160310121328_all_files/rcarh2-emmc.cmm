@@ -1,0 +1,156 @@
+; @Title: R-CAR-H2 eMMC FLASH Program script for R-CARH2 on LAGER board
+; @Description:
+; eMMC FLASH(Micron,MTFC4GM) is connected to MMC Channel 1
+;
+; SRAM: 0xE63A0000
+; MMC(controller) Base: 0xEE220000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: RCARH2-CA7
+; @Keywords: RCAR RCARH2 Flash eMMC
+; $Id: rcarh2-emmc.cmm 3388 2015-09-07 13:35:55Z jjeong $
+
+LOCAL &arg1
+ENTRY &arg1
+&arg1=STRing.UPpeR("&arg1")  // for example "PREPAREONLY"
+
+; Start-up Script file for R-CARH2 on LAGER board
+; PEG, July 23, 2013
+; Depending on the Master Boot Mode Selection only the first CA15 or the first CA7 is active.
+; SW8.7=MD6=ON, SW8.8=MD7=ON -> CA15
+; => SW8.7=MD6=OFF, SW8.8=MD7=ON -> CA7 <= REQUIRED
+
+; Therefore I first connect to this core in order to power and deassert reset of the other cores.
+; as the boot-code is not thread save we stop all cores at reset via CTI
+; and load out sieve demo into SRAM. 
+; In this demo we only use the A7 cores!
+
+; master boot CA15/CA7 CPU0 reset vector break
+  RESet
+  SYStem.CPU RCARH2-CA7
+  CORE.ASSIGN 1
+  SYStem.Option PWRCHECKFIX OFF; use OFF in case of CA7 is active
+  SYStem.Up
+
+; power up power domain of CA15 SCU and CA7 SCU
+ ;Data.Set ANSD:0xE618018c %Long 0x1 ; PWRONCR5 (CA15 SCU)
+  Data.Set ANSD:0xE618010c %Long 0x1 ; PWRONCR3 (CA7 SCU)
+
+&pfc_base=0xE6060000
+&GPSR3=&pfc_base+0x0010
+&IPSR11=&pfc_base+0x004C
+&MMC_BASE=0xEE220000
+
+//Enable clk for MMC1
+Data.Set A:0xE615013C %Long Data.Long(A:0xE615013C)&0xFFFFFFFDF   ;  (1<<5) has to be cleared for MMC1
+
+//Pin mux for MMC1_CLK,CMD,DAT[0:3]
+GOSUB WRITE_OR &IPSR11 0x2AB0
+GOSUB WRITE_OR &GPSR3  0x3F000000
+
+Data.Set &MMC_BASE+0x40 %Long 0x0
+Data.Set &MMC_BASE+0x18 %Long 0x01060000  ; clk div /128,  clk should be slower <400khz
+Data.Set &MMC_BASE+0x44 %Long 0x1cf3f
+
+ FLASHFILE.RESet
+
+ FLASHFILE.CONFIG 0xEE220000
+
+// FLASHFILE.TARGET <code range> <data range> <Algorithm file>
+ FLASHFILE.TARGET 0xe63A0000++0x1FFF 0xe63A2000++0x21FF   ~~\demo\arm\flash\byte\emmc_shmmc.bin /KEEP
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+Data.Set &MMC_BASE+0x18 %Long 0x01000000  ; clk div /2
+
+//print the ECSD registers on AREA
+FLASHFILE.GETEXTCSD
+
+//End of the test prepareonly
+IF "&arg1"=="PREPAREONLY"
+ENDDO
+
+//Read FLASH
+  FLASHFILE.DUMP 0x0
+
+//Erase FLASH 
+; FLASHFILE.ERASE 0x0--0xFFFFFF 
+
+//Write FLASH
+; FLASHFILE.LOAD  * 0x0 
+; FLASHFILE.LOAD  * 0x0  /ComPare   ;verify
+   
+ENDDO
+
+WRITE_OR:
+ENTRY &addr &data
+&data=((&data)|(Data.Long(A:&addr)))
+&not_data=~(&data)
+Data.Set &pfc_base %Long &not_data
+Data.Set &addr %Long &data
+RETURN
+
+
+GOSUB READ_ID_TEST
+
+
+
+READ_ID_TEST:
+
+//CMD0
+RePeaT 2.
+(
+Data.Set &MMC_BASE+0x40 %Long 0xFFFEFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x0  ;arg 
+Data.Set &MMC_BASE+0x0 %Long 0x0  ;cmd
+WAIT 10.ms
+)
+
+//CMD1
+RePeaT 10.
+(
+Data.Set &MMC_BASE+0x40 %Long 0xFFFEFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x40FF8000 ;arg
+Data.Set &MMC_BASE+0x0 %Long (0x1<<24.)|(0x1<<22.) ;cmd1
+&resp=Data.Long(A:(&MMC_BASE+0x2c))
+//print "CMD1 resp: 0x" &resp
+IF (&resp&0x80000000)==0x80000000
+(
+GOTO jump_cmd2
+)
+)
+
+PRINT "CMD1 fail"
+END
+
+jump_cmd2:
+//CMD2
+Data.Set &MMC_BASE+0x40 %Long 0xFFFEFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x0     ;arg
+Data.Set &MMC_BASE+0x0 %Long  (0x2<<24.)|(0x2<<22.)  ;cmd2
+WAIT 10.ms
+
+//CMD3
+Data.Set &MMC_BASE+0x40 %Long 0xFFFEFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x00010000  ; arg, MMC RCA is (0x0001<<16.)
+Data.Set &MMC_BASE+0x0 %Long (0x3<<24.)|(0x1<<22.) ;cmd3
+WAIT 10.ms
+
+//CMD10
+Data.Set &MMC_BASE+0x40 %Long 0xFFFEFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x00010000 ; arg, MMC RCA is (0x0001<<16.)
+Data.Set &MMC_BASE+0x0 %Long (0xA<<24.)|(0x2<<22.);cmd10
+WAIT 10.ms
+
+//Response2
+PRINT "CID register"
+PRINT "[127:104] 0x" Data.Long(A:(&MMC_BASE+0x20))
+PRINT "[103:72]  0x" Data.Long(A:(&MMC_BASE+0x24))
+PRINT "[71:40]   0x" Data.Long(A:(&MMC_BASE+0x28))
+PRINT "[39:8]    0x" Data.Long(A:(&MMC_BASE+0x2C))
+
+RETURN
+
+

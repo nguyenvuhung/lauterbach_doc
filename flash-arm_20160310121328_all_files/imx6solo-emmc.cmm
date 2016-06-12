@@ -1,0 +1,171 @@
+; --------------------------------------------------------------------------------
+; @Title: i.MX6 eMMC FLASH Programming Script
+; @Description:
+;   FLASH Type: eMMC FLASH(Numonyx, NAND16GAH0P) connected SDHC3
+; 
+;   S(D)RAM: 0x900000
+;   SDHC CS3 base: 0x2198000
+;
+; @Author: jjeong
+; @Chip: IMX6SOLO
+; @Keywords: MACRONIX MX25L25635F
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: imx6solo-emmc.cmm 3339 2015-07-16 07:55:52Z jjeong $
+
+&MMC_BASE=0x2198000
+
+  RESet 
+  SYStem.CPU iMX6Solo  ;SOLO
+  ;CORE.ASSIGN 1        ;SOLO
+  SYStem.Option ResBreak OFF
+  SYStem.Option WaitReset 1.3s 
+  Trace.METHOD Onchip
+  SYStem.Up
+
+  Data.Set C15:0x1 %Long  (Data.Long(C15:0x1)&~(0x1005))  ; disable cache and mmu
+
+  Data.Set ASD:0x020d8000 %Long 0x01C00521  ;SRC Control Register
+
+; --------------------------------------------------------------------------------
+; Disable WDOG
+; --------------------------------------------------------------------------------
+Data.Set 0x020bc000 %Word 0x30
+
+; --------------------------------------------------------------------------------
+; Enable all clocks (they are disabled by ROM code)
+; --------------------------------------------------------------------------------
+Data.Set 0x020c4068 %Long 0xffffffff
+Data.Set 0x020c406c %Long 0xffffffff
+Data.Set 0x020c4070 %Long 0xffffffff
+Data.Set 0x020c4074 %Long 0xffffffff
+Data.Set 0x020c4078 %Long 0xffffffff
+Data.Set 0x020c407c %Long 0xffffffff
+Data.Set 0x020c4080 %Long 0xffffffff
+Data.Set 0x020c4084 %Long 0xffffffff
+
+; --------------------------------------------------------------------------------
+; IO Mux for SDHC3
+; --------------------------------------------------------------------------------
+
+Data.Set 0x020E030C %LE %Long 0x0  ;IOMUXC_SW_MUX_CTL_PAD_SD3_CLK
+Data.Set 0x020E0310 %LE %Long 0x0  ;IOMUXC_SW_MUX_CTL_PAD_SD3_CMD
+Data.Set 0x020E0314 %LE %Long 0x0  ;IOMUXC_SW_MUX_CTL_PAD_SD3_DAT0
+
+Data.Set 0x020E06F4 %LE %Long 0x0001B0B0  ;IOMUXC_SW_PAD_CTL_PAD_SD3_CLK
+Data.Set 0x020E06F8 %LE %Long 0x0001B0B0  ;IOMUXC_SW_PAD_CTL_PAD_SD3_CMD
+Data.Set 0x020E06FC %LE %Long 0x0001B0B0  ;IOMUXC_SW_PAD_CTL_PAD_SD3_DAT0
+
+
+; --------------------------------------------------------------------------------
+; Config SDHC
+; --------------------------------------------------------------------------------
+Data.Set &MMC_BASE+0x04 %LE %Long 0x00010200  ; blk size,cnt
+Data.Set &MMC_BASE+0x28 %LE %Long 0x08800020  ; bus width, endian
+Data.Set &MMC_BASE+0x2C %LE %Long 0x008E1088  ; 400KHz clk
+Data.Set &MMC_BASE+0x34 %LE %Long 0x00000033  ; BRR,BWR, TCI, CCI interrupt enable
+Data.Set &MMC_BASE+0x44 %LE %Long 0x00100010  ;read/write fifo threshold level 64bytes
+
+
+//FLASH READ ID TEST
+ AREA.CLEAR
+ AREA.view
+ GOSUB READ_ID_TEST
+ DIALOG.YESNO "the flash id is correct on AREA window?"
+ ENTRY &result
+IF !&result
+(
+ PRINT "pls, check your register configuration to enable your flash controller"
+ ENDDO
+)
+
+
+//S(D)RAM TEST for algorithm file
+;GOSUB SDRAM_INIT
+Data.Test 0x900000++0x3FFF  /Prime ;s(d)ram test
+IF FOUND()
+( 
+ PRINT "s(d)ram is NOT initialized around 0x" ADDRESS.OFFSET(TRACK.ADDRESS())
+ ENDDO
+)
+
+programFlash:
+
+FLASHFILE.RESet
+
+;FLASHFILE.CONFIG  <eMMC controller> <0x0>  <0x0>
+ FLASHFILE.CONFIG  &MMC_BASE         0x0  0x0
+
+;FLASHFILE.TARGET <<code range>> <<data range>> <<algorithm file>>
+  FLASHFILE.TARGET  0x900000++0x1fff   0x904000++0x1fff   ~~/demo/arm/flash/byte/emmc_imx6.bin  /KEEP
+
+Data.Set &MMC_BASE+0x2C %LE %Long 0x008E10F8 ; 400KHz clk
+  FLASHFILE.GETID
+  
+Data.Set &MMC_BASE+0x2C %LE %Long 0x008E0408  ; 25Mhz clk
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.DUMP 0x0               ; Read  
+ ;FLASHFILE.ERASE 0x0--0xFFFFF     ; Erase 
+ ;FLASHFILE.LOAD * 0x0             ; Write 
+
+ENDDO
+
+READ_ID_TEST:
+
+//CMD0
+RePeaT 2.
+(
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x0  ;arg 
+Data.Set &MMC_BASE+0xc %Long 0x0  ;cmd
+WAIT 10.ms
+)
+
+//CMD1
+RePeaT 10.
+(
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x40FF8000 ;arg
+Data.Set &MMC_BASE+0xc %Long 0x01020000 ;cmd1
+&resp=Data.Long(A:(&MMC_BASE+0x10))
+//print "CMD1 resp: 0x" &resp
+IF (&resp&0x80000000)==0x80000000
+(
+GOTO jump_cmd2
+)
+)
+
+PRINT "CMD1 fail"
+END
+
+jump_cmd2:
+//CMD2
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x0     ;arg
+Data.Set &MMC_BASE+0xc %Long 0x02010000 ;cmd2
+WAIT 10.ms
+
+//CMD3
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x00010000  ; arg, MMC RCA is (0x0001<<16.)
+Data.Set &MMC_BASE+0xc %Long 0x03020000  ;cmd3
+WAIT 10.ms
+
+//CMD10
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x00010000 ; arg, MMC RCA is (0x0001<<16.)
+Data.Set &MMC_BASE+0xc %Long 0x0A010000  ;cmd10
+WAIT 10.ms
+
+//Response2
+PRINT "CID register"
+PRINT "[127:104] 0x" Data.Long(A:(&MMC_BASE+0x1c))
+PRINT "[103:72]  0x" Data.Long(A:(&MMC_BASE+0x18))
+PRINT "[71:40]   0x" Data.Long(A:(&MMC_BASE+0x14))
+PRINT "[39:8]    0x" Data.Long(A:(&MMC_BASE+0x10))
+
+RETURN
+
+SDRAM_INIT:
+RETURN

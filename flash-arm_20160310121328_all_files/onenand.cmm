@@ -1,0 +1,61 @@
+; --------------------------------------------------------------------------------
+; @Title: OneNAND flash Programming Script
+; @Description:
+;   Example script for the Samsung KFM2G16 (2Gb size)
+;
+;   OneNAND Base Address : 0x08000000
+;   S(D)RAM Address      : 0x40200000 
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Keywords: Samsung KFM2G16
+; --------------------------------------------------------------------------------
+; $Id: onenand.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+
+// SYStem.Up CONFIGuration
+; SYStem.CPU <CPU Name>
+; SYStem.JtagClock <JTAG Clock>
+; SYStem.Up
+
+// CPU bus initialization for OneNAND
+; Data.Set <Address> %LE %Long <data>
+
+Break.RESet
+
+FLASHFILE.RESet
+
+//flash.CONFIG <OneNAND Base Address> , ,
+FLASHFILE.CONFIG 0x08000000 , ,
+
+// FLASHFILE.TARGET <code range> <data range> <Algorithm file>
+FLASHFILE.TARGET 0x40200000++0x1FFF 0x40202000++0x1FFF ~~/demo/arm/flash/word/onenand2g16.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Put a list of bad blocks into area window for 2Gbit (256MB) size
+  FLASHFILE.GETBADBLOCK 0x0--0xFFFFFFF
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+
+  //UNLOCK OneNAND FLASH
+    FLASHFILE.UNLOCK 0x0--0xFFFFFFF
+
+  //Erase OneNAND FLASH Main and Bad block inforamtion
+    FLASHFILE.Erase 0x0--0xFFFFFFF  /EraseBadBlocks
+
+  //Write the user image to OneNAND FLASH
+  //Skipped way 
+    FLASHFILE.LOAD.binary  * 0x0 
+    ;FLASHFILE.LOADSPARE * 0x0 
+   
+  //Reserved block area way
+    ;FLASHFILE.LOAD  * 0x0   /WriteBadBlocks
+    ;FLASHFILE.LOADSPARE *  0x0   /WriteBadBlocks  
+  )
+
+  ENDDO

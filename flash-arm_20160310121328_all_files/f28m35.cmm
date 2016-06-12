@@ -1,0 +1,438 @@
+; --------------------------------------------------------------------------------
+; @Title: Example Script for programming of TI F28M35 Cortex-M3 internal flash
+;
+; @Description: 
+; Script arguments:
+;
+;  DO f28m35 [PREPAREONLY] [AUTOECC=0|1] [DUALPORT=0|1]
+;
+;   AUTOECC default value is 1
+;
+;   PREPAREONLY only declares flash but does not execute flash programming example
+;
+;   DUALPORT default value is 0 (disabled). If DualPort mode is enabled
+;            flash algorithm stays running until flash programming is
+;            finished. Data is tranferred via dual port memory access. 
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/f28m35 DUALPORT=1 AUTOECC=0 PREPAREONLY
+;
+; List of F28M35 derivatives and their configuration:
+;
+;                   Cortex-M3       C28x
+;   CPU-Type       Flash size    Flash size
+;                    [kByte]       [kByte]
+; --------------------------------------------------------------------------------
+;   F28M35H20B1        256.          256.
+;   F28M35H20C1        256.          256.
+;   F28M35H22B1        256.          256.
+;   F28M35H22C1        256.          256.
+;   F28M35H32B1        256.          512.
+;   F28M35H32C1        512.          256.
+;   F28M35H50B1        512.          512.
+;   F28M35H50C1        512.          512.
+;   F28M35H52B1        512.          512.
+;   F28M35H52C1        512.          512.
+;
+; F28M35x Cortex-M3 memory configuration:
+;
+;    64 kByte Boot ROM at            0x00000000--0x0000ffff dual mapped to
+;                                    0x01000000--0x0100ffff
+;   512 kByte internal Flash at      0x00200000--0x0027ffff or
+;   256 kByte internal Flash at      0x00200000--0x0021ffff and
+;                                    0x00260000--0x0027ffff
+;    64 kByte Flash ECC bits at      0x00600000--0x0060ffff
+;    16 kByte internal ECC RAM at    0x20000000--0x20003fff
+;    16 kByte internal Parity RAM at 0x20004000--0x20007fff
+;    64 kByte shared Parity RAM at   0x20008000--0x20017fff
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: TMS320F28035*
+; --------------------------------------------------------------------------------
+; $Rev: 3246 $
+; $Id: f28m35.cmm 3246 2015-04-01 14:31:21Z fcaron $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &AutoECCGeneration
+  &AutoECCGeneration=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"AUTOECC=","1")
+
+  LOCAL &param_dualport
+  &param_dualport=0
+  IF VERSION.BUILD.BASE()>=43441.
+    &param_dualport=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"DUALPORT=","0")
+
+  ; ------------------------------------------------------------------------------
+  ; CPU setup
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    IF !CPUIS(F28M35*)
+      SYStem.CPU F28M35*
+
+    SYStem.CONFIG.DEBUGPORTTYPE JTAG
+
+    SYStem.JtagClock 2MHz
+    SYStem.Option.DUALPORT ON
+    SYStem.MemAccess DAP
+
+    SYStem.Up
+
+    ; Setup target
+    GOSUB UnlockInternalSRAM
+    GOSUB readOTPSECLOCK
+    GOSUB unlockCSMZ1
+    GOSUB unlockCSMZ2
+    GOSUB unlockECSLZ1
+    GOSUB unlockECSLZ2
+    GOSUB readFlashEXEZ1
+    GOSUB readFlashEXEZ2
+    GOSUB grabSectors
+    GOSUB DeviceConfig
+    GOSUB initRAM
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration &param_dualport
+
+  GOSUB initSYSCLK
+  GOSUB initRWAIT
+
+  GOSUB disableFlashECC
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on CPU configuration
+
+FlashDeclaration:
+  LOCAL &DualPort
+  ENTRY &DualPort
+
+  LOCAL &FlashSize
+
+  IF CPUIS(F28M35H2*)||CPUIS(F28M35H32B1)
+    &FlashSize=0x40000    ; [Byte]
+  ELSE
+    &FlashSize=0x80000    ; [Byte]
+
+  IF &AutoECCGeneration!=0
+  (
+    FLASH.Create 1. 0x00200000--0x0020ffff  0x4000 TARGET Byte
+    FLASH.Create 1. 0x00210000--0x0021ffff 0x10000 TARGET Byte
+    IF &FlashSize>=0x80000
+    (
+      FLASH.Create 1. 0x00220000--0x0025ffff 0x10000 TARGET Byte
+    )
+    FLASH.Create 1. 0x00260000--0x0026ffff 0x10000 TARGET Byte
+    FLASH.Create 1. 0x00270000--0x0027ffff  0x4000 TARGET Byte
+    
+    ; OTP flash
+    FLASH.Create 2. 0x00680820--00680FFF  0x7e0 TARGET Byte /OTP
+
+    IF &DualPort==0
+      FLASH.TARGET 0x20000000 0x20002000 0x1000 ~~/demo/arm/flash/byte/f021m3.bin
+    ELSE
+      FLASH.TARGET 0x20000000 EAHB:0x20002000 0x1000 ~~/demo/arm/flash/byte/f021m3.bin /DualPort /STACKSIZE 0x120
+  )
+  ELSE
+  (
+    ; Flash
+    FLASH.Create 1. 0x00200000--0x0020ffff  0x4000 TARGET Byte /EraseALIAS 0x00600000--0x00601fff
+    FLASH.Create 1. 0x00210000--0x0021ffff 0x10000 TARGET Byte /EraseALIAS 0x00602000--0x00603fff
+    ; Flash ECC bits
+    FLASH.Create 1. 0x00600000--0x00601fff   0x800 TARGET Byte /EraseALIAS 0x00200000--0x0020ffff
+    FLASH.Create 1. 0x00602000--0x00603fff  0x2000 TARGET Byte /EraseALIAS 0x00210000--0x0021ffff
+    IF &FlashSize>=0x80000
+    (
+      ; Flash
+      FLASH.Create 1. 0x00220000--0x0025ffff 0x10000 TARGET Byte /EraseALIAS 0x00604000--0x0060bfff
+      ; Flash ECC bits
+      FLASH.Create 1. 0x00604000--0x0060bfff  0x2000 TARGET Byte /EraseALIAS 0x00220000--0x0025ffff
+    )
+    ; Flash
+    FLASH.Create 1. 0x00260000--0x0026ffff 0x10000 TARGET Byte /EraseALIAS 0x0060c000--0x0060dfff
+    FLASH.Create 1. 0x00270000--0x0027ffff  0x4000 TARGET Byte /EraseALIAS 0x0060e000--0x0060ffff
+    ; Flash ECC bits
+    FLASH.Create 1. 0x0060c000--0x0060dfff  0x2000 TARGET Byte /EraseALIAS 0x00260000--0x0026ffff
+    FLASH.Create 1. 0x0060e000--0x0060ffff   0x800 TARGET Byte /EraseALIAS 0x00270000--0x0027ffff
+    
+    IF &DualPort==0
+      FLASH.TARGET 0x20000000 0x20002000 0x1000 ~~/demo/arm/flash/byte/f021m3noecc.bin
+    ELSE
+      FLASH.TARGET 0x20000000 EAHB:0x20002000 0x1000 ~~/demo/arm/flash/byte/f021m3noecc.bin /DualPort /STACKSIZE 0x120
+  )
+
+  FLASH.CLocK.AUTO
+
+  ; Flash ECC bit access
+  MAP.BUS16 0x00600000--0x0060ffff
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Preliminary to unlock empty device
+
+UnlockInternalSRAM:
+  LOCAL &tmp &addr
+
+  &tmp=Data.Long(SD:0x00680800)
+  
+  &addr=0x00200000
+  RePeaT 9.
+  (
+    &tmp=Data.Long(SD:&addr)
+    &addr=&addr+4
+  )
+
+  &addr=0x0027FFDC
+  RePeaT 9.
+  (
+    &tmp=Data.Long(SD:&addr)
+    &addr=&addr+4
+  )
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Initialize ECC/parity RAM
+
+initRAM:
+  Data.Set SD:0x400FB240 %Long Data.Long(SD:0x400FB240)|0x00000055    ; Initialize C0, C1, C2, C3 RAM's
+  Data.Set SD:0x400FB260 %Long Data.Long(SD:0x400FB260)|0x00000001    ; Initialize MtoC MSG RAM's
+  WAIT Data.Long(SD:0x400FB270)==0x55
+  WAIT Data.Long(SD:0x400FB288)==0x01
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Initialize System Clock for the case of empty device
+
+initSYSCLK:
+  ON.ERROR GOSUB
+  (
+    ON.ERROR NOTHING
+    IF RUN()
+      Break.direct
+    Data.Set SD:0x400FB80C %Long 0x0
+    Data.Set SD:0x400FB810 %Long 0x0
+    PRINT "DSLPCLKCFG:DSDIVOVRIDE and M3SSDIVSEL changed to /1 to increase FCLK"
+    FLASH.Program.ALL
+    RETURN
+  )
+  FLASH.Program.ALL
+  ON.ERROR
+
+  FLASH.Program.off
+
+  IF FLASH.CLocK.Frequency()<1000000.
+  (
+    Data.Set SD:0x400FB80C %Long 0x0
+    Data.Set SD:0x400FB810 %Long 0x0
+    PRINT "DSLPCLKCFG:DSDIVOVRIDE and M3SSDIVSEL changed to /1 to increase FCLK"
+  )
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Initialize RWAIT for flash read waitstate
+
+initRWAIT:
+  LOCAL &rwait
+
+  FLASH.Program.ALL
+  FLASH.Program.off
+
+  &rwait=FLASH.CLocK.Frequency()/40000000.
+  Data.Set SD:0x400FA000 %Long &rwait<<8.
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Disable flash ECC
+
+disableFlashECC:
+  Data.Set 0x400FA600 %Long 0x00
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Enable flash ECC
+
+enableFlashECC:
+  Data.Set 0x400FA600 %Long 0x0A
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Unlock CSM Zone 1
+
+unlockCSMZ1:
+  ; Perform dummy reads of the password locations
+  Data.In SD:0x00200000 /Long
+  Data.In SD:0x00200004 /Long
+  Data.In SD:0x00200008 /Long
+  Data.In SD:0x0020000C /Long
+
+  ; Write passwords to the KEY registers.  0xFFFFFFFF's are dummy passwords.
+  ; User should replace them with the correct password
+  Data.Set SD:0x400FB400 %Long 0xFFFFFFFF
+  Data.Set SD:0x400FB404 %Long 0xFFFFFFFF
+  Data.Set SD:0x400FB408 %Long 0xFFFFFFFF
+  Data.Set SD:0x400FB40C %Long 0xFFFFFFFF
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Unlock CSM Zone 2
+
+unlockCSMZ2:
+  ; Perform dummy reads of the password locations
+  Data.In SD:0x0027FFF0 /Long
+  Data.In SD:0x0027FFF4 /Long
+  Data.In SD:0x0027FFF8 /Long
+  Data.In SD:0x0027FFFC /Long
+
+  ; Write passwords to the KEY registers.  0xFFFFFFFF's are dummy passwords.
+  ; User should replace them with the correct password
+  Data.Set SD:0x400FB418 %Long 0xFFFFFFFF
+  Data.Set SD:0x400FB41C %Long 0xFFFFFFFF
+  Data.Set SD:0x400FB420 %Long 0xFFFFFFFF
+  Data.Set SD:0x400FB424 %Long 0xFFFFFFFF
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Unlock ECSL Zone 1
+
+unlockECSLZ1:
+  ; Perform dummy reads of the password locations
+  Data.In SD:0x00200010 /Long
+  Data.In SD:0x00200014 /Long
+
+  ; Write passwords to the KEY registers.  0xFFFFFFFF's are dummy passwords.
+  ; User should replace them with the correct password
+  Data.Set SD:0x400FB410 %Long 0xFFFFFFFF
+  Data.Set SD:0x400FB414 %Long 0xFFFFFFFF
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Unlock ECSL Zone 2
+
+unlockECSLZ2:
+  ; Perform dummy reads of the password locations
+  Data.In SD:0x0027FFE8 /Long
+  Data.In SD:0x0027FFEC /Long
+
+  ; Write passwords to the KEY registers.  0xFFFFFFFF's are dummy passwords.
+  ; User should replace them with the correct password
+  Data.Set SD:0x400FB428 %Long 0xFFFFFFFF
+  Data.Set SD:0x400FB42C %Long 0xFFFFFFFF
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Read OTP sector lock in OTP
+
+readOTPSECLOCK:
+  ; Perform dummy read
+  Data.In SD:0x00680800 /Long     ; Read OTPSECLOCK
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Zone select settings
+
+grabSectors:
+  ; Perform dummy read
+  Data.In SD:0x00200018 /Long     ; Read Z1_grabSect
+  Data.In SD:0x0020001C /Long     ; Read Z1_GRABRAM
+  Data.In SD:0x0027FFE4 /Long     ; Read Z2_grabSect
+  Data.In SD:0x0027FFE0 /Long     ; Read Z2_GRABRAM
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Read of flash execute-only location Zone 1
+
+readFlashEXEZ1:
+  ; Perform dummy read
+  Data.In SD:0x00200020 /Long
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Read of flash execute-only location Zone 2
+
+readFlashEXEZ2:
+  ; Perform dummy read
+  Data.In SD:0x0027FFDC /Long
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; The below is usually performed in the boot ROM, but if during debug,
+; Boot ROM execution is bypassed, then the following must be executed
+
+DeviceConfig:
+  Data.Set SD:0x400FE004 %Long Data.Long(SD:0x00680430)
+  Data.Set SD:0x400FB900 %Long Data.Long(SD:0x00680410)
+  Data.Set SD:0x400FB904 %Long Data.Long(SD:0x00680414)
+  Data.Set SD:0x400FB930 %Long Data.Long(SD:0x0068042C)
+
+  Data.Set SD:0x400FE014 %Long Data.Long(SD:0x00680400)
+  Data.Set SD:0x400FE01C %Long Data.Long(SD:0x00680404)
+  Data.Set SD:0x400FE024 %Long Data.Long(SD:0x00680408)
+  Data.Set SD:0x400FE194 %Long Data.Long(SD:0x0068040C)
+  Data.Set SD:0x400FB910 %Long Data.Long(SD:0x00680418)
+  Data.Set SD:0x400FB914 %Long Data.Long(SD:0x0068041C)
+  Data.Set SD:0x400FB918 %Long Data.Long(SD:0x00680420)
+  Data.Set SD:0x400FB91C %Long Data.Long(SD:0x00680424)
+  Data.Set SD:0x400FB920 %Long Data.Long(SD:0x00680428)
+
+  Data.Set SD:0x400FB8C0 %Long Data.Long(SD:0x400FB8C0)|0x00030001   ; Release C28 from Reset
+
+  RETURN

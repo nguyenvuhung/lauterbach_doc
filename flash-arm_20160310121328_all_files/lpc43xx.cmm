@@ -1,0 +1,274 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of NXP LPC43xx Cortex-M4 internal flash.
+;
+; @Description: 
+; Script arguments:
+;
+;  DO lpc43xx [PREPAREONLY] [CPU=<cpu>] [DUALPORT=0|1]
+;
+;    PREPAREONLY only declares flash but does not execute flash programming
+;
+;    CPU=<cpu> selects CPU derivative <cpu>
+;
+;    DUALPORT default value is 0 (disabled). If DualPort mode is enabled
+;            flash algorithm stays running until flash programming is
+;            finished. Data is tranferred via dual port memory access. 
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/lpc43xx CPU=LPC4357FET256 DUALPORT=1 PREPAREONLY
+;
+; List of LPC43xx derivatives and their configuration:
+;
+;   CPU-Type          Flash A  Flash B  EEPromSize  RamSize
+;                       [kB]     [kB]      [kB]       [kB]
+; --------------------------------------------------------------------------------
+;   LPC4310FBD144         no flash
+;   LPC4310FET100         no flash
+;   LPC4312JBD144       512.       0.       16.       104.
+;   LPC4312JET100       512.       0.       16.       104.
+;   LPC4313JBD144       256.     256.       16.       104.
+;   LPC4313JET100       256.     256.       16.       104.
+;   LPC4315JBD144       384.     384.       16.       136.
+;   LPC4315JET100       384.     384.       16.       136.
+;   LPC4317JBD144       512.     512.       16.       136.
+;   LPC4317JET100       512.     512.       16.       136.
+;   LPC4320FBD100         no flash
+;   LPC4320FBD144         no flash
+;   LPC4320FET100         no flash
+;   LPC4322JET100       512.       0.       16.       104.
+;   LPC4322JBD144       512.       0.       16.       104.
+;   LPC4323JET100       256.     256.       16.       104.
+;   LPC4323JBD144       256.     256.       16.       104.
+;   LPC4325JET100       384.     384.       16.       136.
+;   LPC4325JBD144       384.     384.       16.       136.
+;   LPC4327JET100       512.     512.       16.       136.
+;   LPC4327JBD144       512.     512.       16.       136.
+;   LPC4330FET100         no flash
+;   LPC4330FET180         no flash
+;   LPC4330FET256         no flash
+;   LPC4333FBD144       256.     256.       16.       136.
+;   LPC4333FET100       256.     256.       16.       136.
+;   LPC4333FET180       256.     256.       16.       136.
+;   LPC4333FET256       256.     256.       16.       136.
+;   LPC4337FBD144       512.     512.       16.       136.
+;   LPC4337FET100       512.     512.       16.       136.
+;   LPC4337FET180       512.     512.       16.       136.
+;   LPC4337FET256       512.     512.       16.       136.
+;   LPC4350FBD208         no flash
+;   LPC4350FET180         no flash
+;   LPC4350FET256         no flash
+;   LPC4353FBD208       256.     256.       16.       136.
+;   LPC4353FET180       256.     256.       16.       136.
+;   LPC4353FET256       256.     256.       16.       136.
+;   LPC4357FBD208       512.     512.       16.       136.
+;   LPC4357FBD208       512.     512.       16.       136.
+;   LPC4357FET256       512.     512.       16.       136.
+;
+; Memories:
+;
+;   256/512 kB Flash bank A is located at 0x1A000000
+;   256/512 kB Flash bank B is located at 0x1B000000
+;   16 kB EEPROM is located at            0x20040000
+;   32 kB local SRAM is located at        0x10000000
+;   40 kB local SRAM is located at        0x10080000
+;   64 kB AHB SRAM is located at          0x20000000
+;   64 kB ROM is located at               0x10400000
+;
+; Code Read Protection (CRP):
+;
+; CRP is invoked by programming a specific pattern in flash bank A or B 
+; at offset 0x000002FC.
+;
+;  Name     Pattern      Description
+; --------------------------------------------------------------------------------
+;  NO_ISP   0x4E697370   Disables ISP request using the P2_7 pin.
+;  CRP1     0x12345678   Access to chip via the JTAG pins is disabled. This mode 
+;                        allows partial flash update using the following ISP 
+;                        commands and restrictions:
+;                        • Read Memory command: disabled.
+;                        • Copy RAM to Flash command: cannot write to Sector 0.
+;                        • Go command: disabled.
+;                        • Erase sectors command: can erase any individual sector 
+;                          except sector 0 only, or can erase all sectors at once.
+;                        • Compare command: disabled. This mode is useful when 
+;                          CRP is required and flash field updates are needed but 
+;                          all sectors can not be erased. The compare command is 
+;                          disabled, so in the case of partial flash updates the 
+;                          secondary loader should implement a checksum mechanism 
+;                          to verify the integrity of the flash.
+;                        • Activate flash bank not allowed.
+;  CRP2     0x87654321   This is similar to CRP1 with the following additions:
+;                        • Write to RAM command: disabled.
+;                        • Copy RAM to Flash: disabled.
+;                        • Erase command: only allows erase of all sectors.
+;  CRP3     0x43218765   This is similar to CRP2, but ISP entry by pulling P2_7 
+;                        LOW is disabled if a valid user code is present in flash 
+;                        sector 0. This mode effectively disables ISP override 
+;                        using the P2_7 pin. It is up to the user’s application 
+;                        to provide for flash updates by using IAP calls or by 
+;                        invoking ISP.
+;                        CAUTION: If CRP3 is selected, no future factory testing 
+;                        can be performed on the device.
+;
+;  Flash programming commands use 32 bytes of space in the top portion of the
+;  on-chip RAM (local SRAM at 0x10080000--0x10089FFFF) for execution.
+;
+; HINTS:
+;
+;   Flash clock has to match System Clock Frequency (M4_CLK). 
+;   FLASH.CLocK.AUTO can be used for automatic flash clock measurement.
+;
+;   Boot flash cannot be programmed or erased with builtin flash 
+;   algorithm. 
+;
+;   Data has to be loaded into flash aligned to page boundaries.
+;
+;   Vector table checksum generation is done by script, so that it 
+;   can be used or switched off, as needed.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: LPC43*
+; --------------------------------------------------------------------------------
+; $Rev: 3505 $
+; $Id: lpc43xx.cmm 3505 2015-11-26 15:46:59Z fcaron $
+
+  LOCAL &parameters &param_prepareonly
+  ENTRY %LINE &parameters
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &param_cpu
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  LOCAL &param_dualport
+  &param_dualport=0
+  IF VERSION.BUILD.BASE()>=43441.
+    &param_dualport=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"DUALPORT=","0")
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(LPC43??F?????)
+      SYStem.CPU LPC43??F?????
+
+    SYStem.CONFIG.DEBUGPORTTYPE JTAG
+    SYStem.CONFIG.CONNECTOR MIPI20T
+    SYStem.Option.ResBreak OFF
+
+    SYStem.Up
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration &param_dualport
+  LOCAL &FlashSize
+  ENTRY &FlashSize
+  IF &FlashSize==0x0
+    ENDDO
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    ; Example for download 
+    FLASH.ReProgram.ALL /Erase
+    ; 1. Download file
+    Data.LOAD.auto *
+    ; 2. Checksum generation
+    Data.SUM 0x1A000000--0x1A00001B /Long  ; Calculate checksum of all (other) vectors
+    Data.Set 0x1A00001C %Long -Data.SUM()  ; Write the 2's complement in reserved vector's spot
+    ; 3. Flash programming
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &DualPort
+  ENTRY &DualPort
+
+  LOCAL &FlashASize &FlashBSize
+
+  IF CPUIS("LPC43?0*")
+  (
+    &FlashASize=0x0
+    &FlashBSize=0x0
+  )
+  ELSE IF CPUIS("LPC43?2*")
+  (
+    &FlashASize=0x80000
+    &FlashBSize=0x0
+  )
+  ELSE IF CPUIS("LPC43?3*")
+  (
+    &FlashASize=0x40000
+    &FlashBSize=0x40000
+  )
+  ELSE IF CPUIS("LPC43?5*")
+  (
+    &FlashASize=0x60000
+    &FlashBSize=0x60000
+  )
+  ELSE IF CPUIS("LPC43?7*")
+  (
+    &FlashASize=0x80000
+    &FlashBSize=0x80000
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  IF &FlashASize>=0x40000
+  (
+    FLASH.Create 1. 0x1A000000--0x1A00FFFF  0x2000 TARGET Long
+    FLASH.Create 1. 0x1A010000--0x1A03FFFF 0x10000 TARGET Long
+  )
+  IF &FlashASize>=0x80000
+    FLASH.Create 1. 0x1A040000--0x1A07FFFF 0x10000 TARGET Long
+
+  IF &FlashBSize>=0x40000
+  (
+    FLASH.Create 2. 0x1B000000--0x1B00FFFF  0x2000 TARGET Long
+    FLASH.Create 2. 0x1B010000--0x1B03FFFF 0x10000 TARGET Long
+  )
+  IF &FlashBSize>=0x80000
+    FLASH.Create 2. 0x1B040000--0x1B07FFFF 0x10000 TARGET Long
+
+  IF (&FlashASize>0x0)||(&FlashBSize>0x0)
+  (
+    IF &DualPort==0
+      FLASH.TARGET 0x10000000 0x10001000 0x2000 ~~/demo/arm/flash/long/lpc4300.bin /STACKSIZE 0x200 /FirmWareRAM 0x10089FF0--0x10089FFF
+    ELSE
+      FLASH.TARGET 0x10000000 EAHB:0x10001000 0x2000 ~~/demo/arm/flash/long/lpc4300.bin /STACKSIZE 0x200 /FirmWareRAM 0x10089FF0--0x10089FFF /DualPort
+
+    FLASH.CLocK.AUTO
+  )
+
+  RETURN &FlashASize+&FlashBSize

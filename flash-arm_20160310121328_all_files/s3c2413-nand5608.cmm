@@ -1,0 +1,121 @@
+; --------------------------------------------------------------------------------
+; @Title: S3C2413 NAND FLASH Programming Script 
+; @Description:
+; NAND FLASH(SAMSUNG, K9F5608) is connected to CS0                      
+;
+; SDRAM              : 0x30000000
+; Command Register   : 0x4E000008   
+; AddRESets Register : 0x4E00000C 
+; Data Register      : 0x4E000010
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: S3C2410X
+; @Keywords: SAMSUNG K9F5608 NAND
+; --------------------------------------------------------------------------------
+; $Id: s3c2413-nand5608.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+
+; system controller initialization
+ 	RESet
+ 	SYStem.CPU s3c2413x
+ 	SYStem.JtagClock rtck
+ 	SYStem.Mode Up
+
+PER.Set.simple C15:0x1 %Long 0x78   ;MMU & Cache disable
+
+Data.Set SD:0x53000000 %LE %Long 0x0					; disable watchdog
+Data.Set SD:0x48800004 %LE %Long 0xc0				; ebi (BANK_CFG : SDRAM)
+
+; 12MHz
+Data.Set SD:0x4C000014 %LE %Long 0x65				; set clkdiv, 1:2:4 (UCLK:48M/2, HALFHCLK=HCLK/2)
+Data.Set SD:0x4C000004 %LE %Long 0x0007D041	; Mpll:266MHz, Pll off(default=1[bit20]), MDIV[19:12]=0x7D, PDIV[9:4]=0x04, SDIV[3:0]=0x1
+Data.Set SD:0x4C00001C %LE %Long 0x00000030	; Clock source control Fout=mpll, Fout=upll
+Data.Set SD:0x4C000008 %LE %Long 0x0040070		; Upll:96MHz, MDIV[19:12]=0x40(64), PDIV[9:4]=0x07, SDIV[3:0]=0x0, FOUTupll(96M) = (64+8)*12M/((7+2)*2^0)
+
+GOSUB sdram_init
+
+//	NAND FLASH Controller setting.
+Data.Set ASD:0x4E000000 %Long 0x80007774
+Data.Set ASD:0x4E000004 %Long 0x00000005  ;NAND boot mode & NAND flash enable
+
+ FLASHFILE.RESet
+
+//FLASHFILE.Config <cmd_reg> <addr_reg> <io_reg>
+ FLASHFILE.CONFIG 0x4E000008 0x4E00000C 0x4E000010
+
+// FLASHFILE.TARGET <code range> <data range> <Algorithm file>
+ FLASHFILE.TARGET 0x30000000++0x1FFF 0x30002000++0x3FFF ~~\demo\arm\flash\byte\nand5608.bin  /KEEP
+
+//Read FLASH Manufacture and Device ID
+ FLASHFILE.GETID
+
+ FLASHFILE.DUMP 0x0
+
+;FLASHFILE.ERASE 0x0--0x7FFFFFF  /EraseBadBlocks
+
+;FLASHFILE.LOAD  * 0x0  /WriteBadBlocks
+;FLASHFILE.LOAD  * 0x0  /WriteBadBlocks  /ComPare
+
+ENDDO
+
+
+sdram_init:
+
+;SDRAM Initialization
+; setting the configuration register rBANKCON123
+; assert PALL
+; wait refresh 255 cycle
+; 2 auto-refresh cycle
+; assert MRS
+; normal refresh
+; assert EMRS
+; assert Normal mode
+; now ready sdram operation
+
+; 1st : configuration register
+	Data.Set SD:0x48000000 %LE %Long 0x48904			; BANKCFG 
+	; RASBW0[18:17]   = 10 : RAS BANK0 13bit
+	; RASBW1[15:14]   = 10 : RAS BANK1 13bit
+	; CASBW0[12:11]   = 01 : CAS BANK0 9bit
+	; CASBW1[09:08]   = 01 : CAS BANK1 9bit
+	; ADDRCFG0[07:06] = 00 : BA, RAS, CAS
+	; ADDRCFG1[05:04] = 00 : BA, RAS, CAS
+	; MEMCFG[03:02]   = 01 : mSDR
+	; BW[00]          = 00 : 32bit
+	
+	Data.Set SD:0x48000004 %LE %Long 0x40				; BANKCON1 - mobile dram controller (WBUF[6]=enable)
+	Data.Set SD:0x48000008 %LE %Long 0x57003a		; BANKCON2 - timing parameter
+	; tRAS[23:20]     = 0101 (6 clock)
+	; tRC[19:16]      = 0111 (8 clock)
+	; CAS La[5:4]     = 11   (3 clock)
+	; tRCD[3:2]       = 10   (3 clock)
+	; tRP[1:0]        = 10   (3 clock)
+	
+	Data.Set SD:0x4800000c %LE %Long 0x80000030	; BANKCON3 - EMRS register
+	; BA[31:30]       = 10  (Bank Address for EMRS)
+	; CAS Lat[6:4]    = 011 (3 clock)
+	
+;1st : issue precharge all command
+ Data.Set SD:0x48000004 %LE %Long 0x41					; BANKCON1 INIT[1:0] = 01 (issue PALL Cmd)
+ 
+;2nd : make refresh cycle 32clk
+ Data.Set SD:0x48000010 %LE %Long 0xff					; REFRESH REFCYC[15:0]
+ 
+;3rd : wait 120clk
+ Register.Set r0 r(r0)
+
+;1st : issue MRS
+ Data.Set SD:0x48000004 %LE %Long 0x42					; BANKCON1 INIT[1:0] = 10 (issue MRS Cmd)
+
+;4th : set normal operation refresh cycle
+ Data.Set SD:0x48000010 %LE %Long 0x313				; REFRESH REFCYC[15:0]
+ 
+;1st : issue EMRS
+ Data.Set SD:0x48000004 %LE %Long 0x43					; BANKCON1 INIT[1:0] = 11 (issue EMRS Cmd)
+
+;1st : issue Normal mode
+ Data.Set SD:0x48000004 %LE %Long 0x40					; BANKCON1 INIT[1:0] = 00 (Normal Operation)
+
+
+RETURN

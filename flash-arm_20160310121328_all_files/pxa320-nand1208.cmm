@@ -1,0 +1,243 @@
+; --------------------------------------------------------------------------------
+; @Title: PXA320 NAND FLASH Programming Script
+; @Description:
+; NAND FLASH(SAMSUNG, K9F1208) is connected
+; 
+; SRAM: 0x5C020000
+; NAND FLASH CONtroller(CPU-specific): 0x43100000 
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: PXA320
+; @Keywords: SAMSUNG K9F1208 NAND
+; --------------------------------------------------------------------------------
+; $Id: pxa320-nand1208.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  WinCLEAR
+
+//SYStem ConfiguratiON
+  SYStem.RESet
+  SYStem.CPU pxa320
+  SYStem.Option WAITReset ON
+  SYStem.Up
+  
+  TrOnchip.Set DABORT OFF
+  TrOnchip.Set PABORT OFF
+  TrOnchip.Set UNDEF OFF
+
+  GOSUB watchdog_disable
+  GOSUB mem_init
+
+  Data.Set A:0x43000010 %Long 0x0000000D
+
+//NAND CONtorller CS0 Timing Register
+  Data.Set A:0x43100004 %Long 0x00111d1d
+
+//NAND CONtorller CS1 Timing Register
+  Data.Set A:0x4310000c %Long 0x048500c2
+
+//NAND CONtroller CONtrol Register
+  Data.Set A:0x43100000 %Long 0x40071000  ;Enable Ecc
+; Data.Set A:0x43100000 %Long 0x00071000  ;Dsable Ecc
+
+  Break.RESet
+
+  FLASHFILE.RESet
+
+//FLASHFILE.CONFIG <<NAND Flash CONtroller Basement Address>> 0x0 0x0
+  FLASHFILE.CONFIG 0x43100000 0x0 0x0
+
+// FLASHFILE.TARGET <<code range>> <<data range>> <<algorithm file>>
+  FLASHFILE.TARGET 0x5C020000++0x1FFF 0x5C022000++0x1FFF  ~~/demo/arm/flash/byte/nand1208_pxa.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Put a list of bad blocks into area window for 64MB size
+  FLASHFILE.GETBADBLOCK 0x0--0x3FFFFFF
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+  //Erase NAND FLASH Main and Bad block inforamtiON
+    FLASHFILE.Erase 0x0--0x1FFFFFF  /EraseBadBlocks
+
+  //Skipped way 
+    FLASHFILE.LOAD.binary  * 0x0 
+    ;FLASHFILE.LOADSPARE * 0x0 
+   
+  //Reserved block area way
+    ;FLASHFILE.LOAD  * 0x0   /WriteBadBlocks
+    ;FLASHFILE.LOADSPARE *  0x0   /WriteBadBlocks  
+  )
+
+  ENDDO
+
+; --------------------------------------------------------------------------------
+; InitializatiON script for 32 bit DDR ON Tortola EVB 
+; --------------------------------------------------------------------------------
+
+mem_init:
+  Data.Set 0x40e10130  %Long 0x00000001
+
+// SMEMC_CSADRCFG_2: set SCLK cycles address bits and 16 bit device
+  Data.Set 0x4a000088  %Long 0x0032080b
+// SMEMC_CSADRCFG_3: set SCLK cycles address bits and 16 bit device
+  Data.Set 0x4a00008c  %Long 0x0032080b
+// SMEMC_MSC1: SRAM/Async Flash memory
+  Data.Set 0x4a00000c  %Long 0x0ff80ff8
+  Data.In 0x4a00000c /Long 
+
+// MONahans setUp
+// GPIO2: RDY
+  Data.Set 0x40e1012c  %Long 0x00000001
+// GPIO4: CS3
+  Data.Set 0x40e10134  %Long 0x00000001
+// PAD_DF_nADV1_ALE
+  Data.Set 0x40e10208  %Long 0x00001801
+// PAD_nXCVREN
+  Data.Set 0x40e10138  %Long 0x00001900
+// PAD_nBE0
+  Data.Set 0x40e10214  %Long 0x00001800
+// PAD_nBE1
+  Data.Set 0x40e10218  %Long 0x00001800
+// PAD_nLUA
+  Data.Set 0x40e10234  %Long 0x00001900
+
+// PAD_DF_NCS0 for NAND flash
+  Data.Set 0x40e10224  %Long 0x00000001
+// PAD_DF_nWE for NAND flash
+  Data.Set 0x40e1022c  %Long 0x0001901
+// PAD_DF_nRE_nOE for NAND flash
+  Data.Set 0x40e10230  %Long 0x00001901
+
+// PAD_nLLA
+  Data.Set 0x40e10238  %Long 0x00001900
+// PAD_DF_ADDR0
+  Data.Set 0x40e1023c  %Long 0x00001800
+// PAD_DF_ADDR1
+  Data.Set 0x40e10240  %Long 0x00001800
+// PAD_DF_ADDR2
+  Data.Set 0x40e10244  %Long 0x00001800
+// PAD_DF_ADDR3
+  Data.Set 0x40e10248  %Long 0x00001800
+// PAD_DF_CLE
+  Data.Set 0x40e10204  %Long 0x00001800
+// PAD_DF_IO0
+  Data.Set 0x40e1024c  %Long 0x00001401
+// PAD_DF_IO1
+  Data.Set 0x40e10254  %Long 0x00001401
+// PAD_DF_IO2
+  Data.Set 0x40e1025c  %Long 0x00001401
+// PAD_DF_IO3
+  Data.Set 0x40e10264  %Long 0x00001401
+// PAD_DF_IO4
+  Data.Set 0x40e1026c  %Long 0x00001401
+// PAD_DF_IO5
+  Data.Set 0x40e10274  %Long 0x00001401
+// PAD_DF_IO6
+  Data.Set 0x40e1027c  %Long 0x00001401
+// PAD_DF_IO7
+  Data.Set 0x40e10284  %Long 0x00001401
+// PAD_DF_IO8
+  Data.Set 0x40e10250  %Long 0x00001401
+// PAD_DF_IO9
+  Data.Set 0x40e10258  %Long 0x00001401
+// PAD_DF_IO10
+  Data.Set 0x40e10260  %Long 0x00001401
+// PAD_DF_IO11
+  Data.Set 0x40e10268  %Long 0x00001401
+// PAD_DF_IO12
+  Data.Set 0x40e10270  %Long 0x00001401
+// PAD_DF_IO13
+  Data.Set 0x40e10278  %Long 0x00001401
+// PAD_DF_IO14
+  Data.Set 0x40e10280  %Long 0x00001401
+// PAD_DF_IO15
+  Data.Set 0x40e10288  %Long 0x00001401
+
+//*****Dynamic cONtroller setting******//
+  Data.Set 0x48100000 %Long 0xc000072b
+  Data.Set 0x48100004 %Long 0x00000019
+  Data.Set ,          %Long 0x00000000
+  Data.Set ,          %Long 0x00000000
+  Data.Set ,          %Long 0x00000000
+  Data.Set ,          %Long 0x00000000
+  Data.Set ,          %Long 0x00000000
+  Data.Set ,          %Long 0x00000000
+  Data.Set ,          %Long 0x00000000
+  Data.Set ,          %Long 0x00000000
+  Data.Set ,          %Long 0x00000000
+  Data.Set ,          %Long 0x00000000
+  Data.Set ,          %Long 0x00000000
+  Data.Set ,          %Long 0x00000000
+  Data.Set ,          %Long 0x00000000
+  Data.Set ,          %Long 0x00000000
+  Data.Set ,          %Long 0xc0000033
+
+RETURN
+
+
+watchdog_disable:
+
+//GPIO32(SCL)
+  Data.Set 0x40e10414  %Long 0x00001841
+
+//GPIO33(SDA)
+  Data.Set 0x40e10418  %Long 0x00001841
+  WAIT 100.ms
+
+// ISR: WAIT ITE=H
+  Data.In 0x40301698 /Long
+// ISAR
+  Data.Set 0x403016a0  %Long 0x00000000
+// ICR
+  Data.Set 0x40301690  %Long 0x00000000
+
+// ICR: set IUE,SCLEA
+  Data.Set 0x40301690  %Long 0x00000060
+// IDBR: set slave address
+  Data.Set 0x40301688  %Long 0x00000068
+// ICR: set IUE,SCLEA,TB,START
+  Data.Set 0x40301690  %Long 0x00000069
+  WAIT 1.s
+
+// ISR: WAIT ITE=H
+  Data.In 0x40301698 /Long
+// ICR: read
+  Data.In 0x40301690 /Long
+// IDBR: set register address
+  Data.Set 0x40301688  %Long 0x00000009
+// ICR: set IUE,SCLEA,TB
+  Data.Set 0x40301690  %Long 0x00000068
+  WAIT 1.s
+
+// ISR: WAIT ITE=H
+  Data.In 0x40301698 /Long
+// IDBR: set data  (disable watchdog)
+  Data.Set 0x40301688  %Long 0x00000074
+// ICR: set IUE,SCLEA,TB,STOP
+  Data.Set 0x40301690  %Long 0x0000006a
+// ICR: set IUE,SCLEA,TB,STOP
+  Data.Set 0x40301690  %Long 0x0000007a
+  WAIT 1.s
+
+// ISR: WAIT ITE=H
+  Data.In 0x40301698 /Long
+
+RETURN
+
+
+
+
+
+
+
+
+
+
+
+
+
+

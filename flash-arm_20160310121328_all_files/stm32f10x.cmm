@@ -1,0 +1,478 @@
+; --------------------------------------------------------------------------------
+; @Title: Example Script for programming of ST STM32F10x internal flash
+;
+; @Description: 
+; Script arguments:
+;
+;   DO stm32f10x [PREPAREONLY] [CPU=<cpu>] [DUALPORT=0|1]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;             example
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;
+;     DUALPORT default value is 0 (disabled). If DualPort mode is enabled
+;             flash algorithm stays running until flash programming is
+;             finished. Data is tranferred via dual port memory access. 
+;
+; List of STM32F10x derivatives and their configuration:
+;
+;   CPU-Type      Flash size   SRAM size 
+;                   (kByte)     (kByte)
+; --------------------------------------------------------------------------------
+;   STM32F100C4       16.          4.
+;   STM32F100C6       32.          4.
+;   STM32F100C8       64.          8.
+;   STM32F100CB      128.          8.
+;   STM32F100R4       16.          4.
+;   STM32F100R6       32.          4.
+;   STM32F100R8       64.          8.
+;   STM32F100RB      128.          8.
+;   STM32F100RC      256.         24.
+;   STM32F100RD      384.         32.
+;   STM32F100RE      512.         32.
+;   STM32F100V8       64.          8.
+;   STM32F100VB      128.          8.
+;   STM32F100VC      256.         24.
+;   STM32F100VD      384.         32.
+;   STM32F100VE      512.         32.
+;   STM32F100ZC      256.         24.
+;   STM32F100ZD      384.         32.
+;   STM32F100ZE      512.         32.
+; --------------------------------------------------------------------------------
+;   STM32F101C4       16.          4.
+;   STM32F101C6       32.          6.
+;   STM32F101C8       64.         10.
+;   STM32F101CB      128.         16.
+;   STM32F101R4       16.          4.
+;   STM32F101R6       32.          6.
+;   STM32F101R8       64.         10.
+;   STM32F101RB      128.         16.
+;   STM32F101RC      256.         32.
+;   STM32F101RD      384.         48.
+;   STM32F101RE      512.         48.
+;   STM32F101RF      768.         96.
+;   STM32F101RG     1024.         96.
+;   STM32F101T4       16.          4.
+;   STM32F101T6       32.          6.
+;   STM32F101T8       64.         10.
+;   STM32F101TB      128.         16.
+;   STM32F101V8       64.         10.
+;   STM32F101VB      128.         16.
+;   STM32F101VC      256.         32.
+;   STM32F101VD      384.         48.
+;   STM32F101VE      512.         48.
+;   STM32F101VF      768.         96.
+;   STM32F101VG     1024.         96.
+;   STM32F101ZC      256.         32.
+;   STM32F101ZD      384.         48.
+;   STM32F101ZE      512.         48.
+;   STM32F101ZF      768.         96.
+;   STM32F101ZG     1024.         96.
+; --------------------------------------------------------------------------------
+;   STM32F102C4       16.          4.
+;   STM32F102C6       32.          6.
+;   STM32F102C8       64.         10.
+;   STM32F102CB      128.         16.
+;   STM32F102R4       16.          4.
+;   STM32F102R6       32.          6.
+;   STM32F102R8       64.         10.
+;   STM32F102RB      128.         16.
+; --------------------------------------------------------------------------------
+;   STM32F103C4       16.          6.
+;   STM32F103C6       32.         10.
+;   STM32F103C8       64.         20.
+;   STM32F103CB      128.         20.
+;   STM32F103R4       16.          6.
+;   STM32F103R6       32.         10.
+;   STM32F103R8       64.         20. 
+;   STM32F103RB      128.         20.
+;   STM32F103RC      256.         48.
+;   STM32F103RD      284.         64.
+;   STM32F103RE      512.         64.
+;   STM32F103RF      768.         96.
+;   STM32F103RG     1024.         96.
+;   STM32F103T4       16.          6.
+;   STM32F103T6       32.         10.
+;   STM32F103T8       64.         20.
+;   STM32F103TB      128.         20.
+;   STM32F103V8       64.         20.
+;   STM32F103VB      128.         20.
+;   STM32F103VC      256.         48.
+;   STM32F103VD      384.         64.
+;   STM32F103VE      512.         64.
+;   STM32F103VF      768.         96.
+;   STM32F103VG     1024.         96.
+;   STM32F103ZC      256.         48.
+;   STM32F103ZD      384.         64.
+;   STM32F103ZE      512.         64.
+;   STM32F103ZF      768.         96.
+;   STM32F103ZG     1024.         96.
+; --------------------------------------------------------------------------------
+;   STM32F105R8       64.         20. 
+;   STM32F105RB      128.         32.
+;   STM32F105RC      256.         64.
+;   STM32F105V8       64.         20. 
+;   STM32F105VB      128.         32.
+;   STM32F105VC      256.         64.
+; --------------------------------------------------------------------------------
+;   STM32F107RB      128.         48.
+;   STM32F107RC      256.         64.
+;   STM32F107VB      128.         48.
+;   STM32F107VC      256.         64.
+;
+; Flash base address is 0x08000000
+; SRAM base address is  0x20000000
+;
+; For programming Option Bytes use stm32f10x-optionbyte.cmm
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: STM32F10* 
+; --------------------------------------------------------------------------------
+; $Rev: 3535 $
+; $Id: stm32f10x.cmm 3535 2015-12-15 16:27:01Z fcaron $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &param_cpu
+  IF VERSION.BUILD()>=29755.
+    &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+  ELSE
+    PRINT "Argument CPU= ignored because of too old software"
+
+  LOCAL &param_dualport
+  &param_dualport=0
+  IF VERSION.BUILD.BASE()>=43441.
+    &param_dualport=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"DUALPORT=","0")
+
+  ; Optimize flash programming time by switching on PLL
+  LOCAL &optimize
+  &optimize=0
+
+  ; ------------------------------------------------------------------------------
+  ; CPU setup
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(STM32F10*)
+    (
+      IF VERSION.BUILD()>=37389.
+        SYStem.CPU STM32F10*
+      ELSE
+      (
+        PRINT %ERROR "Please select STM32F10x CPU derivative"
+        ENDDO
+      )
+    )
+
+    IF CABLE.TWOWIRE()
+      SYStem.CONFIG.DEBUGPORTTYPE SWD
+
+    SYStem.Up
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration &param_dualport
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash Option Byte programming example
+
+  DIALOG.YESNO "Program option bytes"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    DO ~~~~/stm32f10x-optionbyte
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+
+  IF &progflash 
+  (
+    ; Disable DMA clock
+    Data.Set D:0x40021014 %Long Data.Long(D:0x40021014)&0xFFFFFFFC 
+
+    ; Disable write protection if needed and reset device to activate changed
+    ; option bytes
+    LOCAL &WRP
+    &WRP=Data.Long(D:0x40022020)
+    IF &WRP!=0xFFFFFFFF
+      DO ~~~~/stm32f10x-optionbyte WRP=0xFFFFFFFF RESETDEVICE
+
+    IF &optimize==1
+      GOSUB SetupPLL
+
+    ; Update flash contents
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Restore write protection
+    IF &WRP!=0xFFFFFFFF
+    (
+      PRINT "Restoring write protection"
+      DO ~~~~/stm32f10x-optionbyte WRP=&WRP
+    )
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Setup PLL to optimize flash programming performance 
+
+SetupPLL:
+
+  ; Switch to internal HSI clock
+  Data.Set SD:0x40021004 %Long 0yxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx00
+
+  ; Turn PLL OFF
+  Data.Set SD:0x40021000 %Long 0yxxxxxxx0xxxxxxxxxxxxxxxxxxxxxxxx
+
+  ; FLASH Latency 2 for > 48Mhz operation
+  Data.Set SD:0x40022000 %Long 0yxxxxxxxxxxxxxxxxxxxxxxxxxxx10010
+
+  ; HSEBYP = NOT BYPASSED
+  ; HSEON  = ON
+  ; => Turn On external oscillator
+  Data.Set SD:0x40021000 %Long 0yxxxxxxxxxxxxx0x1xxxxxxxxxxxxxxxx
+
+  ; CPU Clock 64Mhz, APB==32Mhz, TIMxCLK == 64Mhz
+  ; APB1     = HCLK/2 (==100 BIT 10-8 )
+  ; APB2     = HCLK/2 (==100 BIT 13-11)
+  ; PLLSRC   = 1 from PREDIV1 (BIT 16)
+  ; PLLXTPRE = 0              (BIT 17)
+  ; PLLMUL   = 8      (== 0110 BIT 18-21)
+  Data.Set SD:0x40021004 %Long 0yxxxxxxxxxx011001xx100100xxxxxxxx
+
+  ; Turn PLL ON
+  Data.Set SD:0x40021000 %Long 0yxxxxxxx1xxxxxxxxxxxxxxxxxxxxxxxx
+
+  ; Switch to PLL Clock
+  Data.Set SD:0x40021004 %Long 0yxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx10
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &DualPort
+  ENTRY &DualPort
+
+  LOCAL &FlashSize &SectorSize
+  LOCAL &RAMSize
+
+  IF ((CPU()=="STM32F100C4")||(CPU()=="STM32F100R4")||(CPU()=="STM32F101C4")||(CPU()=="STM32F101R4")||(CPU()=="STM32F101T4")||(CPU()=="STM32F102C4")||(CPU()=="STM32F102R4"))
+  (
+    &FlashSize=0x4000
+    &SectorSize=0x400
+    &RAMSize=0x1000
+  )
+  ELSE IF ((CPU()=="STM32F103C4")||(CPU()=="STM32F103R4")||(CPU()=="STM32F103T4"))
+  (
+    &FlashSize=0x4000
+    &SectorSize=0x400
+    &RAMSize=0x1800
+  )
+  ELSE IF ((CPU()=="STM32F100C6")||(CPU()=="STM32F100R6"))
+  (
+    &FlashSize=0x8000
+    &SectorSize=0x400
+    &RAMSize=0x1000
+  )
+  ELSE IF ((CPU()=="STM32F101C6")||(CPU()=="STM32F101R6")||(CPU()=="STM32F101T6")||(CPU()=="STM32F102C6")||(CPU()=="STM32F102R6"))
+  (
+    &FlashSize=0x8000
+    &SectorSize=0x400
+    &RAMSize=0x1800
+  )
+  ELSE IF ((CPU()=="STM32F103C6")||(CPU()=="STM32F103R6")||(CPU()=="STM32F103T6"))
+  (
+    &FlashSize=0x8000
+    &SectorSize=0x400
+    &RAMSize=0x2800
+  )
+  ELSE IF ((CPU()=="STM32F100C8")||(CPU()=="STM32F100R8")||(CPU()=="STM32F100V8"))
+  (
+    &FlashSize=0x10000
+    &SectorSize=0x400
+    &RAMSize=0x2000
+  )
+  ELSE IF ((CPU()=="STM32F101C8")||(CPU()=="STM32F101R8")||(CPU()=="STM32F101T8")||(CPU()=="STM32F101V8")||(CPU()=="STM32F102C8")||(CPU()=="STM32F102R8"))
+  (
+    &FlashSize=0x10000
+    &SectorSize=0x400
+    &RAMSize=0x2800
+  )
+  ELSE IF ((CPU()=="STM32F103C8")||(CPU()=="STM32F103R8")||(CPU()=="STM32F103T8")||(CPU()=="STM32F103V8"))
+  (
+    &FlashSize=0x10000
+    &SectorSize=0x400
+    &RAMSize=0x2800
+  )
+  ELSE IF ((CPU()=="STM32F105R8")||(CPU()=="STM32F105V8"))
+  (
+    &FlashSize=0x10000
+    &SectorSize=0x800
+    &RAMSize=0x2800
+  )
+  ELSE IF ((CPU()=="STM32F100CB")||(CPU()=="STM32F100RB")||(CPU()=="STM32F100VB"))
+  (
+    &FlashSize=0x20000
+    &SectorSize=0x400
+    &RAMSize=0x2000
+  )
+  ELSE IF ((CPU()=="STM32F101CB")||(CPU()=="STM32F101RB")||(CPU()=="STM32F101TB")||(CPU()=="STM32F101VB")||(CPU()=="STM32F102CB")||(CPU()=="STM32F102RB"))
+  (
+    &FlashSize=0x20000
+    &SectorSize=0x400
+    &RAMSize=0x4000
+  )
+  ELSE IF ((CPU()=="STM32F103CB")||(CPU()=="STM32F103RB")||(CPU()=="STM32F103TB")||(CPU()=="STM32F103VB"))
+  (
+    &FlashSize=0x20000
+    &SectorSize=0x400
+    &RAMSize=0x5000
+  )
+  ELSE IF ((CPU()=="STM32F105RB")||(CPU()=="STM32F105VB")||(CPU()=="STM32F107RB")||(CPU()=="STM32F107VB"))
+  (
+    &FlashSize=0x20000
+    &SectorSize=0x800
+    &RAMSize=0x8000
+  )
+  ELSE IF ((CPU()=="STM32F100RC")||(CPU()=="STM32F100VC")||(CPU()=="STM32F100ZC"))
+  (
+    &FlashSize=0x40000
+    &SectorSize=0x800
+    &RAMSize=0x6000
+  )
+  ELSE IF ((CPU()=="STM32F101RC")||(CPU()=="STM32F101VC")||(CPU()=="STM32F101ZC"))
+  (
+    &FlashSize=0x40000
+    &SectorSize=0x800
+    &RAMSize=0x8000
+  )
+  ELSE IF ((CPU()=="STM32F103RC")||(CPU()=="STM32F103VC")||(CPU()=="STM32F103ZC"))
+  (
+    &FlashSize=0x40000
+    &SectorSize=0x800
+    &RAMSize=0xc000
+  )
+  ELSE IF ((CPU()=="STM32F105RC")||(CPU()=="STM32F105VC")||(CPU()=="STM32F107RC")||(CPU()=="STM32F107VC"))
+  (
+    &FlashSize=0x40000
+    &SectorSize=0x800
+    &RAMSize=0x10000
+  )
+  ELSE IF ((CPU()=="STM32F100RD")||(CPU()=="STM32F100VD")||(CPU()=="STM32F100ZD"))
+  (
+    &FlashSize=0x60000
+    &SectorSize=0x800
+    &RAMSize=0x8000
+  )
+  ELSE IF ((CPU()=="STM32F101RD")||(CPU()=="STM32F101VD")||(CPU()=="STM32F101ZD"))
+  (
+    &FlashSize=0x60000
+    &SectorSize=0x800
+    &RAMSize=0xc000
+  )
+  ELSE IF ((CPU()=="STM32F103RD")||(CPU()=="STM32F103VD")||(CPU()=="STM32F103ZD"))
+  (
+    &FlashSize=0x60000
+    &SectorSize=0x800
+    &RAMSize=0x10000
+  )
+  ELSE IF ((CPU()=="STM32F100RE")||(CPU()=="STM32F100VE")||(CPU()=="STM32F100ZE"))
+  (
+    &FlashSize=0x80000
+    &SectorSize=0x800
+    &RAMSize=0x8000
+  )
+  ELSE IF ((CPU()=="STM32F101RE")||(CPU()=="STM32F101VE")||(CPU()=="STM32F101ZE"))
+  (
+    &FlashSize=0x80000
+    &SectorSize=0x800
+    &RAMSize=0xc000
+  )
+  ELSE IF ((CPU()=="STM32F103RE")||(CPU()=="STM32F103VE")||(CPU()=="STM32F103ZE"))
+  (
+    &FlashSize=0x80000
+    &SectorSize=0x800
+    &RAMSize=0x10000
+  )
+  ELSE IF ((CPU()=="STM32F101RF")||(CPU()=="STM32F101VF")||(CPU()=="STM32F101ZF")||(CPU()=="STM32F103RF")||(CPU()=="STM32F103VF")||(CPU()=="STM32F103ZF"))
+  (
+    &FlashSize=0xc0000
+    &SectorSize=0x800
+    &RAMSize=0x18000
+  )
+  ELSE IF ((CPU()=="STM32F101RG")||(CPU()=="STM32F101VG")||(CPU()=="STM32F101ZG")||(CPU()=="STM32F103RG")||(CPU()=="STM32F103VG")||(CPU()=="STM32F103ZG"))
+  (
+    &FlashSize=0x100000
+    &SectorSize=0x800
+    &RAMSize=0x18000
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  FLASH.Create 1. 0x08000000++(&FlashSize-0x01) &SectorSize TARGET Word
+  ; For Main Flash memory boot mode flash memory is aliased to address 0x0
+  FLASH.CreateALIAS 0x0++(&FlashSize-0x01) 0x08000000
+
+  LOCAL &access &option
+  IF &DualPort!=0
+  (
+    &access="EAHB"
+    &option="/DualPort"
+  )
+  ELSE
+    &access="D"
+
+  IF &FlashSize>0x80000
+  (
+    FLASH.TARGET 0x20000000 &access:0x20001000 &SectorSize ~~/demo/arm/flash/word/stm32f100xl.bin &option
+  )
+  ELSE IF &RAMSize>=0x1800
+  (
+    FLASH.TARGET 0x20000000 &access:0x20000800 &SectorSize ~~/demo/arm/flash/word/stm32f100.bin &option
+  )
+  ELSE IF &RAMSize>=0x1000
+  (
+    FLASH.TARGET 0x20000000 &access:0x20000800 0x400       ~~/demo/arm/flash/word/stm32f100.bin &option
+  )
+  ELSE
+  (
+    DIALOG.OK "Not enough memory for flash algorithm."
+    ENDDO
+  )
+
+  RETURN

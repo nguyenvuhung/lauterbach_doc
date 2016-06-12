@@ -1,0 +1,133 @@
+; --------------------------------------------------------------------------------
+; @Title: i.MX6UltraLite Quad SPI FLASH Program script
+; @Description:
+; The N25Q256 (Micron SPI flash) is on the QuadSPI1_A controller
+;
+; SRAM: 0x900000
+; QuadSPI(controller) Base: 0x21E0000
+; FLASH MAPPED base: 0x60000000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: IMX6ULTRALITE
+; @Keywords: N25Q256 QuadSPI
+; --------------------------------------------------------------------------------
+; $Id: imx6ultralite-qspi.cmm 3520 2015-12-08 16:43:34Z jjeong $
+;
+
+LOCAL &arg1
+ENTRY &arg1
+&arg1=STRing.UPpeR("&arg1")  // for example "PREPAREONLY"
+
+LOCAL &QSPI_MEM_BASE
+LOCAL &QSPI_CONT_BASE
+
+&QSPI_MEM_BASE=0x60000000
+&QSPI_CONT_BASE=0x21E0000
+
+RESet
+SYStem.RESet
+SYStem.CPU IMX6ULTRALITE
+; adjust WaitReset time if a different bootmode is used
+SYStem.Option ResBreak OFF
+SYStem.Option WaitReset 10ms
+SYStem.JtagClock CTCK 10MHz
+SYStem.Up
+
+Data.Set C15:0x1 %Long  (Data.Long(C15:0x1)&~(0x1005))  ; disable cache and mmu
+
+//clk enable for the QuadSPI1, CCM_CCGR3[CG7] qspi1_clk_enable
+Data.Set ASD:0x20C401C %Long  0x1C900000
+Data.Set ASD:0x20C4074 %Long  Data.Long(A:0x20C4074)|0xC000 
+
+//QuadSPI1_A pin muxing
+Data.Set A:0x20E01A0   %Long %LE 0x2;   QSPI_A_DQS
+Data.Set A:0x20E01A4   %Long %LE 0x2;   QSPI_A_SCLK
+Data.Set A:0x20E01A8   %Long %LE 0x2;   QSPI_A_DAT0
+Data.Set A:0x20E01AC   %Long %LE 0x12;  QSPI_A_DAT1
+Data.Set A:0x20E01B0   %Long %LE 0x2;   QSPI_A_DAT2
+Data.Set A:0x20E01B4   %Long %LE 0x2;   QSPI_A_DAT3
+Data.Set A:0x20E01B8   %Long %LE 0x2;   QSPI_A_SS0
+
+//init QuadSPI
+Data.Set A:&QSPI_CONT_BASE     %LE %Long 0xF4000   ; QuadSPI1->MCR =  QuadSPI_MCR_MDIS_MASK;
+Data.Set A:&QSPI_CONT_BASE+00C %LE %Long 0x0303    ; QuadSPI1->FLSHCR = QuadSPI_FLSHCR_TCSH(3) | QuadSPI_FLSHCR_TCSS(3);
+Data.Set A:&QSPI_CONT_BASE+010 %LE %Long 0x0       ; QuadSPI1->BUF0CR = QuadSPI_BUF0CR_MSTRID(0) | QuadSPI_BUF0CR_ADATSZ(0);
+Data.Set A:&QSPI_CONT_BASE+014 %LE %Long 0x0       ; QuadSPI1->BUF1CR = QuadSPI_BUF1CR_MSTRID(0) | QuadSPI_BUF1CR_ADATSZ(0);     
+Data.Set A:&QSPI_CONT_BASE+018 %LE %Long 0x0 
+Data.Set A:&QSPI_CONT_BASE+01C %LE %Long 0x80000000 ; QuadSPI1->BUF3CR = QuadSPI_BUF3CR_MSTRID(0) | QuadSPI_BUF3CR_ADATSZ(0) | QuadSPI_BUF3CR_ALLMST_MASK; 
+Data.Set A:&QSPI_CONT_BASE+030 %LE %Long 0x0        ; QuadSPI1->BUF0IND = 0x0; 
+
+Data.Set A:&QSPI_CONT_BASE+000 %LE %Long 0xF4000    ; QuadSPI1->MCR |= QuadSPI_MCR_MDIS_MASK;  
+Data.Set A:&QSPI_CONT_BASE+108 %LE %Long 0x00010000 ; // for 33MHz clock ,   QuadSPI1->SMPR = 0x10000;  
+Data.Set A:&QSPI_CONT_BASE+100 %Long %LE 0x60000000
+Data.Set A:&QSPI_CONT_BASE+180 %LE %Long 0x64000000 ; QuadSPI1->SFA1AD
+Data.Set A:&QSPI_CONT_BASE+184 %LE %Long 0x68000000
+Data.Set A:&QSPI_CONT_BASE+188 %LE %Long 0x6C000000
+Data.Set A:&QSPI_CONT_BASE+18C %LE %Long 0x70000000
+
+Data.Set A:&QSPI_CONT_BASE+000 %Long 0xF0000     ; QuadSPI0->MCR &= ~QuadSPI_MCR_MDIS_MASK 
+
+//FLASH READ ID TEST
+GOSUB READ_ID_TEST
+
+programFlash:
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.CONFIG <QuadSPI Base>   <FLASH_BASE_ADDR>
+  FLASHFILE.CONFIG &QSPI_CONT_BASE      &QSPI_MEM_BASE
+
+//FLASHFILE.TARGET <Code_range>        <Data_range>          <Algorithm file>
+  FLASHFILE.TARGET 0x900000++0x1FFF    EAHB:0x902000++0x1FFF    ~~/demo/arm/flash/byte/spi4b64fs_vybridqspi.bin    /KEEP   /DUALPORT
+
+  FLASHFILE.GETID
+
+//End of the test prepareonly
+IF "&arg1"=="PREPAREONLY"
+ENDDO
+
+  FLASHFILE.DUMP 0x0
+
+//Erase Serial FLASH  
+  ;FLASHFILE.ERASE 0x0--0xFFFFF
+
+//Write
+  ;FLASHFILE.LOAD   * 0x0
+  ;FLASHFILE.LOAD   * 0x0  /ComPare   ;verify
+
+ENDDO
+
+
+READ_ID_TEST:
+
+PRINT "READ_ID_TEST..."
+&temp=Data.Long(A:&QSPI_CONT_BASE+000)
+Data.Set A:&QSPI_CONT_BASE+000 %Long (&temp|0x0c00)   //clear Tx/Rx buffer
+
+Data.Set A:&QSPI_CONT_BASE+300 %LE %Long 0x5AF05AF0  ;  LUTKEY
+Data.Set A:&QSPI_CONT_BASE+304 %LE %Long 0x2  ;  LCKCR
+
+//SEQID 5
+Data.Set A:&QSPI_CONT_BASE+360 %LE %Long 0x1c04049f   ; LUT0, SEQID0
+Data.Set A:&QSPI_CONT_BASE+364 %LE %Long 0x0
+Data.Set A:&QSPI_CONT_BASE+368 %LE %Long 0x0
+Data.Set A:&QSPI_CONT_BASE+36C %LE %Long 0x0
+
+Data.Set A:&QSPI_CONT_BASE+0x100 %Long  &QSPI_MEM_BASE      ; SFAR , FLASH BASE ADDRESS
+
+// assert Read id command
+Data.Set A:&QSPI_CONT_BASE+008 %Long  (5.<<24.)  ;    (5.<<24.)
+WAIT 100.ms
+
+&temp=Data.Long(A:&QSPI_CONT_BASE+000)
+Data.Set ZSD:&QSPI_CONT_BASE+000 %Long (&temp|0x0800)   //clear Tx buffer
+
+PRINT "1st 0x" Data.Long(A:&QSPI_CONT_BASE+200)>>24.        " (Manufacture)"
+PRINT "2nd 0x" (Data.Long(A:&QSPI_CONT_BASE+200)>>16.)&0xFF " (Device ID)"
+PRINT "3rd 0x" (Data.Long(A:&QSPI_CONT_BASE+200)>>8.)&0xFF 
+PRINT "4th 0x" Data.Long(A:&QSPI_CONT_BASE+200)&0xFF 
+
+RETURN

@@ -1,0 +1,176 @@
+; --------------------------------------------------------------------------------
+; @Title: PXA920 eMMC FLASH Programming Script
+; @Description:
+; eMMC FLASH(SAMSUNG, 4GB eMMC) is connected MMC3
+; 
+; S(D)RAM: 0xD100A000
+; MMC3 Register : 0xD4281000 
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: PXA920
+; @Keywords: SAMSUNG eMMC
+; --------------------------------------------------------------------------------
+; $Id: pxa920-emmc.cmm 3178 2015-02-20 11:20:01Z jjeong $
+
+&MMC_BASE=0xD4281000
+
+ AREA.RESet
+ AREA.view
+
+ SYStem.RESet
+ SYStem.CPU PXA920
+ SYStem.MemAccess DENIED
+ SYStem.CpuAccess DENIED
+ SYStem.JtagClock 10000000.
+ SYStem.Option IMASKASM OFF
+ SYStem.Option IMASKHLL OFF
+ SYStem.Option TURBO OFF
+ SYStem.Option RESBREAK OFF
+ SYStem.Option INTDIS OFF
+ SYStem.Option DBGACK ON
+ SYStem.Option SHOWERROR ON
+ SYStem.Option ENRESET ON
+ SYStem.Option WAITRESET    100.ms
+ SYStem.Option SOFTWORD OFF
+ SYStem.Option SOFTLONG OFF
+ SYStem.Option TRST ON
+ SYStem.Option DACR ON
+ SYStem.Option AMBA OFF
+ SYStem.Option NODATA OFF
+ SYStem.Option EXEC OFF
+ SYStem.Option DISMODE AUTO
+ SYStem.Option PC 0x0
+ SYStem.Mode Up
+
+ PER.Set.simple C15:0x1 %Long 0x58878  ; disable mmu & cache
+
+ GOSUB MMC_Enable
+
+ GOSUB READ_ID_TEST
+
+ Break.RESet
+
+ FLASHFILE.RESet
+
+;FLASHFILE.CONFIG  <eMMC controller> <0x0> <0x0>
+ FLASHFILE.CONFIG  0xD4281000        0x0  0x0
+
+;FLASHFILE.TARGET <<code range>> <<data range>> <<algorithm file>>
+ FLASHFILE.TARGET 0xD100A000++0x1fff 0xD100C000++0x1fff ~~\demo\arm\flash\byte\emmc.bin  /KEEP
+
+Data.Set A:0xD428102C %LE %Long 0x0E8007 ; pls, make a slower clk around 400Khz for the initialization of MMC
+ FLASHFILE.GETID
+Data.Set A:0xD428102C %LE %Long 0x0E0207 ; pls, make a higher clk around 25Mhz
+
+ ;FLASHFILE.DUMP 0x0               ; Read eMMC
+ ;FLASHFILE.ERASE 0x0--0xFFFFF     ; Erase eMMC
+ ;FLASHFILE.LOAD * 0x0             ; Write eMMC
+ 
+ENDDO
+
+MMC_Enable:
+
+PER.Set.simple C15:0x3 %Long 0xFFFFFFFF      
+
+Data.Set A:0xD4282110 %LE %Long 0x3
+Data.Set A:0xD4282114 %LE %Long 0x3
+Data.Set A:0xD4015034 %LE %Long 0x33
+Data.Set A:0xD4014084 %LE %Long Data.Long(A:0xD4014084)|0x1
+
+Data.Set A:0xD4282868 %LE %Long 0x9
+Data.Set A:0xD401503C %LE %Long 0x7
+WAIT 10.ms
+Data.Set A:0xD401503C %LE %Long 0x3
+Data.Set A:0xD4015024 %LE %Long Data.Long(A:0xD4015024)|0x812
+
+// PMUM_ACGR
+Data.Set A:0xD4015024 %LE %Long Data.Long(A:0xD4015024)|0x8816
+//PMUA_NF_CLK_RES_CTRL
+Data.Set A:0xD4282860 %LE %Long Data.Long(A:0xD4282860)|0x98
+
+//configure SDHC0 
+Data.Set A:0xd4282854 %LE %Long Data.Long(A:0xd4282854)&0xFFFFFFFC
+Data.Set A:0xd4282854 %LE %Long 0x9    
+
+//configure SDHC2 for MMC3
+Data.Set A:0xD42828E0 %LE %Long Data.Long(A:0xD42828E0)&0xFFFFFFFC
+Data.Set A:0xD42828E0 %LE %Long 0x1B    
+
+//configure MMC3 MFPR pins
+Data.Set A:0xD401E05C %LE %Long 0x10c1
+Data.Set A:0xD401E064 %LE %Long 0x10c1
+Data.Set A:0xD401E040 %LE %Long 0x10c1
+Data.Set A:0xD401E03C %LE %Long 0x10c1
+Data.Set A:0xD401E038 %LE %Long 0x10c1
+Data.Set A:0xD401E034 %LE %Long 0x10c1
+Data.Set A:0xD401E030 %LE %Long 0x10c1
+Data.Set A:0xD401E02C %LE %Long 0x10c1
+Data.Set A:0xD401E028 %LE %Long 0x10c1
+Data.Set A:0xD401E024 %LE %Long 0x10c1
+
+//configure SD Host controller
+Data.Set A:0xD4281028 %LE %Long 0x0F00   ; SD BUS POWER ON
+Data.Set A:0xD428102C %LE %Long 0x0E8007 ; 400Khz clk
+Data.Set A:0xD42810E0 %LE %Long 0x405    ; fifo reg 
+Data.Set A:0xD42810E8 %LE %Long 0x03fff
+
+RETURN
+
+
+READ_ID_TEST:
+//MMC interface, not SD(HC)
+//CMD0
+RePeaT 2.
+(
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x0  ;arg 
+Data.Set &MMC_BASE+0xc %Long 0x0  ;cmd
+WAIT 10.ms
+)
+
+//CMD1
+RePeaT 10.
+(
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x40FF8000 ;arg
+Data.Set &MMC_BASE+0xc %Long 0x01020000 ;cmd1
+WAIT 10.ms
+&resp=Data.Long(A:(&MMC_BASE+0x10))
+//print "CMD1 resp: 0x" &resp
+IF (&resp&0x80000000)==0x80000000
+(
+GOTO jump_cmd2
+)
+)
+
+PRINT "CMD1 fail"
+END
+
+jump_cmd2:
+//CMD2
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x0     ;arg
+Data.Set &MMC_BASE+0xc %Long 0x02010000 ;cmd2
+WAIT 10.ms
+
+//CMD3
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x00010000  ; arg, MMC RCA is (0x0001<<16.)
+Data.Set &MMC_BASE+0xc %Long 0x03020000  ;cmd3
+WAIT 10.ms
+
+//CMD10
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x00010000 ; arg, MMC RCA is (0x0001<<16.)
+Data.Set &MMC_BASE+0xc %Long 0x0A010000  ;cmd10
+WAIT 10.ms
+
+//Response2
+PRINT "CID register"
+PRINT "[127:104] 0x" Data.Long(A:(&MMC_BASE+0x1c))
+PRINT "[103:72]  0x" Data.Long(A:(&MMC_BASE+0x18))
+PRINT "[71:40]   0x" Data.Long(A:(&MMC_BASE+0x14))
+PRINT "[39:8]    0x" Data.Long(A:(&MMC_BASE+0x10))
+
+RETURN

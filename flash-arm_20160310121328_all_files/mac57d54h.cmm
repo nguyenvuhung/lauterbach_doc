@@ -1,0 +1,119 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of FREESCALE MAC57D54H internal flash
+; @Description:
+;   Script arguments:
+;
+;    DO olea [PREPAREONLY] [CPU=<cpu>]
+;
+;      PREPAREONLY only declares flash but does not execute flash programming
+;
+;      CPU=<cpu> selects CPU derivative <cpu>
+;
+;   Example:
+;
+;   DO ~~/demo/arm/flash/olea CPU=MAC57D54H-CM4 PREPAREONLY
+;
+;   List of MAC57D54H derivatives and their configuration:
+;
+;     CPU-Type        Flash size   Page size
+;                       [Byte]      [Byte]
+;    MAC57D54H         0x400000      0x20         
+;
+; @Author: FLC
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 3285 $
+; $Id: mac57d54h.cmm 3285 2015-05-13 08:40:20Z fcaron $
+
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly &param_cpu
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(MAC57D54H*)
+      SYStem.CPU MAC57D54H*
+    
+    SYStem.Option.ResBreak OFF
+    SYStem.Up
+  )
+  
+  GOSUB DisableWatchdog
+  
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+ ; -------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+    
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &FlashSize &FlashDriver
+
+  ; Low address space
+  FLASH.Create 1. 0x18404000--0x18407FFF  0x4000 NOP    Quad 0x0000 /INFO "BAF (read only)"
+  FLASH.Create 1. 0x18FA0000--0x18FAFFFF  0x4000 TARGET Quad 0x0001 /AutoInc
+  FLASH.Create 1. 0x18F9C000--0x18F9FFFF  0x4000 TARGET Quad 0x0005
+  FLASH.Create 1. 0x18FB0000--0x18FBFFFF  0x8000 TARGET Quad 0x0006 /AutoInc
+  FLASH.Create 1. 0x18FC0000--0x18FFFFFF 0x10000 TARGET Quad 0x0008 /AutoInc
+  ; Mid address space
+  FLASH.Create 2. 0x00800000--0x00803FFF  0x4000 NOP    Quad 0x0100 /INFO "CSE Block0"
+  FLASH.Create 2. 0x18808000--0x18813FFF  0x4000 TARGET Quad 0x0101 /AutoInc /INFO "EEPROM"
+  FLASH.Create 2. 0x00804000--0x00807FFF  0x4000 NOP    Quad 0x0104 /INFO "CSE Block1"
+  FLASH.Create 2. 0x18814000--0x1881FFFF  0x4000 TARGET Quad 0x0105 /AutoInc /INFO "EEPROM"
+  FLASH.Create 2. 0x18820000--0x1883FFFF 0x10000 TARGET Quad 0x0108 /AutoInc /INFO "EEPROM"
+  ; 256k address space
+  FLASH.Create 4. 0x19000000--0x190BFFFF 0x40000 TARGET Quad 0x0300 /AutoInc
+  FLASH.Create 4. 0x19180000--0x1927FFFF 0x40000 TARGET Quad 0x0303 /AutoInc
+  FLASH.Create 4. 0x190C0000--0x1917FFFF 0x40000 TARGET Quad 0x0307 /AutoInc
+  FLASH.Create 4. 0x19280000--0x1937FFFF 0x40000 TARGET Quad 0x030A /AutoInc
+  ; UTEST address space
+  FLASH.Create 6. 0x18400000--0x18403FFF  0x4000 TARGET Quad 0x0500 /OTP /INFO "UTEST"
+  
+  FLASH.TARGET 0x3F000000 0x3F002000 0x1000 ~~/demo/arm/flash/quad/c55fmhalo.bin
+  
+  RETURN
+
+
+DisableWatchdog:  
+  Data.Set 0x40088010 %Long 0x0000C520   ; key
+  Data.Set 0x40088010 %Long 0x0000D928   ; key
+  Data.Set 0x40088000 %Long 0xFF00010A
+  RETURN

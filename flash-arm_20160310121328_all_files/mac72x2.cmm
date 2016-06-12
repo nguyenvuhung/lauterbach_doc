@@ -1,0 +1,102 @@
+; --------------------------------------------------------------------------------
+; @Title: Script for flashing Motorola MAC72x2 internal flash
+;
+; @Description: 
+; Motorola MAC72x2 internal flash. Core is ARM7TDMI-S.
+; - MAC7202
+; - MAC7212
+; - MAC7222
+; - MAC7242
+; - MAC7252
+;
+; 320 kByte Program Flash address is depending on Operation mode.
+;   Single Chip:         0x00000000--0x0004ffff
+;   others:              0x20000000--0x2004ffff
+; 32 kByte Shadow Flash address is also depending on Operation mode.
+;   Single Chip:         0x00f00000--0x00f07fff
+;   Expanded, Lockout:   0x20f00000--0x20f07fff
+;   Bootload:            0x00000000--0x00007fff or 0x20f00000--0x20f07fff
+; 20 kByte SRAM at       0x40000000--0x40004fff
+;
+; Version of flash algorithm depends on processor revision:
+;   MAC7202 mask set 0M34A             h7fb_v301.bin
+;   MAC7202 mask set 1M34A or higher   h7fb_v302.bin or higher
+;
+;   h7fb.bin contains latest version of flash algorithm.
+;
+; HINTS:
+;   On chip revision 0M34A the flash cannot be unlocked if secured by 
+;   accident!
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: MAC72?2
+; --------------------------------------------------------------------------------
+; $Id: mac72x2.cmm 2881 2014-07-07 10:35:48Z kjmal $
+; wrd - 21.07.2005
+;
+
+; Select program flash base address for programming, one of above.
+&flashbase=0x20000000
+&shadowflashbase=0x20f00000
+&flashdriver="tbd.bin"
+
+; Set RAM address 
+&rambase=0x40000000
+
+; --------------------------------------------------------------------------------
+; Setup CPU
+IF SYStem.MODE()<5
+(
+  SYStem.RESet 
+  SYStem.Down 
+  SYStem.JtagClock 1MHz 
+  SYStem.CPU MAC72XX 
+  IF POWERNEXUS()
+  (
+    SYStem.Option nexus mdo8
+    SYStem.Option stall ON
+  )
+  SYStem.Option BigEndian ON
+  SYStem.Option EnReset OFF
+
+  SYStem.Up
+)
+
+; initialize internal RAM
+Data.Set D:&rambase++0x4fff %Long 0x0
+
+; --------------------------------------------------------------------------------
+; Check REV register to select flash driver depending on processor 
+; revision
+&corerevision=Data.Word(SD:0xFC040002)
+PRINT "Core revision 0x" &corerevision
+IF &corerevision==0x7210
+(
+  ; Mask set 0M34A (0x7210)
+  &flashdriver="~~/demo/arm/flash/quad_be/h7fb_v301.bin"
+)
+ELSE
+(
+  ; Mask set 1M34A (0x7211) or newer
+  &flashdriver="~~/demo/arm/flash/quad_be/h7fb.bin"
+)
+
+; --------------------------------------------------------------------------------
+; Flash declaration
+;
+FLASH.RESet
+; Program Flash declaration
+FLASH.Create 1. (&flashbase+0x00000000)++0x1ffff TARGET Quad 0. ; LAS0
+FLASH.Create 1. (&flashbase+0x00020000)++0x1ffff TARGET Quad 1. ; LAS1
+FLASH.Create 2. (&flashbase+0x00040000)++0x3fff  TARGET Quad 0. ; MAS0
+FLASH.Create 2. (&flashbase+0x00044000)++0x3fff  TARGET Quad 1. ; MAS1
+FLASH.Create 2. (&flashbase+0x00048000)++0x3fff  TARGET Quad 2. ; MAS2
+FLASH.Create 2. (&flashbase+0x0004c000)++0x3fff  TARGET Quad 3. ; MAS3
+; Shadow Flash declaration
+FLASH.Create 3. (&shadowflashbase)++0x7fff  TARGET Quad 0x100
+
+FLASH.TARGET &rambase &rambase+0x2000 0x1000 &flashdriver
+
+ENDDO
+

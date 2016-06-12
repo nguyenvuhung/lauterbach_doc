@@ -1,0 +1,65 @@
+; --------------------------------------------------------------------------------
+; @Title: I2C EEPROM Programming script for AT91SAM3U
+; @Description:
+; EEPROM(Atmel,24C02) is connected to I2C-1
+;
+; SRAM: 0x20000000
+;
+; I2C controller base : 0x40088000      
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: AT91SAM3U4E
+; @Keywords: Atmel 24C02 flash EEPROM
+; --------------------------------------------------------------------------------
+; $Id: at91sam3u-i2c02.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.CPU AT91SAM3U4E
+    SYStem.Option.ResBreak OFF
+    SYStem.Up
+  )
+  Data.Set SD:0x400E1254 %LE %Long 0x3FFFFFFF ; Watch dog diasable
+  
+  GOSUB i2c_Init
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASFILE.CONFIG  <i2c base Reg>
+  FLASHFILE.CONFIG 0x40088000    
+
+//FLASHFILE.TARGET <code range>        <data range>           <Algorithm file>
+  FLASHFILE.TARGET 0x20000000++0x1FFF 0x20002000++0x1FFF  ~~/demo/arm/flash/byte/i2c02_at91sam.bin  /KEEP
+
+//FLASHFILE.ERASE 0x0++0xFF
+//FLASHFILE.LOAD * 0x0            ; Write
+//FLASHFILE.LOAD * 0x0  /ComPare  ; Verify
+
+  FLASHFILE.DUMP 0x0  
+
+ENDDO
+
+i2c_Init:
+
+//port TWI
+PER.Set.simple AD:0x400E0C44 %Long 0x03000000 ; PIO24,25 disabled interrput
+PER.Set.simple AD:0x400E0C60 %Long 0x03000000 ; PIO24,25 disabled pull-up
+PER.Set.simple AD:0x400E0C70 %Long 0x00200000 ; PIO24,25
+PER.Set.simple AD:0x400E0C04 %Long 0x03000000 ; PIO24,25 disabled
+
+//UART enable
+PER.Set.simple AD:0x400E0C44 %Long 0x1800  
+PER.Set.simple AD:0x400E0C60 %Long 0x1800
+PER.Set.simple AD:0x400E0C70 %Long 0x00200000
+PER.Set.simple AD:0x400E0C04 %Long 0x1800
+
+
+PER.Set.simple AD:0x400E0410 %Long 0xc0100
+PER.Set.simple AD:0x40088000 %Long 0x4
+PER.Set.simple AD:0x40088004 %Long 0x501100
+PER.Set.simple AD:0x40088010 %Long 0x3939  ;clock for i2c
+
+RETURN

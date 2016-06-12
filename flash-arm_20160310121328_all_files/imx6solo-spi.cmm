@@ -1,0 +1,109 @@
+; --------------------------------------------------------------------------------
+; @Title: i.MX6 SPI FLASH Programming Script
+; @Description:
+;   FLASH Type: SPI FLASH(MACRONIX, MX25L25635F) connected eCSPI1_SS1
+; 
+;   S(D)RAM: 0x900000
+;   eCSPI1 Tx Register : 0x2008004
+;   eCSPI1 Rx Register : 0x2008000    
+;   eCSPI1 CS Register : 0x2008008 
+;
+; @Author: jjeong
+; @Chip: IMX6SOLO
+; @Keywords: MACRONIX MX25L25635F
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: imx6solo-spi.cmm 3339 2015-07-16 07:55:52Z jjeong $
+
+
+; --------------------------------------------------------------------------------
+; 0. get access to i.MX6 
+; --------------------------------------------------------------------------------
+  RESet 
+  SYStem.CPU iMX6Solo  ;SOLO
+  ;CORE.ASSIGN 1        ;SOLO
+  SYStem.Option ResBreak OFF
+  SYStem.Option WaitReset 1.3s 
+  Trace.METHOD Onchip
+  SYStem.Up
+
+  Data.Set C15:0x1 %Long  (Data.Long(C15:0x1)&~(0x1005))  ; disable cache and mmu
+
+  Data.Set ASD:0x020d8000 %Long 0x01C00521  ;SRC Control Register
+
+; --------------------------------------------------------------------------------
+; 1. Clear the EN bit in ECSPI_CONREG to reset the block.
+; --------------------------------------------------------------------------------
+  Data.Set ASD:0x2008008 %Long 0            ;ECSPI1_CONREG = enable eCSPI1_SS1 & master mode
+
+
+; --------------------------------------------------------------------------------
+; 2. Enable the clocks for ECSPI.
+; --------------------------------------------------------------------------------
+  Data.Set ASD:0x20C406C %Long 0xf0fc0003   ;enable clock for the eCSPI1
+
+
+; --------------------------------------------------------------------------------
+; 3. Set the EN bit in ECSPI_CONREG to put ECSPI out of reset.
+; --------------------------------------------------------------------------------
+  Data.Set ASD:0x2008008 %Long 1            ;ECSPI1_CONREG = enable eCSPI1_SS1 & master mode
+
+
+; --------------------------------------------------------------------------------
+; 4. Configure corresponding IOMUX for ECSPI external signals.
+; --------------------------------------------------------------------------------
+  Data.Set ASD:0x20E0144 %Long 0x01     ;IOMUXC_SW_MUX_CTL_PAD_EIM_D16
+  Data.Set ASD:0x20E0514 %Long 0x100B1  ;IOMUXC_SW_PAD_CTL_PAD_EIM_D16
+
+  Data.Set ASD:0x20E0148 %Long 0x01     ;IOMUXC_SW_MUX_CTL_PAD_EIM_D17
+  Data.Set ASD:0x20E0518 %Long 0x100B1  ;IOMUXC_SW_PAD_CTL_PAD_EIM_D17
+
+  Data.Set ASD:0x20E014C %Long 0x01     ;IOMUXC_SW_MUX_CTL_PAD_EIM_D18
+  Data.Set ASD:0x20E051C %Long 0x100B1  ;IOMUXC_SW_PAD_CTL_PAD_EIM_D18
+
+  Data.Set ASD:0x20E0150 %Long 0x01     ;IOMUXC_SW_MUX_CTL_PAD_EIM_D19
+  Data.Set ASD:0x20E0520 %Long 0x100B0  ;IOMUXC_SW_PAD_CTL_PAD_EIM_D19
+
+  Data.Set ASD:0x20E07D8 %LE %Long 0x2  ;IOMUXC_ECSPI1_IPP_CSPI_CLK_IN_SELECT_INPUT)
+  Data.Set ASD:0x20E07DC %LE %Long 0x2  ;IOMUXC_ECSPI1_IPP_IND_MISO_SELECT_INPUT
+  Data.Set ASD:0x20E07E0 %LE %Long 0x2  ;IOMUXC_ECSPI1_IPP_IND_MOSI_SELECT_INPUT
+  Data.Set ASD:0x20E07E8 %LE %Long 0x1  ;IOMUXC_ECSPI1_IPP_IND_SS_B_1_SELECT_INPUT
+
+
+; --------------------------------------------------------------------------------
+; 5. Configure registers of ECSPI properly according to the specifications of the external SPI device.
+; --------------------------------------------------------------------------------
+  Data.Set ASD:0x2008008 %Long 0x46021    ;ECSPI1_CONREG = enable eCSPI1_SS1 & master mode
+  Data.Set ASD:0x200800C %Long 0x0        ;ECSPI1_CONFIGREG
+
+
+; --------------------------------------------------------------------------------
+; 6. Configure Trace32 FLASHFILE Settings and Load SPI Driver 
+; --------------------------------------------------------------------------------
+  Break.RESet
+
+  FLASHFILE.RESet
+  FLASHFILE.CONFIG  0x2008004   0x2008000    0x2008008  
+  FLASHFILE.TARGET 0x900000++0x1fff   0x902000++0x1fff   ~~/demo/arm/flash/byte/spi64_ecspi.bin /KEEP    ; for MX25L25635F spi flash
+
+
+; --------------------------------------------------------------------------------
+; 7. Lauterbach FLASHFILE Commands are now ready to use 
+; --------------------------------------------------------------------------------
+
+
+; --------------------------------------------------------------------------------
+; GETID: Read FLASH Manufacture and Device ID 
+; --------------------------------------------------------------------------------
+  AREA.CLEAR
+  AREA.view
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID  
+ ;FLASHFILE.DUMP 0x0               ; Read  
+ ;FLASHFILE.UNLOCK 0x0--0xFFFFF    ; Unlock
+ ;FLASHFILE.ERASE 0x0--0xFFFFF     ; Erase 
+ ;FLASHFILE.LOAD * 0x0             ; Write 
+
+ENDDO
+

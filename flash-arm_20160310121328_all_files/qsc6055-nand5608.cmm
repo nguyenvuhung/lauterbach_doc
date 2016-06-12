@@ -1,0 +1,82 @@
+; --------------------------------------------------------------------------------
+; @Title: QSC6055 NAND FLASH Programming Script
+; @Description:
+; NAND FLASH(STMicro, 8 bits) is connected 
+;
+; JTAG: ARM9
+; IRAM: 0x78000000
+; NAND FLASH Controller(CPU-specific): 0x60008000
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ARM926EJ-S
+; @Keywords: STMicro
+; --------------------------------------------------------------------------------
+; $Id: qsc6055-nand5608.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+SYStem.RESet
+SYStem.CPU ARM926EJ-S
+SYStem.JtagClock RTCK
+SYStem.Option.EnReset ON
+SYStem.Up
+
+TrOnchip.Set DABORT OFF
+TrOnchip.Set PABORT OFF
+TrOnchip.Set UNDEF OFF
+
+GOSUB QSC_CLOCK
+
+Data.Set SD:0x60008020 %Long 0x0AAD4001A   ; addr cycles 4 (row:2, col:2)
+
+Data.Set SD:0x80034010 %LE %Long 0x1    ; set wdog autokick_start
+
+Data.Set SD:0x60008024 %Long Data.Long(D:0x60008024)&0xFFFFFFFE       ;Ecc Enable 
+;Data.Set SD:0x60008024 %l data.long(D:0x60008024)|0x1        ;Ecc disable , the NFC doesn't write the ECC codes to the spare area
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.CONFIG <<NAND Flash Controller Basement Address>> , ,
+  FLASHFILE.CONFIG 0x60008000 , ,
+
+//FLASHFILE.TARGET <<code range>> <<data range>> <<algorithm file>>
+  FLASHFILE.TARGET 0x78000000++0x1FFF 0x78002000++0x3FFF ~~/demo/arm/flash/byte/nand5608_qsc60x5.bin  /KEEP
+
+  FLASHFILE.GETID
+
+  FLASHFILE.GETBADBLOCK 0x0--0x3FFFFF
+
+;FLASHFILE.erase 0x0--0xFFFFF
+;FLASHFILE.load * 
+;FLASHFILE.load *  /cp
+
+  FLASHFILE.DUMP 0x0
+
+ENDDO
+
+QSC_CLOCK:
+Data.Set D:0x80000000 %Long 0x1DE3FFFE
+Data.Set D:0x80000004 %Long 0x7FFF
+
+Data.Set D:0x80000010 %Long 0x1
+Data.Set D:0x80000014 %Long 0x0B
+
+Data.Set D:0x80000030 %Long 0x7
+Data.Set D:0x80000034 %Long 0x14
+
+Data.Set D:0x8000003C %Long 0x1
+
+Data.Set D:0x80000044 %Long 0x201182
+Data.Set D:0x80000048 %Long 0x1
+
+Data.Set D:0x800000B0 %Long 0x1C
+Data.Set D:0x800000B4 %Long 0x1
+
+Data.Set D:0x800000DC %Long 0x93F82F
+Data.Set D:0x800000E0 %Long 0x0F8C20000
+
+Data.Set D:0x80000108 %Long 0x3C
+Data.Set D:0x8000010C %Long 0x1
+
+RETURN

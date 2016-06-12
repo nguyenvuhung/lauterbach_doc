@@ -1,0 +1,85 @@
+; --------------------------------------------------------------------------------
+; @Title: Serial FLASH Programming script for TI AM3517
+; @Description:
+; Serial FLASH(ST,25P64) is connected to McSPI_CH0 
+;
+; SDRAM: 0x40200000
+;
+; before booting up
+; SPI Tx Register : 0x48098038   
+; SPI Rx Register : 0x4809803C   
+; SPI CS Register : 0x4809802C    
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: AM3517
+; @Keywords: ST 25P64 flash spi
+; --------------------------------------------------------------------------------
+; $Id: am3517-spi64.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+
+  AREA.RESet
+  AREA.view
+
+SYStem.CPU AM3517
+TrOnchip.Set DABORT OFF
+TrOnchip.Set PABORT OFF
+TrOnchip.Set UNDEF OFF
+SYStem.Option.ResBreak OFF
+;SYStem.Mode Go
+SYStem.Mode Up
+
+;wait 1.s    
+;if run()
+;break
+
+PER.Set.simple C15:0x1 %Long 0xC50078  ;disable MMU & Cache
+
+;wdog disable 
+;Data.Set 0x44E35048 %LE %LONG 0x0000AAAA 
+;Data.Set 0x44E35048 %LE %LONG 0x00005555 
+
+Data.Set 0x480021C8 %LE %Long 0x01000100
+Data.Set 0x480021CC %LE %Long 0x01000100
+
+;Disable Write Protect
+Data.Set 0x48002174 %LE %Long 0x00140014
+Data.Set 0x49056034 %LE %Long 0xFFF0FFFF
+Data.Set 0x4905603C %LE %Long 0x00010000
+
+;configure the SPI registers
+Data.Set 0x48098010 %LE %Long 0x2  
+Data.Set 0x48098010 %LE %Long 0x15 
+Data.Set 0x48098020 %LE %Long 0x1  
+Data.Set 0x48098028 %LE %Long 0x1  
+Data.Set 0x4809802C %LE %Long 0x1A0103C7   ; MCSPI_CH0 CONF
+Data.Set 0x48098034 %LE %Long 0x1          ; Enable McSPI Channel 0
+
+//FLASFILE.CONFIG  <Tx Reg>     <Rx Reg>     <CS Reg, McSPI_CH0CONF>      
+  FLASHFILE.CONFIG 0x48098038   0x4809803C   0x4809802C 
+
+//FLASHFILE.TARGET <Code Range>       <Data Range>        <Algorithm File>
+  FLASHFILE.TARGET 0x40200000++0x1FFF 0x40202000++0x1FFF  ~~/demo/arm/flash/byte/spi64_mcspi.bin /KEEP
+
+FLASHFILE.GETID   ; Read FLASH Manufacture and Device ID
+
+//FLASHFILE.UNLOCK 0x0++0xFFFFF 
+
+//FLASHFILE.ERASE 0x0++0xFFFFF
+
+//FLASHFILE.LOAD uboot.bin 0x0            ; Write uboot.bin to 0x0 on the serial flash  
+//FLASHFILE.LOAD uboot.bin 0x0  /ComPare  ; Verify
+
+  FLASHFILE.DUMP 0x0  ; Read out from the serial flash
+
+ENDDO
+
+
+
+
+
+
+
+
+
+

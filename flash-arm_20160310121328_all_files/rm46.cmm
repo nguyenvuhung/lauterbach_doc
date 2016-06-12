@@ -1,0 +1,251 @@
+; --------------------------------------------------------------------------------
+; @Title: Generic script for RM46 internal flash
+;
+; @Description:
+;
+; Example for flash declaration of Freescale RM46 internal flash.
+;
+; Script arguments:
+;
+;   DO rm46 [CPU=<cpu>] [PREPAREONLY] [AUTOECC=0|1] [DUALPORT=0|1]
+;
+;     CPU=<cpu> selects CPU derivative <cpu>. <cpu> can be CPU name out of the
+;             table listed below. For these derivatives the flash declaration
+;             is done by the script.
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+;     AUTOECC default value is 1
+;
+;     DUALPORT default value is 0 (disabled). If DualPort mode is enabled
+;             flash algorithm stays running until flash programming is
+;             finished. Data is tranferred via dual-port memory access. 
+;
+; For example:
+;
+;   DO ~~/demo/arm/flash/rm46 CPU=RM46L830-ZWT DUALPORT=1 PREPAREONLY
+;
+; List of RM46 derivatives and their configuration:
+;
+;                                EEPROM
+;                     Program   emulation
+;   CPU-Type           Flash      Flash       RAM
+; --------------------------------------------------------------------------------
+;   RM46L430-PGE        1MB        64kB      128kB
+;   RM46L430-ZWT        1MB        64kB      128kB
+;   RM46L440-PGE        1MB        64kB      128kB
+;   RM46L440-ZWT        1MB        64kB      128kB
+;   RM46L450-PGE        1MB        64kB      128kB
+;   RM46L450-ZWT        1MB        64kB      128kB
+;   RM46L830-PGE       1.25MB      64kB      192kB
+;   RM46L830-ZWT       1.25MB      64kB      192kB
+;   RM46L840-PGE       1.25MB      64kB      192kB
+;   RM46L840-ZWT       1.25MB      64kB      192kB
+;   RM46L850-PGE       1.25MB      64kB      192kB
+;   RM46L850-ZWT       1.25MB      64kB      192kB
+;   RM46L852-PGE       1.25MB      64kB      192kB
+;   RM46L852-ZWT       1.25MB      64kB      192kB
+;
+; HINTS:
+;
+;   Flash programming algorithm is linked to address 0x08000000 and is not
+;   position independent. Code address of FLASH.TARGET command has not be
+;   changed.
+;
+;   OTP sectors can be programmed using FLASH.Program with /OTP option.
+;   For example with:
+;
+;     FLASH.Program 0xF0000000--0xF0000FFF /OTP
+;     Data.Set ...
+;     ...
+;     FLASH.Program off
+;
+; @Chip: RM46*
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 2903 $
+; $Id: rm46.cmm 2903 2014-07-16 11:19:46Z kjmal $
+;
+
+  ; ------------------------------------------------------------------------------
+  ; Setup script configuration. If auto ECC generation is disabled then
+  ; flash sectors are programmed without generating ECC. ECC sectors can be
+  ; programmed separately or ECC sector programming can be omitted.
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly &param_cpu &AutoECCGeneration &param_dualport
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+  &AutoECCGeneration=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"AUTOECC=","1")
+  &param_dualport=0
+  IF VERSION.BUILD.BASE()>=43441.
+    &param_dualport=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"DUALPORT=","0")
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF (SYStem.MODE()<5)
+  (
+    SYStem.RESet
+    MAP.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(RM46*)
+      SYStem.CPU RM46*
+
+    SYStem.Option.ResBreak OFF
+
+    SYStem.Up
+
+    ; Clear SRAM to prevent ECC faults
+    Data.Set 0xFFFFFF5C %Long 0x00000005
+    Data.Set 0xFFFFFF5C %Long 0x0000000A
+    Data.Set 0xFFFFFF60 %Long 0x00000001    ; init L2 SRAM only
+    Data.Set 0xFFFFFF5C %Long 0x00000005
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+
+  IF &progflash 
+  (
+    ; Disable memory protection unit (MPU) for case internal SRAM is
+    ; protected against code execution
+    LOCAL &MPU
+    &MPU=Data.Long(EC15:0x1)
+    Data.Set EC15:0x1 %Long &MPU&0xFFFFFFFE 
+
+    ; Disable ECC for flash programming
+    LOCAL &PMNC &ACTLR
+    &PMNC=Data.Long(C15:0x0C9)
+    &ACTLR=Data.Long(C15:0x101)
+    Data.Set C15:0x0C9 %Long &PMNC&~0x10           ; PMNC:X
+    Data.Set C15:0x101 %Long &ACTLR&~0x0E000000    ; ACTLR:ATCMPCEN, B0TCMPCEN, B1TCMPCEN
+
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+    
+    ; Restore MPU and ECC setup
+    Data.Set C15:0x0C9 %Long &PMNC
+    Data.Set C15:0x101 %Long &ACTLR
+    Data.Set EC15:0x1  %Long &MPU
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+
+  IF VERSION.BUILD()<45210.
+  (
+    DO ~~~~/rm46simpledecl AUTOECC=&AutoECCGeneration DUALPORT=&param_dualport
+    RETURN
+  )
+
+  LOCAL &FlashSize
+  IF CPUIS(RM46L8*)
+    &FlashSize=0x140000
+  ELSE
+    &FlashSize=0x100000
+
+  IF &AutoECCGeneration!=0
+  (
+    ; Program flash
+    FLASH.Create  1. 0x00000000--0x00017FFF  0x4000 TARGET Byte 0. /INFO "Bank 0"
+    FLASH.Create  1. 0x00018000--0x0001FFFF  0x8000 TARGET Byte 0. /INFO "Bank 0"
+    FLASH.Create  1. 0x00020000--0x000FFFFF 0x20000 TARGET Byte 0. /INFO "Bank 0"
+    IF &FlashSize>=0x140000
+      FLASH.Create  1. 0x00100000--0x0013FFFF 0x20000 TARGET Byte 0. /INFO "Bank 0"
+    ; Program flash ECC
+    FLASH.Create  1. 0xF0400000--0xF0402FFF   0x800 NOP    Byte 0. /INFO "Bank 0 ECC"
+    FLASH.Create  1. 0xF0403000--0xF0403FFF  0x1000 NOP    Byte 0. /INFO "Bank 0 ECC"
+    FLASH.Create  1. 0xF0404000--0xF041FFFF  0x4000 NOP    Byte 0. /INFO "Bank 0 ECC"
+    IF &FlashSize>=0x140000
+      FLASH.Create  1. 0xF0420000--0xF0427FFF  0x4000 NOP    Byte 0. /INFO "Bank 0 ECC"
+
+    ; EEPROM emulation flash
+    FLASH.Create  8. 0xF0200000--0xF020FFFF  0x4000 TARGET Byte 7. /INFO "EEPROM Bank"
+    ; EEPROM emulation flash ECC
+    FLASH.Create  8. 0xF0100000--0xF0101FFF   0x800 NOP    Byte 7. /INFO "EEPROM Bank-ECC"
+
+    IF VERSION.BUILD()>=41634.
+    (
+      ; OTP flash
+      FLASH.Create 11. 0xF0000000--0xF0000FFF  0x1000 TARGET Byte 0. /OTP /INFO "Customer OTP, Bank 0"
+      FLASH.Create 18. 0xF000E000--0xF000EFFF  0x1000 TARGET Byte 7. /OTP /INFO "Customer OTP, EEPROM Bank"
+      ; OTP flash ECC
+      FLASH.Create 11. 0xF0040000--0xF00401FF   0x200 NOP    Byte 0. /OTP /INFO "Customer OTP-ECC, Bank 0"
+      FLASH.Create 18. 0xF0041C00--0xF0041DFF   0x200 NOP    Byte 7. /OTP /INFO "Customer OTP-ECC, EEPROM Bank"
+    )
+
+    IF &param_dualport==0
+      FLASH.TARGET 0x08000000 0x08001000 0x4000 ~~/demo/arm/flash/byte/f021r4.bin
+    ELSE
+      FLASH.TARGET 0x08000000 EAHB:0x08001000 0x4000 ~~/demo/arm/flash/byte/f021r4.bin /DualPort
+  )
+  ELSE
+  (
+    ; Program flash
+    FLASH.Create  1. 0x00000000--0x00017FFF  0x4000 TARGET Byte 0. /EraseALIAS 0xF0400000--0xF0402FFF /INFO "Bank 0"
+    FLASH.Create  1. 0x00018000--0x0001FFFF  0x8000 TARGET Byte 0. /EraseALIAS 0xF0403000--0xF0403FFF /INFO "Bank 0"
+    FLASH.Create  1. 0x00020000--0x000FFFFF 0x20000 TARGET Byte 0. /EraseALIAS 0xF0404000--0xF041FFFF /INFO "Bank 0"
+    IF &FlashSize>=0x140000
+      FLASH.Create  1. 0x00100000--0x0013FFFF 0x20000 TARGET Byte 0. /EraseALIAS 0xF0420000--0xF0427FFF /INFO "Bank 0"
+    ; Program flash ECC
+    FLASH.Create  1. 0xF0400000--0xF0402FFF   0x800 TARGET Byte 0. /EraseALIAS 0x00000000--0x00017FFF /INFO "Bank 0 ECC"
+    FLASH.Create  1. 0xF0403000--0xF0403FFF  0x1000 TARGET Byte 0. /EraseALIAS 0x00018000--0x0001FFFF /INFO "Bank 0 ECC"
+    FLASH.Create  1. 0xF0404000--0xF041FFFF  0x4000 TARGET Byte 0. /EraseALIAS 0x00020000--0x000FFFFF /INFO "Bank 0 ECC"
+    IF &FlashSize>=0x140000
+      FLASH.Create  1. 0xF0420000--0xF0427FFF  0x4000 TARGET Byte 0. /EraseALIAS 0x00100000--0x0013FFFF /INFO "Bank 0 ECC"
+
+    ; EEPROM emulation flash
+    FLASH.Create  8. 0xF0200000--0xF020FFFF  0x4000 TARGET Byte 7. /EraseALIAS 0xF0100000--0xF0101FFF /INFO "EEPROM Bank"
+    ; EEPROM emulation flash ECC
+    FLASH.Create  8. 0xF0100000--0xF0101FFF   0x800 TARGET Byte 7. /EraseALIAS 0xF0200000--0xF020FFFF /INFO "EEPROM Bank-ECC"
+
+    IF VERSION.BUILD()>=41634.
+    (
+      ; OTP flash
+      FLASH.Create 11. 0xF0000000--0xF0000FFF  0x1000 TARGET Byte 0. /OTP /INFO "Customer OTP, Bank 0"
+      FLASH.Create 18. 0xF000E000--0xF000EFFF  0x1000 TARGET Byte 7. /OTP /INFO "Customer OTP, EEPROM Bank"
+      ; OTP flash ECC
+      FLASH.Create 11. 0xF0040000--0xF00401FF   0x200 TARGET Byte 0. /OTP /INFO "Customer OTP-ECC, Bank 0"
+      FLASH.Create 18. 0xF0041C00--0xF0041DFF   0x200 TARGET Byte 7. /OTP /INFO "Customer OTP-ECC, EEPROM Bank"
+    )
+
+    IF &param_dualport==0
+      FLASH.TARGET 0x08000000 0x08001000 0x4000 ~~/demo/arm/flash/byte/f021r4noecc.bin
+    ELSE
+      FLASH.TARGET 0x08000000 EAHB:0x08001000 0x4000 ~~/demo/arm/flash/byte/f021r4noecc.bin /DualPort
+  )
+
+  FLASH.CreateALIAS 0x20000000--0x202FFFFF 0x0
+
+  FLASH.CLocK.AUTO
+
+  MAP.BUS16 0xF0100000--0xF013FFFF
+  MAP.BUS16 0xF0400000--0xF04FFFFF
+
+  RETURN

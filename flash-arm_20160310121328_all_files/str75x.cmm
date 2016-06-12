@@ -1,0 +1,127 @@
+; --------------------------------------------------------------------------------
+; @Title: Example Script for programming of ST STR75x internal flash
+;
+; @Description: 
+; Script arguments:
+;
+;   DO str75x [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/str75x  PREPAREONLY
+;
+; List of STR73x derivatives and their configuration:
+;
+; CPU-Type      FlashBank0   SRAM size 
+;                (kByte)      (kByte)
+; ------------------------------------
+; STR750FR1        128.         16.
+; STR750FR2        256.         16.
+; STR750FV0         64.         16.
+; STR750FV1        128.         16.
+; STR750FV2        256.         16.
+; STR751FR0         64.         16.
+; STR751FR1        128.         16.
+; STR751FR2        256.         16.
+; STR752FR0         64.         16.
+; STR752FR1        128.         16.
+; STR752FR2        256.         16.
+; STR755FR0         64.         16.
+; STR755FR1        128.         16.
+; STR755FR2        256.         16.
+; STR755FV0         64.         16.
+; STR755FV1        128.         16.
+; STR755FV2        256.         16.
+;
+; NOTE:
+;   FLASH.Erase and FLASH.Program are executing temporary unlock of write
+;   protected sectors. After erasing or programming the sectors are 
+;   locked again. FLASH.UNLOCK command is not needed for erasing or 
+;   programming.
+;
+;   FLASH.UNLOCK command is unlocking all sectors independant of used 
+;   argument. The unlock state is lost after erase or program execution.
+;
+;   FLASH.LOCK is write protecting the sectors given by the argument.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: STR75*
+; --------------------------------------------------------------------------------
+; $Id: str75x.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+LOCAL &parameters
+ENTRY %LINE &parameters
+
+LOCAL &param_prepareonly
+&param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+; --------------------------------------------------------------------------------
+; Setup the configuration information out of the table above.
+;
+; Example for STR750FR2
+
+&flashbank0=256.
+
+; Select flash base address for programming, 0x0 or 0x20000000.
+&flashbase=0x00000000
+
+; --------------------------------------------------------------------------------
+; CPU setup
+IF SYStem.MODE()<5
+(
+  SYStem.RESet
+  SYStem.CPU STR750
+ 
+  SYStem.Option RESBREAK OFF 
+  SYStem.JtagClock 10MHz
+
+  SYStem.Up
+)
+      
+; --------------------------------------------------------------------------------
+; Flash declaration
+
+FLASH.RESet
+FLASH.Create 1. (&flashbase+0x00000000)++0x01fff TARGET Long 0x00000001    ; Bank 0 Sector 0
+FLASH.Create 1. (&flashbase+0x00002000)++0x01fff TARGET Long 0x00000002    ; Bank 0 Sector 1
+FLASH.Create 1. (&flashbase+0x00004000)++0x01fff TARGET Long 0x00000004    ; Bank 0 Sector 2
+FLASH.Create 1. (&flashbase+0x00006000)++0x01fff TARGET Long 0x00000008    ; Bank 0 Sector 3
+FLASH.Create 1. (&flashbase+0x00008000)++0x07fff TARGET Long 0x00000010    ; Bank 0 Sector 4
+IF &flashbank0>=128.
+(
+  FLASH.Create 1. (&flashbase+0x00010000)++0x0ffff TARGET Long 0x00000020  ; Bank 0 Sector 5
+)
+IF &flashbank0>=256.
+(
+  FLASH.Create 1. (&flashbase+0x00020000)++0x0ffff TARGET Long 0x00000040  ; Bank 0 Sector 6
+  FLASH.Create 1. (&flashbase+0x00030000)++0x0ffff TARGET Long 0x00000080  ; Bank 0 Sector 7
+)
+
+FLASH.Create 2. (&flashbase+0x000C0000)++0x01fff TARGET Long 0x00010000    ; Bank 1 Sector 0
+FLASH.Create 2. (&flashbase+0x000C2000)++0x01fff TARGET Long 0x00020000    ; Bank 1 Sector 1
+   
+FLASH.TARGET 0x40000000 0x40001000 0x1000 ~~/demo/arm/flash/long/str750.bin
+
+; Flash script ends here if called with parameter PREPAREONLY
+IF &param_prepareonly
+  ENDDO PREPAREDONE
+
+; --------------------------------------------------------------------------------
+; Flash programming example
+;
+DIALOG.YESNO "Program flash memory?"
+ENTRY &progflash
+
+IF &progflash 
+(
+  FLASH.Erase ALL
+  FLASH.Program ALL
+  Data.LOAD.auto * /Long
+  FLASH.Program off
+  Data.LOAD.auto * /Long /ComPare
+)
+
+ENDDO

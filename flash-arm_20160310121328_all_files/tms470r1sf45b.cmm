@@ -1,0 +1,153 @@
+; --------------------------------------------------------------------------------
+; @Title: TMS470 internal flash of TMS470R1SF45B/55B
+;
+; @Description: 
+; Script arguments:
+;
+;   DO tms470r1sf45b [CPU=<cpu>|<cpu>] [PREPAREONLY]
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;     <cpu>     selects CPU derivative <cpu> (obsolete syntax)
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/tms470r1sf45b CPU=TMS470R1SF45B PREPAREONLY
+;
+; internal flash is mapped to: 0x00000000
+; internal RAM is mapped to:   0x08000000
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 3152 $
+; $Id: tms470r1sf45b.cmm 3152 2015-02-06 16:35:19Z kjmal $
+
+LOCAL &parameters
+ENTRY %LINE &parameters
+
+LOCAL &cpu &param_prepareonly
+&param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+IF STRing.SCAN(STRing.UPpeR("&parameters"),"TMS470R1SF55B",0)!=-1
+  &cpu="TMS470R1SF55B"
+ELSE
+  &cpu="TMS470R1SF45B"
+
+; --------------------------------------------------------------------------------
+; Init script variables
+
+DO ~~~~/tms470-func Init
+
+; --------------------------------------------------------------------------------
+; Setup CPU
+
+ON ERROR NOTHING
+IF SYStem.MODE()<5
+(
+  SYStem.RESet
+  SYStem.CPU &cpu
+  SYStem.Option.BigEndian ON
+  ;SYStem.Option NOIRCHECK ON
+  SYStem.Up
+)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Config for TMS470R1SF45B/55B Rev 0
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;Device ID: 0x57f               TMS470R1SF45B/55B
+;  ProgVersion: 0.07 ; Library Version
+;  ProgRoutines: f035.lib ; Library archive
+LOCAL &ProgRoutines
+&ProgRoutines="f035"
+
+;  Frequency: 24.0 Range: 10.0 - 24.0
+;  Minor Revisions: 1
+;    0 "TMS470R1SF45B/55B Rev 0"
+;  Ram Config: 0x08000000 0x0000c000
+LOCAL &RamStart &RamSize
+&RamStart=0x08000000 
+&RamSize=0x0000c000 
+
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ; Note: Must map Program Flash (mem select 0) for 1MB or bigger to access all 768kb of program Flash
+  ;       Must map OTP Flash (mem select 1) to start 16MB beyond Program Flash with size 16MB
+  ;       Must map Ram to 0x08000000 because of OTP Flash address range.
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;  Initialization: 9
+;    0xffff4020: 0x00000000 ; Disable MPU
+;    0xfffffd30: 0x0800001e ; Disable peripherals
+;    0xfffffd30: 0x0800001f ; Enable peripherals
+;    0xfffffe00: 0x00000000 0x000000b0 0x00000100 0x000000f0 0x00000800 0x00000060 0x00000800 0x00008050
+;    0xfffffe20: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+;    0xfffffe40: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+;    0xfffffe00: 0x00000000 0x000001b0 ; Enable memory map
+;    0xfff7cc00: 0x00000100 ; RWAIT='0001'
+;    0xfff7cc40: 0x0000ffff ; force active mode for all banks
+Data.Set 0xffff4020 %Long 0x00000000 ; Disable MPU
+Data.Set 0xfffffd30 %Long 0x0800001e ; Disable peripherals
+Data.Set 0xfffffd30 %Long 0x0800001f ; Enable peripherals
+Data.Set 0xfffffe00 %Long 0x00000000 0x000000b0 0x00000100 0x000000f0 0x00000800 0x00000060 0x00000800 0x00008050
+Data.Set 0xfffffe20 %Long 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+Data.Set 0xfffffe40 %Long 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+Data.Set 0xfffffe00 %Long 0x00000000 0x000001b0 ; Enable memory map
+Data.Set 0xfff7cc00 %Long 0x00000100 ; RWAIT='0001'
+Data.Set 0xfff7cc40 %Long 0x0000ffff ; force active mode for all banks
+
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ; Note: Make sure to set ETMFULLCTRL high
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;  PLL Config: 0xffffffdc 0x00000044 0xffffffff ; configure PLL address, data, and mask (assume 15Mhz crystal)
+;  Data.Set 0xffffffdc %Long 0x00000044|(Data.Long(SD:0xffffffdc)&~0xffffffff) 
+Data.Set 0xffffffdc %Long 0x00000007 ; configure PLL
+LOCAL &FlashClock_Frequency
+&FlashClock_Frequency="15MHz"      ; Setup flash clock frequency to PLL frequency
+
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ; Note: Engr ID is 24MB beyond beginning of Program Flash at row 10
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;  Engr ID: 0xfff7cc00 0x00000000
+;  Number of Blocks: 13
+FLASH.RESet
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00000000   Length: 0x00004000   Control: 0xfff7cc00   Core: 0x00   Sector: 0x00
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00004000   Length: 0x00004000   Control: 0xfff7cc00   Core: 0x00   Sector: 0x01
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00008000   Length: 0x00004000   Control: 0xfff7cc00   Core: 0x00   Sector: 0x02
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x0000c000   Length: 0x00004000   Control: 0xfff7cc00   Core: 0x00   Sector: 0x03
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00010000   Length: 0x00008000   Control: 0xfff7cc00   Core: 0x00   Sector: 0x04
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00018000   Length: 0x00008000   Control: 0xfff7cc00   Core: 0x00   Sector: 0x05
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00020000   Length: 0x00020000   Control: 0xfff7cc00   Core: 0x00   Sector: 0x06
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00040000   Length: 0x00020000   Control: 0xfff7cc00   Core: 0x00   Sector: 0x07
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00060000   Length: 0x00020000   Control: 0xfff7cc00   Core: 0x00   Sector: 0x08
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00080000   Length: 0x00020000   Control: 0xfff7cc00   Core: 0x01   Sector: 0x00
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x000a0000   Length: 0x00020000   Control: 0xfff7cc00   Core: 0x01   Sector: 0x01
+DO ~~~~/tms470-func DeclareSector Type: OTP    Start: 0x01000000   Length: 0x00000800   Control: 0xfff7cc00   Core: 0x00   Sector: 0x00
+DO ~~~~/tms470-func DeclareSector Type: OTP    Start: 0x01000800   Length: 0x00000800   Control: 0xfff7cc00   Core: 0x01   Sector: 0x00
+
+DO ~~~~/tms470-func DeclareFlashAlgortihm &ProgRoutines &RamStart &RamSize &FlashClock_Frequency
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; End of flash.cfg
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; Flash script ends here if called with parameter PREPAREONLY
+IF &param_prepareonly
+  ENDDO PREPAREDONE
+
+; --------------------------------------------------------------------------------
+; Flash programming example
+;
+FLASH.List
+;
+DIALOG.YESNO "Program flash memory?"
+ENTRY &progflash
+
+IF &progflash 
+(  
+  FLASH.Erase ALL
+  FLASH.Program ALL
+  Data.LOAD.auto * /Long
+  FLASH.Program off
+  Data.LOAD.auto * /Long /ComPare
+)
+
+ENDDO

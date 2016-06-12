@@ -1,0 +1,91 @@
+; --------------------------------------------------------------------------------
+; @Title: i.MX35 Serial FLASH Programming Script
+; @Description:
+;   Serial FLASH(NUMONYX, M25P32) is connected to CSPI1_SS0
+;
+;   SDRAM: 0x10000000
+;   SPI Tx Register : 0x43FA4004
+;   SPI Rx Register : 0x43FA4000
+;   SPI CS Register : 0x43FA4008
+;
+; @Keywords: Flash, M25P32, NUMONYX, SPI
+; @Author: JIM
+; @Chip: IMX35
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: imx35-spi.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+
+  AREA.RESet
+  AREA.view
+  
+//SYStem configuration
+
+  PRINT "Starting the debugger..."
+  SYStem.RESet
+  SYStem.CPU MCIMX35
+  SYStem.Option ResBreak OFF
+  SYStem.JtagClock 5MHZ
+  SYStem.Mode go
+
+  WAIT 2.S
+
+IF run()
+Break.direct
+
+PER.Set.simple C15:0x1 %Long 0x00A52878  
+
+//Init CSPI registers
+PER.Set.simple ASD:0x43FAC008 %Long 0x00000000 ; General Purpose Register (GPR), bit2=0 for the enable CSPI0
+PER.Set.simple ASD:0x43FAC088 %Long 0x10101010 ; SW_MUX_CTL for the CSPI1
+PER.Set.simple ASD:0x43FAC08C %Long 0x10021010 ; SW_MUX_CTL for the CSPI1
+PER.Set.simple ASD:0x43FA4008 %Long 0x03F30003
+
+//FLASFILE.CONFIG  <TXDATA Reg>    <RXDATA Reg>      <CONREG >
+  FLASHFILE.CONFIG  0x43FA4004      0x43FA4000       0x43FA4008
+
+//FLASHFILE.TARGET <code range>        <data range>        <algorithm file>
+  FLASHFILE.TARGET 0x10000000++0x1fff  0x10002000++0x1FFF  ~~/demo/arm/flash/byte/spi64_ecspi.bin 
+
+  FLASHFILE.GETID
+
+//Dump window for Serial FLASH
+  FLASHFILE.DUMP 0x0
+
+//Unlock Serial FLASH
+  FLASHFILE.UNLOCK 0x0--0x3FFFFF 
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+
+    //Erase Serial FLASH 8MB
+    &addr=0x0 
+    RePeaT 4.
+    (
+    PRINT "Erasing 1MB from 0x" &addr
+    FLASHFILE.Erase &addr++0xFFFFF
+    &addr=&addr+0x100000
+    )
+
+    //Write Serial FLASH
+    FLASHFILE.LOAD.binary  * 0x0
+  
+  //Save Serial FLASH 
+    ;FLASHFILE.SAVE dump.bin 0x0--0x7FFFFF
+  )
+
+ENDDO 
+
+
+
+
+
+
+
+
+
+
+

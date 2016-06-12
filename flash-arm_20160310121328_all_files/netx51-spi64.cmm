@@ -1,0 +1,56 @@
+; --------------------------------------------------------------------------------
+; @Title: NXHX51 SPI Flash Programming Script
+; @Description:
+; Board info: NetX NXHX51-ETM evaluation board
+; Flash info: SPI Flash(Winbond, W25Q32)
+; 
+; internal RAM: 0x08000000
+;
+; SPI Flash is connected to the SQI (Serial Quad I/O) interface CS0
+; SQI Tx/Rx Register : 0x1018C5C8  
+; SQI CS Register (SQI_CTRL1) : 0x1018C5C4
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: NETX51
+; @Board: NXHX51-ETM
+; @Keywords: Winbond W25Q32 SPI 
+; --------------------------------------------------------------------------------
+; $Id: netx51-spi64.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+
+  RESet
+  SYStem.CPU NETX51
+  SYStem.Option EnReset OFF
+  SYStem.Option WaitReset 15ms
+  SYStem.Up
+	
+  Data.Set ASD:0x1018C5C0 %LE %Long 0x00080007  ; spi_clk 50Mhz
+  Data.Set ASD:0x1018C5C4 %LE %Long 0x08080802  ; enable CS0
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASFILE.CONFIG   <Tx Reg>     <Rx Reg>     <SQI_CTRL1>       <CS#>
+  FLASHFILE.CONFIG   0x1018C5C8  0x1018C5C8    0x1018C5C4        0
+
+//FLASHFILE.TARGET <code range>        <data range>           <Algorithm file>
+  FLASHFILE.TARGET 0x08000000++0x1FFF   0x08002000++0x1FFF     ~~/demo/arm/flash/byte/spi64_netx51.bin  /KEEP   
+
+ FLASHFILE.GETID
+
+ //Dump window for Serial FLASH
+ FLASHFILE.DUMP 0x0
+
+ //Unlock Serial FLASH
+ ;FLASHFILE.UNLOCK 0x0--0x3FFFFF
+
+ //Write Serial FLASH
+ ;FLASHFILE.ERASE 0x0--0x3FFFFF
+
+ //Write Serial FLASH
+ ;FLASHFILE.LOAD  * 0x0
+ ;FLASHFILE.LOAD  * 0x0  /CP
+
+ENDDO

@@ -1,0 +1,164 @@
+; @Title: SABRE Board (i.MX 6SoloX) Quad SPI FLASH Program script
+; @Description:
+; The S25FL128 (Spansion SPI flash) is on the QSPI2A_SS0 & QSPI2B_SS0
+; SABRE Board for Smart Devices Based on i.MX 6SoloX
+;
+; SRAM: 0x900000
+; QuadSPI(controller) Base: 0x021E4000
+; FLASH BASE ADDRESS: 0x70000000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: imx6*
+; @Keywords: S25FL128 Spansion Flash SPI QuadSPI
+; $Id: imx6sxqspi-spi64.cmm 3339 2015-07-16 07:55:52Z jjeong $
+;
+
+&QSPI_BASE=0x021E4000       ; QSPI2=0x021E4000 , qspi controller based address
+&QSPI_AMBA_BASE=0x70000000  ; QSPI2A_AMBA_BASE=0x70000000, QSPI2B_AMBA_BASE=0x78000000 , the memory base address for qspi memory
+
+SYStem.RESet
+SYStem.CPU IMX6SLX-CA9
+
+SYStem.JtagClock 10Mhz
+SYStem.Option ResBreak OFF
+SYStem.Option waitreset 15.ms
+SYStem.Up
+
+Data.Set C15:0x1 %Long  (Data.Long(C15:0x1)&~(0x1005))  ; disable cache and mmu
+
+Data.Set A:0x020bc000 %Word 0x30  ;disable Watchdog   
+Data.Set A:0x020C0000 %Word 0x30  ;disable Watchdog   
+Data.Set A:0x02280000 %Word 0x30  ;disable Watchdog   
+
+
+//clk
+Data.Set A:0x20c4074 %Long 0xFFFFFFFF  ; (CCM_CCGR3) QSPI1_CLK for qspi1
+Data.Set A:0x20c4078 %Long 0x0FFFFFFFF ; (CCM_CCGR4) QSPI2_CLK for qspi2
+Data.Set A:0x20c401c %Long 0x14900200   ; CCM_CSCMR1 for qspi1
+Data.Set A:0x20c402c %Long 0x736C1   ;CCMCS2CDR  for qspi2
+
+//pin mux  for QSPI2A
+Data.Set A:0x20E0174 %Long 0x2  ;QSPI2A_DAT1,(IOMUXC_SW_MUX_CTL_PAD_NAND_READY_B)
+Data.Set A:0x20E017C %Long 0x2  ;QSPI2A_DAT0,(IOMUXC_SW_MUX_CTL_PAD_NAND_WP_B)
+Data.Set A:0x20E014C %Long 0x2  ;QSPI2A_SCLK,(IOMUXC_SW_MUX_CTL_PAD_NAND_CLE)
+Data.Set A:0x20E0140 %Long 0x2  ;QSPI2A_SS0_B,(IOMUXC_SW_MUX_CTL_PAD_NAND_ALE)
+
+Data.Set A:0x20E04BC %Long 0x70F1 ;QSPI2A_DAT1,(IOMUXC_SW_PAD_CTL_PAD_NAND_READY_B)
+Data.Set A:0x20E04C4 %Long 0x70F1 ;QSPI2A_DAT0,(IOMUXC_SW_PAD_CTL_PAD_NAND_WP_B)
+Data.Set A:0x20E0494 %Long 0x70F1 ;QSPI2A_SCLK,(IOMUXC_SW_PAD_CTL_PAD_NAND_CLE)
+Data.Set A:0x20E0488 %Long 0x70F1 ;QSPI2A_SS0_B,(IOMUXC_SW_PAD_CTL_PAD_NAND_ALE)
+
+//pin mux  for QSPI2B
+Data.Set A:0x20E0150 %l 0x2  ;QSPI2B_DAT1, (IOMUXC_SW_MUX_CTL_PAD_NAND_DATA00)
+Data.Set A:0x20E0154 %l 0x2  ;QSPI2B_DAT0, (IOMUXC_SW_MUX_CTL_PAD_NAND_DATA01)
+Data.Set A:0x20E0158 %l 0x2  ; QSPI2B_SCLK, (IOMUXC_SW_MUX_CTL_PAD_NAND_DATA02)
+Data.Set A:0x20E015C %l 0x2  ; QSPI2B_SS0_B, (IOMUXC_SW_MUX_CTL_PAD_NAND_DATA03)
+
+Data.Set A:0x20E0498 %l 0x70F1 ; QSPI2B_DAT1 (IOMUXC_SW_PAD_CTL_PAD_NAND_DATA00)
+Data.Set A:0x20E049C %l 0x70F1 ; QSPI2B_DAT0 (IOMUXC_SW_PAD_CTL_PAD_NAND_DATA01)
+Data.Set A:0x20E04A0 %l 0x70F1 ; QSPI2B_SCLK, (IOMUXC_SW_PAD_CTL_PAD_NAND_DATA02)
+Data.Set A:0x20E04A4 %l 0x70F1 ; QSPI2B_SS0_B, (IOMUXC_SW_PAD_CTL_PAD_NAND_DATA03)
+
+//qspi controller
+Data.Set A:(&QSPI_BASE)   %Long 0x0F000C
+Data.Set A:(&QSPI_BASE+0x30) %Long 0x0
+Data.Set A:(&QSPI_BASE+0x180) %Long 0x74000000 ; Serial Flash A1 Top Address(QuadSPIx_SFA1AD)
+Data.Set A:(&QSPI_BASE+0x184) %Long 0x78000000 ; Serial Flash A2 Top Address(QuadSPIx_SFA2AD)
+Data.Set A:(&QSPI_BASE+0x188) %Long 0x7C000000 ; Serial Flash B1Top Address (QuadSPIx_SFB1AD)
+Data.Set A:(&QSPI_BASE+0x18C) %Long 0x80000000 ; Serial Flash B2Top Address (QuadSPIx_SFB2AD)
+
+Data.Set A:(&QSPI_BASE+0x10) %Long 0x0E
+Data.Set A:(&QSPI_BASE+0x14) %Long 0x0E
+Data.Set A:(&QSPI_BASE+0x18) %Long 0x0E
+
+Data.Set A:(&QSPI_BASE+0x1C) %Long  0x80002000
+Data.Set A:(&QSPI_BASE+0x100) %Long 0x70000000
+Data.Set A:(&QSPI_BASE+0x15C) %Long 0x13C00
+Data.Set A:(&QSPI_BASE+0x160) %Long 0x8010000
+
+//FLASH READ ID TEST
+AREA.CLEAR
+AREA.view
+GOSUB READ_ID_TEST
+DIALOG.YESNO "the flash id is correct on AREA window?"
+ENTRY &result
+IF !&result
+(
+PRINT "pls, check your register configuration to enable your flash controller"
+ENDDO
+)
+
+//S(D)RAM TEST for algorithm file
+GOSUB SDRAM_INIT
+Data.Test 0x900000++0x3FFF  /Prime ;s(d)ram test
+IF FOUND()
+( 
+PRINT "s(d)ram is NOT initialized around 0x" ADDRESS.OFFSET(TRACK.ADDRESS())
+ENDDO
+)
+
+programFlash:
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.CONFIG <QuadSPI Base>   <QSPIx MEMORY>
+  FLASHFILE.CONFIG  &QSPI_BASE       &QSPI_AMBA_BASE
+
+//FLASHFILE.TARGET <Code_range>        <Data_range>          <Algorithm file>
+  FLASHFILE.TARGET 0x900000++0x1FFF  0x902000++0x1FFF   ~~/demo/arm/flash/byte/spi64_vybridqspi.bin    /KEEP
+
+  FLASHFILE.GETID
+  FLASHFILE.UNLOCK 0x0--0xFFFFFF
+  FLASHFILE.DUMP 0x0
+
+//Erase Serial FLASH  
+  ;FLASHFILE.ERASE 0x0--0xFFFFF
+
+//Write
+  ;FLASHFILE.LOAD   * 0x0
+  ;FLASHFILE.LOAD   * 0x0  /ComPare   ;verify
+
+ENDDO
+
+
+READ_ID_TEST:
+
+&cmd=0x9F; read ID JEDEC Manufacture ID and JEDEC CFI
+
+&temp=Data.Long(A:&QSPI_BASE)
+Data.Set A:&QSPI_BASE %Long (&temp|0x0c00)   //clear Tx/Rx buffer
+
+Data.Set A:(&QSPI_BASE+0x300) %LE %Long 0x5AF05AF0  ;  LUTKEY
+Data.Set A:(&QSPI_BASE+0x304) %LE %Long 0x2  ;  LCKCR
+
+//0. read id
+Data.Set A:(&QSPI_BASE+0x360) %LE %Long (0x1c040400)|&cmd   ; LUT0, SEQID0
+Data.Set A:(&QSPI_BASE+0x364) %LE %Long 0x0
+Data.Set A:(&QSPI_BASE+0x368) %LE %Long 0x0
+Data.Set A:(&QSPI_BASE+0x36C) %LE %Long 0x0
+
+Data.Set A:(&QSPI_BASE+0x100) %Long  &QSPI_AMBA_BASE  ; SFAR , FLASH BASE ADDRESS
+
+// assert Read id command
+Data.Set A:(&QSPI_BASE+0x008) %Long  (0x5<<24.) ;    (5.<<24.)
+WAIT 100.ms
+
+&temp=Data.Long(A:&QSPI_BASE)
+Data.Set A:&QSPI_BASE %Long (&temp|0x0800)   //clear Tx buffer
+
+PRINT "1st 0x" Data.Long(A:(&QSPI_BASE+0x200))&0xFF        " (Manufacture)"
+PRINT "2nd 0x" (Data.Long(A:(&QSPI_BASE+0x200))>>8.)&0xFF " (Device ID)"
+PRINT "3rd 0x" (Data.Long(A:(&QSPI_BASE+0x200))>>16.)&0xFF 
+PRINT "4th 0x" (Data.Long(A:(&QSPI_BASE+0x200))>>24.)&0xFF 
+
+RETURN
+
+
+SDRAM_INIT:
+
+RETURN
+
+

@@ -1,0 +1,123 @@
+; --------------------------------------------------------------------------------
+; @Title:  Freescale K70 series TOWER SYSTEM MODULE NAND FLASH Program script
+;
+; @Description:
+; NAND (MT29F16ABAEA,MICRON) is connected to CE0
+; SRAM: 0x20000000
+; NFC Base Register Address : 0x400A8000                
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ?K70F*
+; @Board: K70F120
+; @Keywords: MT29F16ABAEA MICRON NAND kinetis
+; --------------------------------------------------------------------------------
+; $Id: k70f120m-nand2g16.cmm 3241 2015-03-26 15:14:16Z jjeong $
+
+  RESet
+  SYStem.CPU MK70FN1M0VMJ15
+  SYStem.JtagClock CTCK 20Mhz
+  SYStem.MemAccess DAP
+  SYStem.CONFIG.CONNECTOR MIPI20T
+  SYStem.CONFIG.DEBUGPORTTYPE SWD
+  SYStem.Option IMASKASM ON
+  SYStem.Option DUALPORT ON
+  SYStem.Up
+
+  GOSUB DisableWatchdog
+
+//CCM config
+  PER.Set.simple SD:0x40048030 %Long 0x00000100  ;SCGC3 clock enable for NFC, then can see the NFC controller address
+  PER.Set.simple SD:0x40048038 %Long 0x41D82     ;PORTB,PORTC,PORTD clock enable 
+
+  GOSUB IOMUX_NAND_config
+
+//NFC_config
+  Data.Set A:0x400ABF00 %LE %LE %Long 0x30FF0000
+  Data.Set A:0x400ABF08 %LE %LE %Long 0x00        //COL addr
+  Data.Set A:0x400ABF0C %LE %LE %Long 0x11000000  //Chip Sel & Row addr
+  Data.Set A:0x400ABF2C %LE %LE %Long 0x840      ; Sector Size, (Sector Size)*PageCnt= Real Page Size
+  Data.Set A:0x400ABF30 %LE %LE %Long 0x0EFF81   ; ECC=32-error(60Bytes), BootMode=0, 16bit , PageCnt=1 
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.CONFIG <NFC Base>  <not use>  <not use>      <CS#>
+  FLASHFILE.CONFIG 0x400a8000  0x0        0x0            0
+
+//FLASHFILE.TARGET <Code_range>        <Data_range>          <Algorithm file>
+  FLASHFILE.TARGET 0x20000000++0x3FFF  0x20004000++0x41FF   ~~/demo/arm/flash/word/nand2g16_vybrid.bin /KEEP
+
+  FLASHFILE.GETID
+
+ ;FLASHFILE.DUMP 0x0                             ; Read NAND 
+
+ ;FLASHFILE.ERASE 0x0--0xFFFFF  /EraseBadBlock   ; Erase NAND
+
+ ;FLASHFILE.LOAD * 0x0                           ; Write NAND
+
+ ;FLASHFILE.DUMP 0x0   /spare                    ; Read NAND spare area
+
+ENDDO
+
+IOMUX_NAND_config:
+
+  PER.Set.simple SD:0x4004A050 %Long 0x500 ;PTB20, NAND_IO15   
+  PER.Set.simple SD:0x4004A054 %Long 0x500 ;PTB21, NAND_IO14   
+  PER.Set.simple SD:0x4004A058 %Long 0x500 ;PTB22, NAND_IO13   
+  PER.Set.simple SD:0x4004A05C %Long 0x500 ;PTB23, NAND_IO12   
+  PER.Set.simple SD:0x4004B000 %Long 0x500 ;PTC00, NAND_IO11   
+  PER.Set.simple SD:0x4004B004 %Long 0x500 ;PTC01, NAND_IO10   
+  PER.Set.simple SD:0x4004B008 %Long 0x500 ;PTC02, NAND_IO09   
+  PER.Set.simple SD:0x4004B010 %Long 0x500 ;PTC04, NAND_IO08   
+  PER.Set.simple SD:0x4004B014 %Long 0x500 ;PTC05, NAND_IO07   
+  PER.Set.simple SD:0x4004B018 %Long 0x500 ;PTC06, NAND_IO06   
+  PER.Set.simple SD:0x4004B01C %Long 0x500 ;PTC07, NAND_IO05   
+  PER.Set.simple SD:0x4004B020 %Long 0x500 ;PTC08, NAND_IO04   
+  PER.Set.simple SD:0x4004B024 %Long 0x500 ;PTC09, NAND_IO03   
+  PER.Set.simple SD:0x4004B028 %Long 0x500 ;PTC10, NAND_IO02   
+
+  PER.Set.simple SD:0x4004B02C %Long 0x500 ;PTC11, NAND_WE
+  PER.Set.simple SD:0x4004B040 %Long 0x600 ;PTC16, NAND_RB
+  PER.Set.simple SD:0x4004B044 %Long 0x600 ;PTC17, NAND_CE0
+
+  PER.Set.simple SD:0x4004C010 %Long 0x500 ;PTD04, NAND_IO01   
+  PER.Set.simple SD:0x4004C014 %Long 0x500 ;PTD05, NAND_IO00   
+
+  PER.Set.simple SD:0x4004C020 %Long 0x600 ;PTD08, NAND_CLE
+  PER.Set.simple SD:0x4004C024 %Long 0x600 ;PTD09, NAND_ALE
+  PER.Set.simple SD:0x4004C028 %Long 0x600 ;PTD10, NAND_RE
+
+RETURN
+
+
+
+; --------------------------------------------------------------------------------
+; Disable watchdog
+
+DisableWatchdog:
+  LOCAL &tmp1 &tmp2
+  &tmp1=Data.Long(ST:0x20000000)
+  &tmp2=Data.Long(ST:0x20000004)
+
+  ; The watchdog has a restrictive timing. It has to be configured and unlocked within a peripod
+  ; of 20+256 cycles. Therefor the unlock sequence need to be done by a small target program.
+  Data.Assemble ST:0x20000000  strh r1,[r0]  ;SD:0x4005200E = 0xC520   (Key 1)
+  Data.Assemble ,              strh r2,[r0]  ;SD:0x4005200E = 0xD928   (Key 2)
+  Data.Assemble ,              strh r4,[r3]  ;SD:0x40052000 = 0x0000   (Config register)
+  Data.Assemble ,              bkpt #0
+  Register.Set PC 0x20000000
+  Register.Set R0 0x4005200E
+  Register.Set R1 0xC520
+  Register.Set R2 0xD928
+  Register.Set R3 0x40052000
+  Register.Set R4 0x0
+  Go.direct
+  WAIT !RUN()
+
+  Data.Set ST:0x20000000 %Long &tmp1
+  Data.Set ST:0x20000004 %Long &tmp2
+
+  RETURN
+

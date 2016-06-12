@@ -1,0 +1,63 @@
+; --------------------------------------------------------------------------------
+; @Title: Load the u-boot symbols with relocation
+; @Description:
+;   This script loads the symbols of u-boot bootloader with respect of the
+;   current relocation. The relocation offset is obtained from a u-boot
+;   internal data structure.
+;   This script is based on:
+;     http://www.denx.de/wiki/view/DULG/DebuggingUBoot
+;   Usage:
+;     1) Load u-boot as in load_uboot.cmm
+;     2) Reload the u-boot symbols with load_uboot_symbols_reloc.cmm
+;
+;   Prerequisites:
+;     * u-boot file contains debug information
+;
+; @Keywords: 
+; @Author: AME
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: load_uboot_symbols_reloc.cmm 8974 2015-12-24 10:45:59Z kjmal $
+
+PRIVATE &parameters &filepath &gd
+PARAMETERS &parameters
+
+IF "&parameters"==""
+  &filepath="u-boot"
+ELSE
+  &filepath="&parameters"
+
+; load only the u-boot symbols now
+Data.LOAD.Elf &filepath /NoCODE
+
+; <try to find the *gd* pointer>
+ON ERROR GOSUB
+(
+  PRINT "Variable *gd* not found - use Register R9 as fallback."
+  &gd="((gd_t*)\Register(X18))"
+  RETURN
+)
+LOCAL &gd
+&gd="&"+"gd"
+sYmbol.ForEach "&gd=""*""" gd 
+ON ERROR inherit
+IF "&gd"=="&"+"gd"
+(
+  PRINT "Variable *gd* not found - use Register R9 as fallback."
+  &gd="((gd_t*)\Register(X18))"
+)
+; </try to find the *gd* pointer>
+
+; the *gd* pointer is 0x0 -> quit
+IF Var.VALUE(&gd)==0x0
+  ENDDO
+  
+; now check if U-boot is inside of the .text section
+IF (ADDRESS.OFFSET(sYmbol.SECADDRESS(.text))<=Register(PC))&&(Register(PC)<=ADDRESS.OFFSET(sYmbol.SECEND(.text)))
+  ENDDO
+  
+; we are outside of the .text section, the *gd* pointer is valid
+; => reload with relocation as in *gd->reloc_off*
+Data.LOAD.Elf &filepath Var.VALUE((&gd)->reloc_off) /NoCODE
+
+ENDDO

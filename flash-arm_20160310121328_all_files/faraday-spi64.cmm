@@ -1,0 +1,102 @@
+; --------------------------------------------------------------------------------
+; @Title: Faraday SPI FLASH programming script
+; @Description:
+; S25FL016K, S25FL064K (Spansion SPI flash)
+;
+;
+; DSPI0: 0x4002C000 
+; DSPI1: 0x4002D000
+; DSPI2: 0x400AC000
+; DSPI3: 0x400AD000 
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: VF7*
+; @Keywords:Spansion S25FL016K S25FL064K FLASH SPI
+; --------------------------------------------------------------------------------
+; $Id: faraday-spi64.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+;set DSPI base address  
+&DSPIBase=0x400AD000 
+
+  RESet
+  SYStem.CPU F700-CA5
+  ;SYStem.JtagClock 100kHz ; needed on Palladium only
+  SYStem.JtagClock 1MHz
+  SYStem.Option ResBreak OFF
+  ETM.OFF 
+  
+  SYStem.Up
+
+; PER.S C15:0x1 %LONG  (data.long(C15:0x1)&~(0x5))  ; disable interrupt and mmu
+
+
+ GOSUB SPI_config
+
+ Break.RESet
+
+ FLASHFILE.RESet
+
+ FLASHFILE.RESet
+ 
+; FLASHFILE.CONFIG  <DSPI Base>   <unused> <unused>   <PCS#>
+  FLASHFILE.CONFIG  &DSPIBase      0x0      0x0        0.
+
+; FLASHFILE.TARGET <code range>            <data range>            <Algorithm file>
+ FLASHFILE.TARGET 0x3f400000++0x1FFF  0x3f402000++0x1FFF  ~~/demo/arm/flash/byte/spi64_dspi.bin   /KEEP   
+
+ FLASHFILE.GETID
+
+//Dump window for Serial FLASH
+  FLASHFILE.DUMP 0x0
+
+  ;FLASHFILE.UNLOCK 0x0--0xFFFFF
+  
+//Erase Serial FLASH  
+ ;FLASHFILE.ERASE 0x0--0xFFFFF
+
+//Write
+ ;FLASHFILE.LOAD   * 0x0
+ ;FLASHFILE.LOAD   * 0x0  /ComPare   ;verify
+ 
+ENDDO
+
+SPI_config:
+
+//clk enable
+Data.Set 0x4006B040--0x4006B05F %Long 0xFFFFFFFF
+
+//iomux DSPI0
+Data.Set   0x400480A8  %Long 0x0010006D  
+Data.Set   0x400480AC  %Long 0x0010006E 
+Data.Set   0x400480B0  %Long 0x0010006E 
+Data.Set   0x400480A4  %Long 0x0010006E 
+
+
+//iomux DSPI1
+Data.Set   0x40048154  %Long 0x0030006D
+Data.Set   0x400482FC  %Long 0x1
+Data.Set   0x40048158  %Long 0x0030006E 
+Data.Set   0x4004815C  %Long 0x0030006E 
+Data.Set   0x40048150  %Long 0x0030006E 
+
+//iomux DSPI2
+Data.Set   0x40048104  %Long 0x0050006D  
+Data.Set   0x400482FC  %Long 0x1
+Data.Set   0x40048108  %Long 0x0050006E 
+Data.Set   0x4004810C  %Long 0x0050006E 
+Data.Set   0x40048100  %Long 0x0050006E 
+
+//iomux DSPI3
+Data.Set 0x40048168 %Long 0x0020006D  //DSPI3 SIN 
+Data.Set 0x4004816C %Long 0x0020006E  //DSPI3 SOUT
+Data.Set 0x40048170 %Long 0x0020006E  //DSPI3 SCK 
+Data.Set 0x40048164 %Long 0x0020006E  //DSPI3 SIN 
+
+
+;DSPI_C
+Data.Set (&DSPIBase)      %Long 0x813F3000 ;MCR
+Data.Set (&DSPIBase+0xC)  %Long 0x38236153 ;CTAR0
+
+RETURN
+

@@ -1,0 +1,783 @@
+; --------------------------------------------------------------------------------
+; @Title: ATSAM4x Flash Dialog for programming additional NVM Flash bits.
+;
+; @Description: 
+; Script arguments:
+;
+;   do atsam4-nvm [BOOT=<source>] 
+;
+;     BOOT=<source> programs GPNVM bit 1 to boot from FLASH or ROM
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/atsam4-nvm BOOT=FLASH
+;
+;   Calling the script without argument starts the NVM bit programming
+;   dialog window.
+;
+; Supported CPU families:
+; -   ATSAM4S
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ATSAM4N*
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: atsam4-nvm.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  ; LOCAL macros used as script global macros
+  LOCAL &number_lockbits    ; Number of lock bits
+  LOCAL &lockregion_shift   ; 2 exp &lockregion_shift pages per lock region
+  LOCAL &EEFC_BASE          ; Flash controller EEFC base address
+
+  &EEFC_BASE="tbd"
+  &number_lockbits=0.
+  &lockregion_shift=0.
+
+  ; Look for any opened ATSAM4 dialog windows and close them
+  WHILE DIALOG.EXIST(CHK_EFC_0x0)
+    DIALOG.END
+
+  ; Checking CPU selection
+  IF !CPUIS("ATSAM4*")
+    SYStem.CPU ATSAM4*
+
+  ; Setup configuration for CPU derivative
+  IF CPUIS("ATSAM4S*")
+  (
+    &EEFC_BASE=0x400E0A00
+    &lockregion_shift=4.
+
+    IF CPUIS("ATSAM4S16*")
+      &number_lockbits=128.
+    ELSE IF CPUIS("ATSAM4S8*")
+      &number_lockbits=64.
+  )
+
+  IF &number_lockbits==0.
+  (
+    DIALOG.OK CPU()+" is not supported by the script"
+    ENDDO
+  )
+
+  ; Check system mode
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    IF !CPUIS(ATSAM4S*)
+      SYStem.CPU ATSAM4S*
+
+    SYStem.Option ResBreak OFF
+    IF CABLE.TWOWIRE()
+      SYStem.CONFIG.DEBUGPORTTYPE SWD
+    ELSE
+      SYStem.CONFIG.DEBUGPORTTYPE JTAG
+
+    SYStem.Up
+  )
+
+  ; Read NVM bits to check security bit and exit if set
+  GOSUB ExecuteFlashCommandFRR_EFC &EEFC_BASE 0x5a00000D
+  LOCAL &error &MC_FRR
+  ENTRY &error &MC_FRR
+  IF &error!=0
+    ENDDO
+  ELSE IF (&MC_FRR&0x01)!=0
+  (
+    DIALOG.OK "Security bit is enabled! Flash content can only be erased by the external ERASE pin."
+    ENDDO
+  )
+
+  ; Parse script arguments
+  LOCAL &param_boot
+  &param_boot=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"BOOT=","")
+
+  ; Without valid script parameter open NVM bit programming dialog
+  IF ("&param_boot"=="FLASH")||("&param_boot"=="ROM")
+    GOSUB ProgramBOOT &param_boot
+  ELSE
+    GOSUB NVMDialog
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; NVM bit programming dialog window
+
+NVMDialog:
+
+  ; Creating the main dialog. (& afer DIALOG command must be in first column!
+  WinPOS 50. 5. 45. 31.
+  DIALOG.view
+  (&
+              HEADER "Flash settings for the "+CPU()
+
+              POS 1. 0. 43. 21.
+              BOX "EEFC Sector Lock Bits"
+
+              POS  3. 2. 4. 1.
+CHK_EFC_0x0:  CHECKBOX " 0" ""
+              POS  8. 2. 4. 1.
+CHK_EFC_0x1:  CHECKBOX " 1" ""
+              POS 13. 2. 4. 1.
+CHK_EFC_0x2:  CHECKBOX " 2" ""
+              POS 18. 2. 4. 1.
+CHK_EFC_0x3:  CHECKBOX " 3" ""
+              POS 23. 2. 4. 1.
+CHK_EFC_0x4:  CHECKBOX " 4" ""
+              POS 28. 2. 4. 1.
+CHK_EFC_0x5:  CHECKBOX " 5" ""
+              POS 33. 2. 4. 1.
+CHK_EFC_0x6:  CHECKBOX " 6" ""
+              POS 38. 2. 4. 1.
+CHK_EFC_0x7:  CHECKBOX " 7" ""
+              POS  3. 3. 4. 1.
+CHK_EFC_0x8:  CHECKBOX " 8" ""
+              POS  8. 3. 4. 1.
+CHK_EFC_0x9:  CHECKBOX " 9" ""
+              POS 13. 3. 4. 1.
+CHK_EFC_0xA:  CHECKBOX "10" ""
+              POS 18. 3. 4. 1.
+CHK_EFC_0xB:  CHECKBOX "11" ""
+              POS 23. 3. 4. 1.
+CHK_EFC_0xC:  CHECKBOX "12" ""
+              POS 28. 3. 4. 1.
+CHK_EFC_0xD:  CHECKBOX "13" ""
+              POS 33. 3. 4. 1.
+CHK_EFC_0xE:  CHECKBOX "14" ""
+              POS 38. 3. 4. 1.
+CHK_EFC_0xF:  CHECKBOX "15" ""
+              POS  3. 4. 4. 1.
+CHK_EFC_0x10: CHECKBOX "16" ""
+              POS  8. 4. 4. 1.
+CHK_EFC_0x11: CHECKBOX "17" ""
+              POS 13. 4. 4. 1.
+CHK_EFC_0x12: CHECKBOX "18" ""
+              POS 18. 4. 4. 1.
+CHK_EFC_0x13: CHECKBOX "19" ""
+              POS 23. 4. 4. 1.
+CHK_EFC_0x14: CHECKBOX "20" ""
+              POS 28. 4. 4. 1.
+CHK_EFC_0x15: CHECKBOX "21" ""
+              POS 33. 4. 4. 1.
+CHK_EFC_0x16: CHECKBOX "22" ""
+              POS 38. 4. 4. 1.
+CHK_EFC_0x17: CHECKBOX "23" ""
+              POS  3. 5. 4. 1.
+CHK_EFC_0x18: CHECKBOX "24" ""
+              POS  8. 5. 4. 1.
+CHK_EFC_0x19: CHECKBOX "25" ""
+              POS 13. 5. 4. 1.
+CHK_EFC_0x1A: CHECKBOX "26" ""
+              POS 18. 5. 4. 1.
+CHK_EFC_0x1B: CHECKBOX "27" ""
+              POS 23. 5. 4. 1.
+CHK_EFC_0x1C: CHECKBOX "28" ""
+              POS 28. 5. 4. 1.
+CHK_EFC_0x1D: CHECKBOX "29" ""
+              POS 33. 5. 4. 1.
+CHK_EFC_0x1E: CHECKBOX "30" ""
+              POS 38. 5. 4. 1.
+CHK_EFC_0x1F: CHECKBOX "31" ""
+              POS  3. 6. 4. 1.
+CHK_EFC_0x20: CHECKBOX "32" ""
+              POS  8. 6. 4. 1.
+CHK_EFC_0x21: CHECKBOX "33" ""
+              POS 13. 6. 4. 1.
+CHK_EFC_0x22: CHECKBOX "34" ""
+              POS 18. 6. 4. 1.
+CHK_EFC_0x23: CHECKBOX "35" ""
+              POS 23. 6. 4. 1.
+CHK_EFC_0x24: CHECKBOX "36" ""
+              POS 28. 6. 4. 1.
+CHK_EFC_0x25: CHECKBOX "37" ""
+              POS 33. 6. 4. 1.
+CHK_EFC_0x26: CHECKBOX "38" ""
+              POS 38. 6. 4. 1.
+CHK_EFC_0x27: CHECKBOX "39" ""
+              POS  3. 7. 4. 1.
+CHK_EFC_0x28: CHECKBOX "40" ""
+              POS  8. 7. 4. 1.
+CHK_EFC_0x29: CHECKBOX "41" ""
+              POS 13. 7. 4. 1.
+CHK_EFC_0x2A: CHECKBOX "42" ""
+              POS 18. 7. 4. 1.
+CHK_EFC_0x2B: CHECKBOX "43" ""
+              POS 23. 7. 4. 1.
+CHK_EFC_0x2C: CHECKBOX "44" ""
+              POS 28. 7. 4. 1.
+CHK_EFC_0x2D: CHECKBOX "45" ""
+              POS 33. 7. 4. 1.
+CHK_EFC_0x2E: CHECKBOX "46" ""
+              POS 38. 7. 4. 1.
+CHK_EFC_0x2F: CHECKBOX "47" ""
+              POS  3. 8. 4. 1.
+CHK_EFC_0x30: CHECKBOX "48" ""
+              POS  8. 8. 4. 1.
+CHK_EFC_0x31: CHECKBOX "49" ""
+              POS 13. 8. 4. 1.
+CHK_EFC_0x32: CHECKBOX "50" ""
+              POS 18. 8. 4. 1.
+CHK_EFC_0x33: CHECKBOX "51" ""
+              POS 23. 8. 4. 1.
+CHK_EFC_0x34: CHECKBOX "52" ""
+              POS 28. 8. 4. 1.
+CHK_EFC_0x35: CHECKBOX "53" ""
+              POS 33. 8. 4. 1.
+CHK_EFC_0x36: CHECKBOX "54" ""
+              POS 38. 8. 4. 1.
+CHK_EFC_0x37: CHECKBOX "55" ""
+              POS  3. 9. 4. 1.
+CHK_EFC_0x38: CHECKBOX "56" ""
+              POS  8. 9. 4. 1.
+CHK_EFC_0x39: CHECKBOX "57" ""
+              POS 13. 9. 4. 1.
+CHK_EFC_0x3A: CHECKBOX "58" ""
+              POS 18. 9. 4. 1.
+CHK_EFC_0x3B: CHECKBOX "59" ""
+              POS 23. 9. 4. 1.
+CHK_EFC_0x3C: CHECKBOX "60" ""
+              POS 28. 9. 4. 1.
+CHK_EFC_0x3D: CHECKBOX "61" ""
+              POS 33. 9. 4. 1.
+CHK_EFC_0x3E: CHECKBOX "62" ""
+              POS 38. 9. 4. 1.
+CHK_EFC_0x3F: CHECKBOX "63" ""
+              POS  3. 10. 4. 1.
+CHK_EFC_0x40: CHECKBOX "64" ""
+              POS  8. 10. 4. 1.
+CHK_EFC_0x41: CHECKBOX "65" ""
+              POS 13. 10. 4. 1.
+CHK_EFC_0x42: CHECKBOX "66" ""
+              POS 18. 10. 4. 1.
+CHK_EFC_0x43: CHECKBOX "67" ""
+              POS 23. 10. 4. 1.
+CHK_EFC_0x44: CHECKBOX "68" ""
+              POS 28. 10. 4. 1.
+CHK_EFC_0x45: CHECKBOX "69" ""
+              POS 33. 10. 4. 1.
+CHK_EFC_0x46: CHECKBOX "70" ""
+              POS 38. 10. 4. 1.
+CHK_EFC_0x47: CHECKBOX "71" ""
+              POS  3. 11. 4. 1.
+CHK_EFC_0x48: CHECKBOX "72" ""
+              POS  8. 11. 4. 1.
+CHK_EFC_0x49: CHECKBOX "73" ""
+              POS 13. 11. 4. 1.
+CHK_EFC_0x4A: CHECKBOX "74" ""
+              POS 18. 11. 4. 1.
+CHK_EFC_0x4B: CHECKBOX "75" ""
+              POS 23. 11. 4. 1.
+CHK_EFC_0x4C: CHECKBOX "76" ""
+              POS 28. 11. 4. 1.
+CHK_EFC_0x4D: CHECKBOX "77" ""
+              POS 33. 11. 4. 1.
+CHK_EFC_0x4E: CHECKBOX "78" ""
+              POS 38. 11. 4. 1.
+CHK_EFC_0x4F: CHECKBOX "79" ""
+              POS  3. 12. 4. 1.
+CHK_EFC_0x50: CHECKBOX "80" ""
+              POS  8. 12. 4. 1.
+CHK_EFC_0x51: CHECKBOX "81" ""
+              POS 13. 12. 4. 1.
+CHK_EFC_0x52: CHECKBOX "82" ""
+              POS 18. 12. 4. 1.
+CHK_EFC_0x53: CHECKBOX "83" ""
+              POS 23. 12. 4. 1.
+CHK_EFC_0x54: CHECKBOX "84" ""
+              POS 28. 12. 4. 1.
+CHK_EFC_0x55: CHECKBOX "85" ""
+              POS 33. 12. 4. 1.
+CHK_EFC_0x56: CHECKBOX "86" ""
+              POS 38. 12. 4. 1.
+CHK_EFC_0x57: CHECKBOX "87" ""
+              POS  3. 13. 4. 1.
+CHK_EFC_0x58: CHECKBOX "88" ""
+              POS  8. 13. 4. 1.
+CHK_EFC_0x59: CHECKBOX "89" ""
+              POS 13. 13. 4. 1.
+CHK_EFC_0x5A: CHECKBOX "90" ""
+              POS 18. 13. 4. 1.
+CHK_EFC_0x5B: CHECKBOX "91" ""
+              POS 23. 13. 4. 1.
+CHK_EFC_0x5C: CHECKBOX "92" ""
+              POS 28. 13. 4. 1.
+CHK_EFC_0x5D: CHECKBOX "93" ""
+              POS 33. 13. 4. 1.
+CHK_EFC_0x5E: CHECKBOX "94" ""
+              POS 38. 13. 4. 1.
+CHK_EFC_0x5F: CHECKBOX "95" ""
+              POS  3. 14. 4. 1.
+CHK_EFC_0x60: CHECKBOX "96" ""
+              POS  8. 14. 4. 1.
+CHK_EFC_0x61: CHECKBOX "97" ""
+              POS 13. 14. 4. 1.
+CHK_EFC_0x62: CHECKBOX "98" ""
+              POS 18. 14. 4. 1.
+CHK_EFC_0x63: CHECKBOX "99" ""
+              POS 23. 14. 4. 1.
+CHK_EFC_0x64: CHECKBOX "100" ""
+              POS 28. 14. 4. 1.
+CHK_EFC_0x65: CHECKBOX "101" ""
+              POS 33. 14. 4. 1.
+CHK_EFC_0x66: CHECKBOX "102" ""
+              POS 38. 14. 4. 1.
+CHK_EFC_0x67: CHECKBOX "103" ""
+              POS  3. 15. 4. 1.
+CHK_EFC_0x68: CHECKBOX "104" ""
+              POS  8. 15. 4. 1.
+CHK_EFC_0x69: CHECKBOX "105" ""
+              POS 13. 15. 4. 1.
+CHK_EFC_0x6A: CHECKBOX "106" ""
+              POS 18. 15. 4. 1.
+CHK_EFC_0x6B: CHECKBOX "107" ""
+              POS 23. 15. 4. 1.
+CHK_EFC_0x6C: CHECKBOX "108" ""
+              POS 28. 15. 4. 1.
+CHK_EFC_0x6D: CHECKBOX "109" ""
+              POS 33. 15. 4. 1.
+CHK_EFC_0x6E: CHECKBOX "110" ""
+              POS 38. 15. 4. 1.
+CHK_EFC_0x6F: CHECKBOX "111" ""
+              POS  3. 16. 4. 1.
+CHK_EFC_0x70: CHECKBOX "112" ""
+              POS  8. 16. 4. 1.
+CHK_EFC_0x71: CHECKBOX "113" ""
+              POS 13. 16. 4. 1.
+CHK_EFC_0x72: CHECKBOX "114" ""
+              POS 18. 16. 4. 1.
+CHK_EFC_0x73: CHECKBOX "115" ""
+              POS 23. 16. 4. 1.
+CHK_EFC_0x74: CHECKBOX "116" ""
+              POS 28. 16. 4. 1.
+CHK_EFC_0x75: CHECKBOX "117" ""
+              POS 33. 16. 4. 1.
+CHK_EFC_0x76: CHECKBOX "118" ""
+              POS 38. 16. 4. 1.
+CHK_EFC_0x77: CHECKBOX "119" ""
+              POS  3. 17. 4. 1.
+CHK_EFC_0x78: CHECKBOX "120" ""
+              POS  8. 17. 4. 1.
+CHK_EFC_0x79: CHECKBOX "121" ""
+              POS 13. 17. 4. 1.
+CHK_EFC_0x7A: CHECKBOX "122" ""
+              POS 18. 17. 4. 1.
+CHK_EFC_0x7B: CHECKBOX "123" ""
+              POS 23. 17. 4. 1.
+CHK_EFC_0x7C: CHECKBOX "124" ""
+              POS 28. 17. 4. 1.
+CHK_EFC_0x7D: CHECKBOX "125" ""
+              POS 33. 17. 4. 1.
+CHK_EFC_0x7E: CHECKBOX "126" ""
+              POS 38. 17. 4. 1.
+CHK_EFC_0x7F: CHECKBOX "127" ""
+
+              POS  3. 19. 9. 1.
+              BUTTON "Select All" "GOSUB EEFCSelectAll"
+
+              POS 13. 19. 9. 1.
+              BUTTON "Unselect All" "GOSUB EEFCUnselectAll"
+
+              ; GPNVM bits settings
+              POS 1. 21. 43. 5.
+              BOX "General Purpose NVM Bits"
+
+              POS 3. 23. 10. 1.
+CHSB_BOOT.ROM:   CHOOSEBOX "ROM Boot"   ""
+CHSB_BOOT.FLASH: CHOOSEBOX "Flash Boot" ""
+
+              ; Security bit
+              POS 1. 26. 43. 4.
+              BOX "Enable security bit and lock content"
+
+              POS 3. 28. 25. 1.
+CHK_SEC:      CHECKBOX "Enable security bit and lock content" "GOSUB EnableSecurityBit"
+
+              POS 1. 30. 10. 1.
+              BUTTON "Program" "GOSUB ProgramFlashSettings"
+
+              POS 17. 30. 10. 1.
+              BUTTON "Refresh" "GOSUB UpdateWindowFlashSettings"
+
+              POS 34. 30. 10. 1.
+              BUTTON "Exit" "CONTinue"
+
+              CLOSE "CONTinue"
+  )
+
+  ON SYSDOWN GOSUB
+  (
+    DIALOG.OK "System is down!"
+    DIALOG.END
+    END
+  )
+
+  ; Disable/Enable the check boxes
+  GOSUB UpdateWindowFromFlashType
+  GOSUB UpdateWindowFlashSettings
+  LOCAL &error
+  ENTRY &error
+
+  IF &error==0
+    STOP
+
+  DIALOG.END
+
+  ENDDO
+
+; --------------------------------------------------------------------------------
+; Lock not available sector lock bit fields
+
+UpdateWindowFromFlashType:
+  LOCAL &bitnum
+
+  &bitnum=127.,
+  WHILE &bitnum>=&number_lockbits
+  (
+    LOCAL &fieldname
+    &fieldname="CHK_EFC_0x"+FORMAT.HEX(1.,&bitnum)
+    DIALOG.Disable &fieldname
+    &bitnum=&bitnum-1.
+  )
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Read out NVM bit settings
+
+UpdateWindowFlashSettings:
+
+  LOCAL &MC_FRR0 &MC_FRR1 &MC_FRR2 &MC_FRR3
+  LOCAL &error
+
+  ; Read out Lock Bit Status EEFC and set the check boxes in the right way.
+  GOSUB ExecuteFlashCommandFRR4_EFC &EEFC_BASE 0x5a00000A
+  ENTRY &error &MC_FRR0 &MC_FRR1 &MC_FRR2 &MC_FRR3
+  IF &error!=0
+    RETURN &error
+
+  LOCAL &bitnum &wordnum &index
+  &bitnum=0.
+  &wordnum=0.
+  &index=0.
+  WHILE &bitnum<&number_lockbits
+  (
+    LOCAL &fieldname
+    &fieldname="CHK_EFC_0x"+FORMAT.HEX(1.,&bitnum)
+    LOCAL &regname &regval
+    &regname="&"+"MC_FRR"+FORMAT.Decimal(1.,&wordnum)
+    &&regval=&regname
+    IF ((&regval)&(1.<<&index))!=0
+      DIALOG.Set &fieldname ""
+    ELSE
+      DIALOG.Set &fieldname " "
+
+    &bitnum=&bitnum+1.
+    &index=&index+1.
+    IF &index>=32.
+    (
+      &wordnum=&wordnum+1.
+      &index=0.
+    )
+  )
+
+  ; Check the GPNVM bits in EEFC
+  GOSUB ExecuteFlashCommandFRR_EFC &EEFC_BASE 0x5a00000D
+  ENTRY &error &MC_FRR0
+  IF &error!=0
+    RETURN &error
+
+  IF (&MC_FRR0&0x00000002)!=0
+    DIALOG.Set CHSB_BOOT.FLASH ""
+  ELSE
+    DIALOG.Set CHSB_BOOT.ROM ""
+
+  IF (&MC_FRR0&0x00000001)==0
+    DIALOG.Set CHK_SEC " "
+  ELSE
+    DIALOG.Set CHK_SEC ""
+
+  RETURN &error
+
+
+; --------------------------------------------------------------------------------
+; Select all EEFC sector lock bits
+
+EEFCSelectAll:
+  LOCAL &bitnum
+
+  &bitnum=0.
+  WHILE &bitnum<&number_lockbits
+  (
+    LOCAL &fieldname
+    &fieldname="CHK_EFC_0x"+FORMAT.HEX(1.,&bitnum)
+    DIALOG.Set &fieldname ""
+    &bitnum=&bitnum+1.
+  )
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Deselect all EEFC sector lock bits
+
+EEFCUnselectAll:
+  LOCAL &bitnum
+
+  &bitnum=0.
+  WHILE &bitnum<&number_lockbits
+  (
+    LOCAL &fieldname
+    &fieldname="CHK_EFC_0x"+FORMAT.HEX(1.,&bitnum)
+    DIALOG.Set &fieldname " "
+    &bitnum=&bitnum+1.
+  )
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Flash programming routine. This routine does not modify the flash
+; content, but changes some flags of the Embedded Flash Controller.
+
+ProgramFlashSettings:
+  LOCAL &result
+  LOCAL &error
+  LOCAL &sectorlockbit
+
+  &error=0;
+
+  IF DIALOG.BOOLEAN(CHK_SEC)
+  (
+    DIALOG.YESNO "Do you really want to program the flash settings and enable the Security bit?"
+    ENTRY &result
+  )
+  ELSE
+  (
+    DIALOG.YESNO "Do you really want to program the flash settings?"
+    ENTRY &result
+  )
+
+  IF !&result
+    RETURN
+
+  ; Programming the Sector protection bits.
+  &sectorlockbit=0x0
+  WHILE &sectorlockbit<&number_lockbits
+  (
+    LOCAL &boxid
+    &boxid="CHK_EFC_0x"+FORMAT.HEX(1.,&sectorlockbit)
+    IF DIALOG.BOOLEAN(&boxid)
+    (
+      GOSUB ExecuteFlashCommand_EFC &EEFC_BASE 0x5A000000+(&sectorlockbit<<(&lockregion_shift+8.))+0x08
+      ENTRY &error
+    )
+    ELSE
+    (
+      GOSUB ExecuteFlashCommand_EFC &EEFC_BASE 0x5A000000+(&sectorlockbit<<(&lockregion_shift+8.))+0x09
+      ENTRY &error
+    )
+    IF &error!=0
+      RETURN
+
+    &sectorlockbit=&sectorlockbit+0x1
+  )
+
+  ; Programing the GPNVM bits
+  IF DIALOG.BOOLEAN(CHSB_BOOT.FLASH)
+  (  
+    GOSUB ProgramBOOT FLASH
+    ENTRY &error
+  )
+  ELSE
+  (
+    GOSUB ProgramBOOT ROM
+    ENTRY &error
+  )
+  IF &error!=0
+    RETURN
+
+  IF DIALOG.BOOLEAN(CHK_SEC)
+  (  
+    GOSUB ExecuteFlashCommand_EFC &EEFC_BASE 0x5A00000B
+    ENTRY &error
+
+    ; When the Security bit was successfully enabled, these script lines shouldn't 
+    ; be reached because system is going done immediately. Ensure that the dialog 
+    ; will be closed. Any modification in the flash setup is forbidden, until the 
+    ; flash was erased by the external ERASE pin.
+    IF &error==0
+    (
+      DIALOG.END
+      END
+    )
+  )
+
+  GOSUB UpdateWindowFlashSettings
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Program GPNVM bit 1 for boot selection
+
+ProgramBOOT:
+  LOCAL &bootmode
+  ENTRY &bootmode
+
+  LOCAL &error
+  &error=0
+
+  IF "&bootmode"=="FLASH"
+  (
+    GOSUB ExecuteFlashCommand_EFC &EEFC_BASE 0x5A00010B
+    ENTRY &error
+  )
+  ELSE IF "&bootmode"=="ROM"
+  (
+    GOSUB ExecuteFlashCommand_EFC &EEFC_BASE 0x5A00010C
+    ENTRY &error
+  )
+  ELSE
+    &error=1
+
+  RETURN &error
+
+
+; --------------------------------------------------------------------------------
+; Program NVM bits
+
+ExecuteFlashCommand_EFC:
+  LOCAL &efc_base &cmd
+  ENTRY &efc_base &cmd
+
+  LOCAL &error
+  LOCAL &timer
+  LOCAL &MC_FSR
+
+  &error=0
+
+CommandRetry:
+  ; Check FRDY bit in the FSR
+  WAIT (Data.Long(ASD:&efc_base+0x08)&0x01)==0x01 2.s
+  IF (Data.Long(ASD:&efc_base+0x08)&0x01)==0x00
+  (
+    DIALOG.OK "Cannot execute EEFC command, flash controller is busy!"
+    &error=1
+    RETURN &error
+  )
+
+  ; Write flash command to FCR
+  Data.Set &efc_base+0x04 %Long &cmd
+
+  ; Check status in the FSR
+  ; Error status bits are cleared after read.
+  &MC_FSR=0x00
+  &timer=0.
+  WHILE (&MC_FSR&0x1)==0
+  (
+    &MC_FSR=Data.Long(ASD:&efc_base+0x08)
+    WAIT 10ms
+    &timer=&timer+1.
+    IF &timer>500.       ; Timeout after 5 seconds
+    (
+      DIALOG.OK "EEFC command timeout, flash controller remains busy!"
+      &error=1
+      RETURN &error
+    )
+  )
+
+  ; Don't check verify error on read commands
+  IF (&cmd!=0x5a00000A)&&(&cmd!=0x5a00000D)&&((&MC_FSR&0x8)!=0)
+  (
+    IF &error==1
+    (
+      DIALOG.OK "EEFC verify error!"
+      RETURN &error
+    )
+    &error=1
+    PRINT "Verify error, retrying command EEFC &cmd!"
+    GOTO CommandRetry
+  )
+
+  IF (&MC_FSR&0x4)!=0
+  (
+    DIALOG.OK "EEFC command error" "Locking region violation!"
+    &error=1
+    RETURN &error
+  )
+
+  IF (&MC_FSR&0x2)!=0
+  (
+    DIALOG.OK "EEFC command keyword violation!"
+    &error=1
+    RETURN &error
+  )
+
+  RETURN &error
+
+
+; --------------------------------------------------------------------------------
+; Execute EEFC command and get 4 word result from FRR register
+
+ExecuteFlashCommandFRR4_EFC:
+  LOCAL &efc_base &cmd
+  ENTRY &efc_base &cmd
+
+  LOCAL &error &res1 &res2 &res3 &res4
+  &error=0
+
+  ; Execute EEFC command
+  GOSUB ExecuteFlashCommand_EFC &efc_base &cmd
+  ENTRY &error
+
+  ; Read result words
+  &res1=Data.Long(ASD:&efc_base+0x0C)
+  &res2=Data.Long(ASD:&efc_base+0x0C)
+  &res3=Data.Long(ASD:&efc_base+0x0C)
+  &res4=Data.Long(ASD:&efc_base+0x0C)
+
+  RETURN &error &res1 &res2 &res3 &res4
+
+
+; --------------------------------------------------------------------------------
+; Execute EEFC command and get result from FRR register
+
+ExecuteFlashCommandFRR_EFC:
+  LOCAL &efc_base &cmd
+  ENTRY &efc_base &cmd
+
+  LOCAL &error &result
+  &error=0
+
+  ; Execute EEFC command
+  GOSUB ExecuteFlashCommand_EFC &efc_base &cmd
+  ENTRY &error
+
+  ; Read result
+  &result=Data.Long(ASD:&efc_base+0x0C)
+
+  RETURN &error &result
+
+
+; --------------------------------------------------------------------------------
+; Enable security bit field
+
+EnableSecurityBit:
+  IF DIALOG.BOOLEAN(CHK_SEC)
+  (
+    DIALOG.YESNO "WARNING: Flash cannot be read or written after programming until it is erased by the external ERASE pin! Continue?"
+    LOCAL &result
+    ENTRY &result
+
+    IF !&result
+    (
+      DIALOG.Set CHK_SEC " "
+    )
+  )
+
+  RETURN

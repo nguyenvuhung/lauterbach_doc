@@ -1,0 +1,112 @@
+; --------------------------------------------------------------------------------
+; @Title: Example script for programming of PXA27x internal flash.
+;
+; @Description:
+; Internal flash Memory:
+;   PXA270    no internal flash
+;   PXA271    32 MByte at 0x00000000--0x01ffffff (16 bit data bus)
+;   PXA272    64 MByte at 0x00000000--0x03ffffff (32 bit data bus)
+;   PXA273    32 MByte at 0x00000000--0x01ffffff (32 bit data bus)
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: PXA27*
+; --------------------------------------------------------------------------------
+; $Id: pxa27x.cmm 2881 2014-07-07 10:35:48Z kjmal $
+; wrd - 21.10.2004
+;
+
+; --------------------------------------------------------------------------------
+; Select target controlled flash programming or Trace32 tool based 
+; flash method:
+;   &flashtarget="yes" | "no"
+; Target controlled flash algorithm will need RAM for the flash algorithm 
+; and for the data buffer.
+&flashtarget="no"
+IF "&flashtarget"=="yes"
+  &ramaddr=tbd
+
+; --------------------------------------------------------------------------------
+; Flash declaration
+;
+; Detect selected CPU to declare flash 
+&cpu=CPU()
+
+; Reset flash declaration
+FLASH.RESet
+IF "&cpu"=="PXA270"
+(
+  ; PXA270 does not have internal flash
+  ENDDO
+)
+IF "&cpu"=="PXA271"
+(
+  ; PXA271 internal flash
+  IF "&flashtarget"=="no"
+  (
+    FLASH.Create 1. 0x00000000--0x0001ffff 0x08000 I28F200K3 Word
+    FLASH.Create 1. 0x00020000--0x01ffffff 0x20000 I28F200K3 Word
+  )
+  ELSE
+  (
+    FLASH.Create 1. 0x00000000--0x0001ffff 0x08000 TARGET Word
+    FLASH.Create 1. 0x00020000--0x01ffffff 0x20000 TARGET Word
+    FLASH.TARGET &ramaddr &ramaddr+0x1000 0x1000 ~~/demo/arm/flash/word/i28f200k3.bin
+  )
+)
+IF "&cpu"=="PXA272"
+(
+  ; PXA272 internal flash
+  IF "&flashtarget"=="no"
+  (
+    FLASH.Create 1. 0x00000000--0x0003ffff 0x10000 I28F200K3 Long
+    FLASH.Create 1. 0x00040000--0x03ffffff 0x40000 I28F200K3 Long
+  )
+  ELSE
+  (
+    FLASH.Create 1. 0x00000000--0x0003ffff 0x10000 TARGET Long
+    FLASH.Create 1. 0x00040000--0x03ffffff 0x40000 TARGET Long
+    FLASH.TARGET &ramaddr &ramaddr+0x1000 0x1000 ~~/demo/arm/flash/long/i28f200k3.bin
+  )
+)
+IF "&cpu"=="PXA273"
+(
+  ; PXA273 internal flash
+  IF "&flashtarget"=="no"
+  (
+    FLASH.Create 1. 0x00000000--0x0003ffff 0x10000 I28F200K3 Long
+    FLASH.Create 1. 0x00040000--0x01ffffff 0x40000 I28F200K3 Long
+  )
+  ELSE
+  (
+    FLASH.Create 1. 0x00000000--0x0003ffff 0x10000 TARGET Long
+    FLASH.Create 1. 0x00040000--0x01ffffff 0x40000 TARGET Long
+    FLASH.TARGET &ramaddr &ramaddr+0x1000 0x1000 ~~/demo/arm/flash/long/i28f200k3.bin
+  )
+)
+
+; --------------------------------------------------------------------------------
+; Example downloading an application to internal flash.
+
+DIALOG.YESNO "Program flash memory?"
+ENTRY &progflash
+
+IF &progflash 
+(
+  ; All sectors are locked after power-up and need to be unlocked to 
+  ; program any data to flash.
+  FLASH.UNLOCK ALL
+
+  ; Erase flash
+  FLASH.Erase ALL
+
+  ; Program flash
+  FLASH.Program.ALL
+  Data.LOAD.auto *
+  FLASH.Program.off
+
+  ; If wanted, relock all sectors after programming
+  FLASH.LOCK ALL
+)
+
+ENDDO

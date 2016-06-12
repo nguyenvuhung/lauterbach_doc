@@ -1,0 +1,72 @@
+; --------------------------------------------------------------------------------
+; @Title: TI DM6443 NAND FLASH Programming Script
+; @Description:
+; TI DM6443 NAND FLASH(Micron, MT29F2G08) is connected to CS2
+;
+; Internal SRAM    : 0x40000
+; Command Register : 0x2000010  
+; Address Register : 0x200000B
+; Data Register    : 0x2000000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: TMS320DM6443
+; @Keywords: Micron MT29F2G08 FLASH NAND
+; --------------------------------------------------------------------------------
+; $Id: dm6443-nand2g08.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+SYStem.RESet
+SYStem.CPU DM6443
+SYStem.JtagClock RTCK 1MHZ
+SYStem.Mode Go
+WAIT 5.s
+IF RUN()
+  Break.direct
+
+; Disable WP by setting GPIO 51
+Data.Set ASD:0x1C41A68 %Long 0x703 
+Data.Set ASD:0x1C41868 %Long 0x1F03 
+Data.Set ASD:0x1C67038 %Long 0yXXXXxxxxXXXX0xxxXXXXxxxxXXXXxxxx
+Data.Set ASD:0x1C67040 %Long 0x80000 
+
+;EMIF, CS2 Enable for NAND FLASH
+PER.Set.simple ASD:0x1E00060 %Long 0x1       ; CS2 Enable
+PER.Set.simple ASD:0x1E00010 %Long 00624388  ; CS2 bus timing
+
+  FLASHFILE.RESet
+
+//FLASHFILE.config <Cmd_reg>   <Addr_reg>  <Data_reg>
+  FLASHFILE.CONFIG 0x2000010  0x200000B  0x2000000
+
+//FLASHFILE.TARGET <Code_range> <Data_range> <Algorithm file>
+  FLASHFILE.TARGET 0x40000++0x1FFF 0x42000++0x1FFF ~~/demo/arm/flash/byte/nand2g08.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Put a list of bad blocks into area window
+  FLASHFILE.GETBADBLOCK 0x0--0xFFFFF
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+  //Erase NAND FLASH Main and Bad block inforamtion
+    FLASHFILE.Erase 0x0--0x7FFFFFF 
+    ;FLASHFILE.ERASE 0x0--0x7FFFFFF  /EraseBadBlocks
+
+  //Skipped way 
+    FLASHFILE.LOAD.binary  * 0x0 
+
+	//Ecc Writing to spare area
+	//FLASHFILE.LOADECC <main area range to make ecc>  <eccLocation on spare>  /<ecc Type>
+	  ;FLASHFILE.LOADECC 0x0--0xFFFFF 40. /256SWAP
+  )
+
+//Open NAND FLASH Dump window
+  FLASHFILE.DUMP 0x0
+
+ENDDO
+
+
+

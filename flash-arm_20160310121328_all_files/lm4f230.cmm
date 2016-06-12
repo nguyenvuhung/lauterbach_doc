@@ -1,0 +1,141 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of TI Stellaris LM4F230 internal flash. 
+;
+; @Description: 
+; Synopsis:
+;
+;   do ~~/demo/arm/flash/lm4f230 [<cpu>] [PREPAREONLY]
+;
+; Description:
+;
+;   Script arguments are not case sensitive.
+;
+;   <cpu>
+;     is the CPU name argument out of the table listed below. If debug 
+;     connection is not already established CPU name argument is used for
+;     CPU selection. Without CPU name argument and no LM4F230 CPU is 
+;     selected the script is using default CPU selection LM4F232H5QD.
+;
+;   PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   do ~~/demo/arm/flash/lm4f230 LM4F230E5QR PREPAREONLY
+;
+; List of LM4F230 derivatives and their configuration:
+;
+;   CPU-Type       ProgFlash    EEPROM   RamSize
+; --------------------------------------------------------------------------------
+;   LM4F230E5QR       128kB       2kB      32kB
+;   LM4F230H5QR       256kB       2kB      32kB
+;   LM4F231E5QR       128kB       2kB      32kB
+;   LM4F231H5QR       256kB       2kB      32kB
+;   LM4F232E5QC       128kB       2kB      32kB
+;   LM4F232H5QC       256kB       2kB      32kB
+;   LM4F232H5QD       256kB       2kB      32kB
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: LM4F230*
+; --------------------------------------------------------------------------------
+; $Rev: 2903 $
+; $Id: lm4f230.cmm 2903 2014-07-16 11:19:46Z kjmal $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+  
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &cpu
+  &cpu="LM4F23"+STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"LM4F23","")
+
+  ; Setup CPU selection for the case script is called without argument.
+  IF "&cpu"=="LM4F23"
+  (
+    IF CPUIS(LM4F23*)
+      &cpu=CPU()
+    ELSE
+      &cpu="LM4F232H5QD"
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU &cpu
+    IF CABLE.TWOWIRE()
+    (
+      SYStem.CONFIG.DEBUGPORTTYPE SWD
+    )
+    ELSE
+    (
+      SYStem.CONFIG.DEBUGPORTTYPE JTAG
+    )
+    SYStem.Up
+  )
+  
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration
+
+  ; In case of empty flash disable RMCTL:BA (ROM Control register Boot 
+  ; Alias bit) to show flash contents at address 0x0
+  IF (Data.Long(ASD:0x400FE0F0)&0x01)==0x01
+    Data.Set ASD:0x400FE0F0 %Long 0x01
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on CPU selection
+
+FlashDeclaration:
+  LOCAL &FlashSize
+
+  IF CPUIS("LM4F23?E5Q?")
+  (
+    &FlashSize=0x20000
+  )
+  ELSE IF CPUIS("LM4F23?H5Q?")
+  (
+    &FlashSize=0x40000
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is not supported by the script"
+    ENDDO
+  )
+
+  ;IF (Data.Long(SD:0x400FE358)&0x01)==0x01
+  ;  PRINT "EEPROM module is present"
+
+  FLASH.Create 1. 0x0++(&FlashSize-1) 0x400 TARGET Long
+  FLASH.TARGET 0x20000000 0x20000800 0x400 ~~/demo/arm/flash/long/lm4f.bin
+
+  RETURN

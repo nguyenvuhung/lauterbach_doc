@@ -1,0 +1,31 @@
+; @Title: Start-Up Script for BeagleBone Board to enable the CM3 core
+; @Description:
+;   This demo demonstrates how to enable the Cortex-M3 core of the
+;    BeagleBone Board from the Cortex-A8 AM3359 chip
+;
+; @Keywords: AM335x, BeagleBone, Cortex-M3
+; @Author: MSA
+; @Board: BeagleBone 
+; @Chip: AM3359*
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: beaglebone_enable_cm3.cmm 8409 2015-05-05 10:16:16Z msamet $
+
+  RESet
+  SYStem.RESet
+  SYStem.CPU AM3359
+  SYStem.Up
+
+; disable_watchdog
+  Data.Set ASD:0x44E35048 %LE %Long 0x0000AAAA
+  Data.Set ASD:0x44E35048 %LE %Long 0x00005555
+
+; enable CM3
+  Data.Set 0x44e00d00 %Long %LE 0x0
+
+  SYStem.Down
+  SYStem.CPU AM3359-CM3
+  SYStem.Mode Attach
+  IF run()
+  Break.direct
+

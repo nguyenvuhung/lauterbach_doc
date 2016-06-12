@@ -1,0 +1,59 @@
+; --------------------------------------------------------------------------------
+; @Title: I.MX23 GPMI NAND FLASH Programming Script
+; @Description:
+; NAND FLASH(SAMSUNG,K9F4G08) is connected to the NAND_CS0
+; 
+; External SDRAM    : 0x40010000
+; APBH-Bridge-DMA Register : 0x80004000        
+; GPMIRegister : 0x8000C000   
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: IMX23
+; @Keywords: SAMSUNG K9F4G08 Flash NAND
+; --------------------------------------------------------------------------------
+; $Id: imx23-nand2g08.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+PRINT "initializing JTAG..."
+SYStem.CPU ARM926EJ-VFP
+SYStem.Option DACR ON          ; give Debugger global write permissions
+TrOnchip.Set DABORT OFF        ; used by Linux OS for page miss!
+TrOnchip.Set PABORT OFF        ; used by Linux OS for page miss!
+TrOnchip.Set UNDEF  OFF        ; let UNDEF be handled by Linux OS
+SYStem.Option MMU OFF          ; no space ids used (yet)
+SYStem.JtagClock 1.Mhz
+SETUP.IMASKASM ON              ; lock interrupts while single stepping
+SYStem.Option.ResBreak OFF
+SYStem.Option.EnReset ON
+SYStem.Option.WaitReset ON
+SYStem.Mode.Go
+
+WAIT 2.s
+IF run()
+  Break.direct
+
+  PER.Set.simple C15:0x1 %Long 0x51078   ;MMU disable
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.config <APBH-Bridge-DMA>  <GPMI reg>  
+  FLASHFILE.CONFIG  0x80004000        0x8000C000   ,  ,
+
+// FLASHFILE.TARGET <code range>        <data range>      <Algorithm file>
+  FLASHFILE.TARGET 0x40010000++0x3FFF 0x40014000++0x3FFF   ~~/demo/arm/flash/byte/nand2g08_gpmimx23.bin /STACKSIZE 0x500
+
+
+  FLASHFILE.GETID                                ; Read ID
+
+  FLASHFILE.GETID                                ; Read ID
+ ;FLASHFILE.DUMP 0x0                             ; Read NAND 
+ ;FLASHFILE.ERASE 0x0--0xFFFFF  /EraseBadBlock   ; Erase NAND
+ ;FLASHFILE.LOAD * 0x0  /WriteBadBlock           ; Write NAND
+
+ENDDO
+
+
+
+

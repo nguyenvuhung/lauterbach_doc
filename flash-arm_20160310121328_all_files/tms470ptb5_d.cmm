@@ -1,0 +1,93 @@
+; --------------------------------------------------------------------------------
+; @Title: TMS470 internal flash 
+;
+; @Description: 
+; TMS470 internal flash of TMS470PTB5BAPDV, TMS470PTB5BAPBK, 
+; TMS470PTB5BPGF and TMS470PTB5BGXJ.
+;
+; NOTE:
+;   This script is called from tms470r1.cmm script.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: tms470ptb5_d.cmm 2881 2014-07-07 10:35:48Z kjmal $
+; wrd - 01.08.2005
+;
+
+;GOSUB Setup_CPU TMS470PTB5 
+  SYStem.RESet
+  SYStem.CPU ARM7TDMI
+  SYStem.CONFIG.IRPRE 4.
+  SYStem.CONFIG.DRPRE 1.
+  SYStem.JtagClock RTCK
+  SYStem.Option AMBA OFF
+  SYStem.Option.EnReset OFF
+  SYStem.Option.BigEndian ON
+  ; Error handling for derivatives with Memory Security Module
+  ON ERROR GOSUB ErrorSystemUp
+  SYStem.Up
+  ON ERROR NOTHING
+
+
+FLASH.RESet
+
+; --------------------------------------------------------------------------------
+; Flash configuration and declaration generated out of flash.cfg file
+;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Config for TMS470PTB5BAPDV/PBK Rev 0
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; actual device ID is 0x80023005 (Unique id is bits 30-16, revision is bits 7-3)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+&Device_ID=0x0001         ;TMS470PTB5BAPDV/PBK
+;  ProgVersion: 0.31 ; Library Version
+&ProgRoutines="pf05a" ; Platform library archive
+;  Frequency: 24.0 Range: 10.0 - 24.0
+;  Minor Revisions: 1
+;    0 "TMS470PTB5BAPDV/PBK rev 0"
+;  Ram Config: 0x08000000 0x00004000 0x00000600
+&RamStart=0x08000000 
+&RamSize=0x00004000 
+;  Initialization: 7
+Data.Set 0xffffffc4 %Long 0x0000000a ; MEMSW='1010'
+Data.Set 0xffffff00 %Long 0x00000001 ; ECPCLKFUN='1'
+Data.Set 0xffffffd4 %Long 0x00800000 ; EPCOS='1', ECPDIV=0x0000
+Data.Set 0xffffffd0 %Long 0x00000000 ; VCLK2R='0000', VCLKR='0000', PENA='0'
+Data.Set 0xffffff48 %Long 0x00000001 ; GVHWAKE='0000', HVPLM='0000', GHVSRC='0001' 
+Data.Set 0xffffff74 %Long 0x00000000 ; FMENA off
+Data.Set 0xfff87100 %Long 0x00000000 ; disable pipeline mode
+;  PLL Config: 0xffffff70 0x00000704 ; configure FMZPLL *8/5 (assuming 15Mhz OSCIN)
+Data.Set 0xffffff70 %Long 0x00000707 ; configure PLL *8/8
+;  Engr ID: 0xfff87000 0x00000000
+;  Aux Engr ID: 0xfff87000 0x1c
+&FlashControl_Base=0xfff87000
+;  Number of Blocks: 21
+GOSUB DeclareSector Type: OTP    Start: 0x00000000   Length: 0x00000800   Control: 0xfff87000   Core: 0x00   Sector: 0x00
+GOSUB DeclareSector Type: FLASH  Start: 0x00000000   Length: 0x00004000   Control: 0xfff87000   Core: 0x00   Sector: 0x00
+GOSUB DeclareSector Type: FLASH  Start: 0x00004000   Length: 0x00004000   Control: 0xfff87000   Core: 0x00   Sector: 0x01
+GOSUB DeclareSector Type: FLASH  Start: 0x00008000   Length: 0x00004000   Control: 0xfff87000   Core: 0x00   Sector: 0x02
+GOSUB DeclareSector Type: FLASH  Start: 0x0000c000   Length: 0x00004000   Control: 0xfff87000   Core: 0x00   Sector: 0x03
+GOSUB DeclareSector Type: FLASH  Start: 0x00010000   Length: 0x00004000   Control: 0xfff87000   Core: 0x00   Sector: 0x04
+GOSUB DeclareSector Type: FLASH  Start: 0x00014000   Length: 0x00004000   Control: 0xfff87000   Core: 0x00   Sector: 0x05
+GOSUB DeclareSector Type: FLASH  Start: 0x00018000   Length: 0x00004000   Control: 0xfff87000   Core: 0x00   Sector: 0x06
+GOSUB DeclareSector Type: FLASH  Start: 0x0001c000   Length: 0x00004000   Control: 0xfff87000   Core: 0x00   Sector: 0x07
+GOSUB DeclareSector Type: FLASH  Start: 0x00020000   Length: 0x00008000   Control: 0xfff87000   Core: 0x01   Sector: 0x00
+GOSUB DeclareSector Type: FLASH  Start: 0x00028000   Length: 0x00008000   Control: 0xfff87000   Core: 0x01   Sector: 0x01
+GOSUB DeclareSector Type: FLASH  Start: 0x00030000   Length: 0x00008000   Control: 0xfff87000   Core: 0x01   Sector: 0x02
+GOSUB DeclareSector Type: FLASH  Start: 0x00038000   Length: 0x00008000   Control: 0xfff87000   Core: 0x01   Sector: 0x03
+GOSUB DeclareSector Type: FLASH  Start: 0x00040000   Length: 0x00008000   Control: 0xfff87000   Core: 0x02   Sector: 0x00
+GOSUB DeclareSector Type: FLASH  Start: 0x00048000   Length: 0x00008000   Control: 0xfff87000   Core: 0x02   Sector: 0x01
+GOSUB DeclareSector Type: FLASH  Start: 0x00050000   Length: 0x00008000   Control: 0xfff87000   Core: 0x02   Sector: 0x02
+GOSUB DeclareSector Type: FLASH  Start: 0x00058000   Length: 0x00008000   Control: 0xfff87000   Core: 0x02   Sector: 0x03
+GOSUB DeclareSector Type: FLASH  Start: 0x00060000   Length: 0x00008000   Control: 0xfff87000   Core: 0x03   Sector: 0x00
+GOSUB DeclareSector Type: FLASH  Start: 0x00068000   Length: 0x00008000   Control: 0xfff87000   Core: 0x03   Sector: 0x01
+GOSUB DeclareSector Type: FLASH  Start: 0x00070000   Length: 0x00008000   Control: 0xfff87000   Core: 0x03   Sector: 0x02
+GOSUB DeclareSector Type: FLASH  Start: 0x00078000   Length: 0x00008000   Control: 0xfff87000   Core: 0x03   Sector: 0x03
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; End of flash.cfg
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+ENDDO

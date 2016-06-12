@@ -1,0 +1,143 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Maxim Integrated MAX32600 internal flash.
+; 
+; @Description: 
+; Script arguments:
+;
+;   DO max32600 [PREPAREONLY] [CPU=<cpu>] [DUALPORT=0|1]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;
+;     DUALPORT default value is 0 (disabled). If DualPort mode is enabled
+;             flash algorithm stays running until flash programming is
+;             finished. Data is tranferred via dual port memory access. 
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/max32600 PREPAREONLY DUALPORT=1 CPU=MAX32600P85A
+;
+; List of MAX32600 derivatives and their configuration:
+;
+;   CPU-Type        Flash size   SRAM size
+;                     [Byte]       [Byte]
+; --------------------------------------------------------------------------------
+;   MAX32600P85A     0x40000       0x8000
+;   MAX32600P85B     0x40000       0x8000
+;   MAX32600M85A     0x40000       0x8000
+;   MAX32600M85B     0x40000       0x8000
+;   MAX32600M75A     0x20000       0x8000
+;   MAX32600M75B     0x20000       0x8000
+;   MAX32600M74A     0x20000       0x4000
+;   MAX32600M74B     0x20000       0x4000
+;   MAX32600M64A     0x10000       0x4000
+;   MAX32600M64B     0x10000       0x4000
+; --------------------------------------------------------------------------------
+;   MAX32601K85A     0x40000       0x8000
+;   MAX32601K85B     0x40000       0x8000
+;   MAX32601K75A     0x20000       0x8000
+;   MAX32601K75B     0x20000       0x8000
+;   MAX32601K74A     0x20000       0x4000
+;   MAX32601K74B     0x20000       0x4000
+;   MAX32601K64A     0x10000       0x4000
+;   MAX32601K64B     0x10000       0x4000
+;
+;   The internal flash is located at 0x00000000
+;   The internal SRAM is located at  0x20000000
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: MAX3260*
+; --------------------------------------------------------------------------------
+; $Rev: 2903 $
+; $Id: max32600.cmm 2903 2014-07-16 11:19:46Z kjmal $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly &param_dualport &param_cpu
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+  &param_dualport=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"DUALPORT=","0")
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(MAX3260*)
+      SYStem.CPU MAX3260*
+
+    SYStem.Up
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration &param_dualport
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &DualPort
+  ENTRY &DualPort
+
+  LOCAL &FlashSize
+
+  ; Setup configuration values
+  IF CPUIS("MAX3260??8??")
+    &FlashSize=0x40000
+  ELSE IF CPUIS("MAX3260??7??")
+    &FlashSize=0x20000
+  ELSE IF CPUIS("MAX3260??6??")
+    &FlashSize=0x10000
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is not supported by the script"
+    ENDDO
+  )
+
+  ; Program Flash
+  IF &FlashSize>=0x10000
+    FLASH.Create 1. 0x00000000--0x0000FFFF 0x800 TARGET Long
+  IF &FlashSize>=0x20000
+    FLASH.Create 1. 0x00010000--0x0001FFFF 0x800 TARGET Long
+  IF &FlashSize>=0x40000
+    FLASH.Create 1. 0x00020000--0x0003FFFF 0x800 TARGET Long
+
+  FLASH.Create 2. 0x00040000--0x000407FF NOP Long /INFO "Factory trim information"
+
+  FLASH.CLocK.AUTO
+  IF &DualPort==0
+    FLASH.TARGET 0x20000000 0x20001000 0x800 ~~/demo/arm/flash/long/max32600.bin
+  ELSE
+    FLASH.TARGET 0x20000000 EAHB:0x20001000 0x800 ~~/demo/arm/flash/long/max32600.bin /DualPort
+
+  RETURN

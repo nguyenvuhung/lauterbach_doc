@@ -1,0 +1,76 @@
+; --------------------------------------------------------------------------------
+; @Title: i.MX53 Serial FLASH Programming Script
+; @Description:
+; Serial FLASH(ST, M25P32) is connected to eCSPI1_SS1
+; the boot mode switch should be the Serial NOR Flash
+; 
+; SRAM: 0xF8010000
+; SPI Tx Register : 0x50010004     
+; SPI Rx Register : 0x50010000   
+; SPI CS Register : 0x50010008   
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: IMX53*
+; @Keywords: ST M25P32 SPI 
+; --------------------------------------------------------------------------------
+; $Id: imx53-spi64.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+;  RESet
+
+  SYStem.CPU IMX53
+  SYStem.JtagClock 20.MHz
+  SYStem.Option ResBreak OFF
+  SYStem.Option DACR ON 
+  SYStem.Up 
+
+  PER.Set.simple C15:0x1 %Long  (Data.Long(C15:0x1)&~(0x5))  ; disable interrupt and mmu
+
+//Init CSPI registers
+PER.Set.simple ASD:0x53FA8118 %Long 0x00000004 ; SW_MUX_CTL for the eCSPI1 SCLK ,EMI_D16
+PER.Set.simple ASD:0x53FA811C %Long 0x00000004 ; SW_MUX_CTL for the eCSPI1 MISO ,EMI_D17
+PER.Set.simple ASD:0x53FA8120 %Long 0x00000004 ; SW_MUX_CTL for the eCSPI1 MOSI ,EMI_D18
+PER.Set.simple ASD:0x53FA8124 %Long 0x00000004 ; SW_MUX_CTL for the eCSPI1 SS   ,EMI_D19
+
+PER.Set.simple ASD:0x53FA8460 %Long 0x00000104 ; SW_MUX_CTL for the eCSPI1 
+PER.Set.simple ASD:0x53FA8464 %Long 0x00000104 ; SW_MUX_CTL for the eCSPI1 
+PER.Set.simple ASD:0x53FA8468 %Long 0x00000104 ; SW_MUX_CTL for the eCSPI1 
+PER.Set.simple ASD:0x53FA846C %Long 0x00000104 ; SW_MUX_CTL for the eCSPI1 
+
+
+PER.Set.simple ASD:0x53FA879C %Long 0x00000003 
+PER.Set.simple ASD:0x53FA87A0 %Long 0x00000003 
+PER.Set.simple ASD:0x53FA87A4 %Long 0x00000003 
+PER.Set.simple ASD:0x53FA87A8 %Long 0x00000003 
+PER.Set.simple ASD:0x53FA87AC %Long 0x2
+
+
+PER.Set.simple ASD:0x53FD401C %Long 0xA5A2A020 ; CSCMR1, Clock for eSPI
+PER.Set.simple ASD:0x53FD4038 %Long 0x02090241 ; CSCDR2, Clock for eSPI
+PER.Set.simple ASD:0x50010008 %Long 0x01F44021  ; eSPI1 control register, around 10Mhz
+
+Break.RESet
+
+FLASHFILE.RESet
+
+;eCSPI1
+  FLASHFILE.CONFIG 0x50010004     0x50010000   0x50010008   0x0
+  FLASHFILE.TARGET 0xF8010000++0x3fff  0xF8014000++0x3FFF  ~~/demo/arm/flash/byte/spi64_ecspi.bin   /KEEP
+
+  FLASHFILE.GETID
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Dump window for Serial FLASH
+  FLASHFILE.DUMP 0x0
+
+//Unlock Serial FLASH
+;  FLASHFILE.UNLOCK 0x0--0xFFFFF 
+
+//Erase Serial FLASH
+; FLASHFILE.ERASE 0x0--0xFFFFF
+
+//Write Serial FLASH
+;  FLASHFILE.LOAD  * 0x0
+
+ENDDO 

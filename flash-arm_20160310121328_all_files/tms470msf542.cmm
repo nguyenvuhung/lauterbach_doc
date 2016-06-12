@@ -1,0 +1,27 @@
+; --------------------------------------------------------------------------------
+; @Title: TMS470MSF542 internal flash setup
+;
+; @Description: 
+; Script arguments:
+;
+;   DO tms470msf542 [PREPAREONLY] 
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/tms470msf542 PREPAREONLY
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: TMS470MSF542
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: tms470msf542.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+LOCAL &parameters
+ENTRY %LINE &parameters
+
+DO ~~~~/tms470msf541 TMS470MSF542 &parameters
+
+ENDDO

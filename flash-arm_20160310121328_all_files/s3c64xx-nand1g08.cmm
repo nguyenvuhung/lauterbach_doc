@@ -1,0 +1,218 @@
+; --------------------------------------------------------------------------------
+; @Title: S3C64xx NAND FLASH Programming Script
+; @Description:
+;   Script offered by Jongcheon from the MDS Tech
+;   FLASH Type: NAND FLASH(SAMSUNG, K9F1G08) connected to CS2
+;
+;   SDRAM            : 0x50000000
+;   Command Register : 0x70200008   
+;   Address Register : 0x7020000c 
+;   Data Register    : 0x70200010
+; 
+; @Author: JIM
+; @Chip: ARM1176JZF-S
+; @Keywords: SAMSUNG K9F1G08
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: s3c64xx-nand1g08.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  AREA.RESet
+  AREA.view
+  
+//SYStem configuration
+
+  SYStem.CPU ARM1176JZF
+  SYStem.JtagClock RTCK
+  SYStem.Option ResBreak OFF
+  SYStem.Option EnReset ON
+  SYStem.Option TRST ON
+  SYStem.CONFIG.IRPRE 4
+  SYStem.CONFIG.DRPRE 1
+  SYStem.CONFIG.ETBIRPOST 5
+  SYStem.CONFIG.ETBDRPOST 1
+
+  SYStem.Up
+
+  MAP.RESet
+  MAP.DenyAccess 0x40000000--0x4FFFFFFF
+  MAP.DenyAccess  0x60000000--0x6FFFFFFF
+
+
+  Register.Set cpsr (r(cpsr)&0xffffff00)|0xd3
+
+//base = 0x70000000 , size = 256MB
+  PER.Set.simple C15:0x42F %LE %Long 0x70000013           ; Peripheral Port Memory Remap Register Enable
+
+//Watchdog timer address
+  Data.Set SD:0x7e004000 %LE %Long 0x0                    ; Disable Watchdog
+  Data.Set SD:0x7e00f120 %LE %Long 0x0
+
+//NFCONF setting
+  Data.Set ASD:0x70200000 %Long 0x2227	
+
+//NFCONT setting
+  Data.Set ASD:0x70200004 %Long 0xc5
+
+//Call SDRAM initialization
+  GOSUB sdram_init
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.Config <cmd_reg> <addr_reg> <io_reg>
+  FLASHFILE.CONFIG 0x70200008 0x7020000c 0x70200010
+
+// FLASHFILE.TARGET <code range> <data range> <Algorithm file>
+  FLASHFILE.TARGET 0x50000000++0x1FFF 0x50002000++0x1FFF ~/demo/arm/flash/byte/nand1g08.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Put a list of bad blocks into area window for 1Gbit (256MB) size
+  FLASHFILE.GETBADBLOCK 0x0--0x7FFFFFF
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+  //Erase NAND FLASH Main and Bad block inforamtion
+    FLASHFILE.Erase 0x0--0x7FFFFFF  /EraseBadBlocks
+
+  //Skipped way 
+    FLASHFILE.LOAD.binary  * 0x0 
+    ;FLASHFILE.LOADSPARE * 0x0 
+   
+  //Reserved block area way
+    ;FLASHFILE.LOAD  * 0x0   /WriteBadBlocks
+    ;FLASHFILE.LOADSPARE *  0x0   /WriteBadBlocks  
+  )
+
+  ENDDO
+
+
+sdram_init:
+
+////////////////////////////////////////////////////////////////////////////////
+//////////                      System Initialize                 //////////////
+////////////////////////////////////////////////////////////////////////////////
+
+  Register.Set cpsr (r(cpsr)&0xffffff00)|0xd3
+  PER.Set.simple C15:0x42F %LE %Long 0x70000013         ; Peripheral Port Enable
+  Data.Set SD:0x7e004000 %LE %Long 0x0           ; Disable Watchdog
+
+//For NAND
+  Data.Set SD:0x7e00f120 %LE %Long 0x0000         ; CS0:8 bit, Mem1:32bit, CS2=NAND
+//For OneNAND
+  ;Data.Set SD:0x7e00f120 %LE %LONG 0x1000        ; CS0:16bit, Mem1:32bit, CS2=OneNAND
+
+
+//Clock Divider0 => ARM:AHB:APB = 1:4:16  
+//APLL_R=0, MPLL_R=1, HCLK_R=1, HCLKx2=1, PCLK = 3, ONENAND_RATIO = 1
+
+//Data.Set SD:0x7e00f020 %LE %LONG 0x1057110          ; CLK_DIV0(rb1004 modify)
+  Data.Set SD:0x7e00f020 %LE %Long 0x1077310          ; CLK_DIV0(rb1004 modify)
+  ;Data.Set SD:0x7e00f020 %LE %LONG 0x1057310         ; CLK_DIV0(rb1004 modify)
+
+  Data.Set SD:0x7e00f000 %LE %Long 0xffff             ; APLL Lock Time 
+  Data.Set SD:0x7e00f004 %LE %Long 0xffff             ; MPLL Lock Time
+
+//Set-up APLL  Fout=(m*Fin)/(P*2^s)
+  ;Data.Set SD:0x7e00f00c %LE %LONG 0x82140302        ; APLL Enable, Fout=532MHz, VCO=2128M
+  ;Data.Set SD:0x7e00f00c %LE %LONG 0x82140601        ; APLL Enable, Fout=532MHz
+  Data.Set SD:0x7e00f00c %LE %Long 0x81900302         ; APLL Enable, Fout=400MHz
+
+//Set-up MPLL	Fout=(m*Fin)/(P*2^s)
+  Data.Set SD:0x7e00f010 %LE %Long 0x81900303          ; MPLL Enable, Fout=200MHz
+  ;Data.Set SD:0x7e00f010 %LE %LONG 0x82140401         ; MPLL Enable, Fout=266MHz, VCO=1.596M
+  ;Data.Set SD:0x7e00f010 %LE %LONG 0x82140602         ; MPLL Enable, Fout=266MHz
+  ;Data.Set SD:0x7e00f010 %LE %LONG 0x81900302         ; MPLL Enable, Fout=400MHz
+
+//Change Clock Source
+  Data.Set SD:0x7e00f01c %LE %Long 0x3                ; APLL/MPLL Clock Select
+
+//Static Memory Controller Set-up
+  Data.Set SD:0x7e001004 %LE %Long 0x4                ; Enter the Config State
+
+//Data.Set SD:0x7e001010 %LE %LONG 0x30B              ; Refresh Period register (7800ns), 100MHz 0x30E
+  Data.Set SD:0x7e001010 %LE %Long 0x30C              ; Refresh Period register (7800ns), 100MHz 0x30E
+  ;Data.Set SD:0x7e001010 %LE %LONG 0x40E             ; Refresh Period register (7800ns), 133MHz 0x40E
+
+  Data.Set SD:0x7e001014 %LE %Long 0x6                ; CAS Latency = 3
+
+  Data.Set SD:0x7e001018 %LE %Long 0x1                ; T_DQSS
+  
+  Data.Set SD:0x7e00101c %LE %Long 0x2                ; T_MRD
+
+  Data.Set SD:0x7e001020 %LE %Long 0x7                ; T_RAS(45ns)	; jhoh 0x5 
+
+  Data.Set SD:0x7e001024 %LE %Long 0xa                ; T_RC(67.5ns)	; jhoh 0x7
+
+//Data.Set SD:0x7e001028 %LE %LONG 0x5                ; T_RCD(22.5ns) = 4, Scheduled RCD = 1	;jhoh 0x3
+  Data.Set SD:0x7e001028 %LE %Long 0xC                ; T_RCD(22.5ns) = 4, Scheduled RCD = 1
+
+//Data.Set SD:0x7e00102C %LE %LONG 0xA8               ; T_RFC(80ns) = 11, Scheduled RFC= 8 
+  Data.Set SD:0x7e00102C %LE %Long 0x10B              ; T_RFC(80ns) = 11, Scheduled RFC= 8 
+
+//Data.Set SD:0x7e001030 %LE %LONG 0x1D               ; T_RP(22.5ns) = 4, Scheduled RP = 1	;jhoh 0x3
+  Data.Set SD:0x7e001030 %LE %Long 0xC                ; T_RP(22.5ns) = 4, Scheduled RP = 1
+
+//Data.Set SD:0x7e001034 %LE %LONG 0x2                ; T_RRD(15ns)=3
+  Data.Set SD:0x7e001034 %LE %Long 0x3                ; T_RRD(15ns)=3
+
+//Data.Set SD:0x7e001038 %LE %LONG 0x2                ; T_WR(15ns)=3
+  Data.Set SD:0x7e001038 %LE %Long 0x3                ; T_WR(15ns)=3
+
+  Data.Set SD:0x7e00103C %LE %Long 0x2                ; T_WTR		; jhoh 0x2
+
+//Data.Set SD:0x7e001040 %LE %LONG 0x1                ; T_XP (1tck + tIS(1.5ns))  ; jhoh 0x1
+  Data.Set SD:0x7e001040 %LE %Long 0x2                ; T_XP (1tck + tIS(1.5ns))
+
+//Data.Set SD:0x7e001044 %LE %LONG 0x0A               ; T_XSR(120ns)	; jhoh 0x0C
+  Data.Set SD:0x7e001044 %LE %Long 0x11               ; T_XSR(120ns)
+
+//Data.Set SD:0x7e001048 %LE %LONG 0x14               ; T_ESR		; jhoh 0x0c
+  Data.Set SD:0x7e001048 %LE %Long 0x11               ; T_ESR
+
+//Memory Configuration Register
+  ;Data.Set SD:0x7e00100C %LE %LONG 0x80010012 		   	; 1 CKE, 1Chip, 4burst, Always, AP[10], ROW/Column bit    mskim_temp_remove
+  Data.Set SD:0x7e00100C %LE %Long 0x00010012         ; 1 CKE, 1Chip, 4burst, Always, AP[10], ROW/Column bit    mskim_temp_add
+
+//Memory Configuration Register 2
+  ;Data.Set SD:0x7e00104C %LE %LONG 0x0B45            ; Read delay 1 Cycle, mDDR, 32bit, Sync.  ; jhoh 0x0B45 -> 0x1345
+  ;Data.Set SD:0x7e00104C %LE %LONG 0x1345            ; Read delay 1 Cycle, mDDR, 32bit, Sync. mskim_temp_remove
+  Data.Set SD:0x7e00104C %LE %Long 0x0B41             ; Read delay 1 Cycle, mDDR, 32bit, Sync. mskim_temp_add
+
+// Chip 0 Configuration
+  Data.Set SD:0x7e001200 %LE %Long 0x150F8            ; Bank-ROW-Column, 0x5000_0000 ~ 0x57ff_ffff (128MB)
+
+  Data.Set SD:0x7e001304 %LE %Long 0x0
+
+
+// Direct Command 
+  Data.Set SD:0x7e001008 %LE %Long 0xc0000            ; Chip0 Direct Command :NOP5
+
+  Data.Set SD:0x7e001008 %LE %Long 0x0                ; Chip0 Direct Command :PreCharge all
+  Data.Set SD:0x7e001008 %LE %Long 0x40000            ; Chip0 Direct Command :AutoRefresh
+  Data.Set SD:0x7e001008 %LE %Long 0x40000            ; Chip0 Direct Command :AutoRefresh
+  Data.Set SD:0x7e001008 %LE %Long 0xA0000            ; EMRS, DS:Full, PASR:Full
+  Data.Set SD:0x7e001008 %LE %Long 0x80032            ; MRS, CAS3, BL4  
+  Data.Set SD:0x7e001004 %LE %Long 0x0                ; Enable DMC1
+
+  PRINT "S3C6400 Setting is done"
+
+RETURN
+
+
+
+
+
+
+
+
+
+
+
+
+
+

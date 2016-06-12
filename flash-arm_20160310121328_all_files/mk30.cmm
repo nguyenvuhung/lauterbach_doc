@@ -1,0 +1,366 @@
+; --------------------------------------------------------------------------------
+; @Title: Generic script for Freescale MK30 internal flash
+;
+; @Description:
+;
+; Example for flash declaration of Freescale MK30 internal flash.
+;
+; Script arguments:
+;
+;   DO mk30 [PREPAREONLY] [CPU=<cpu>] [MASSERASE]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;     example
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;
+;     MASSERASE forces mass erase of device before establishing debug 
+;     connection
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/mk30 CPU=MK30DN512VLK10 PREPAREONLY
+;
+; List of MK30 derivatives and their configuration:
+;
+;   CPU-Type       Flash   ProgFlash   FlexNVM   EEPROM   RamSize
+;                   type     [Byte]     [Byte]    [Byte]   [Byte]
+; --------------------------------------------------------------------------------
+;   MK30DX64VEX7      1       64KB       32KB       2KB     16KB
+;   MK30DX64VLH7      1       64KB       32KB       2KB     16KB
+;   MK30DX64VLK7      1       64KB       32KB       2KB     16KB
+;   MK30DX64VMB7      1       64KB       32KB       2KB     16KB
+;   MK30DX128VEX7     1      128KB       32KB       2KB     32KB
+;   MK30DX128VLH7     1      128KB       32KB       2KB     32KB
+;   MK30DX128VLK7     1      128KB       32KB       2KB     32KB
+;   MK30DX128VLL7     1      128KB       32KB       2KB     32KB
+;   MK30DX128VLQ10   2X      128KB      128KB       4KB     32KB
+;   MK30DX128VMB7     1      128KB       32KB       2KB     32KB
+;   MK30DX128VMD10   2X      128KB      128KB       4KB     32KB
+;   MK30DX128VML7     1      128KB       32KB       2KB     32KB
+;   MK30DX256VEX7     1      256KB       32KB       2KB     64KB
+;   MK30DX256VLH7     1      256KB       32KB       2KB     64KB
+;   MK30DX256VLK7     1      256KB       32KB       2KB     64KB
+;   MK30DX256VLL7     1      256KB       32KB       2KB     64KB
+;   MK30DX256VLQ10   2X      256KB      256KB       4KB     64KB
+;   MK30DX256VMB7     1      256KB       32KB       2KB     64KB
+;   MK30DX256VMD10   2X      256KB      256KB       4KB     64KB
+;   MK30DX256VML7     1      256KB       32KB       2KB     64KB
+;   MK30DN512VLK10   2N      512KB          -         -    128KB
+;   MK30DN512VLL10   2N      512KB          -         -    128KB
+;   MK30DN512VLQ10   2N      512KB          -         -    128KB
+;   MK30DN512VMB10   2N      512KB          -         -    128KB
+;   MK30DN512VMC10   2N      512KB          -         -    128KB
+;   MK30DN512VMD10   2N      512KB          -         -    128KB
+;
+; Flash Configuration Field:
+;
+;   Byte address    Width   Description
+; --------------------------------------------------------------------------------
+;   0x0400--0x0407    8    Backdoor Comparison Key.
+;   0x0408--0x040B    4    Program flash protection bytes (FPROT0-3).
+;   0x040F            1    Program flash only devices: Reserved
+;                          FlexNVM devices: Data flash protection byte
+;                          (FDPROT).
+;   0x040E            1    Program flash only devices: Reserved
+;                          FlexNVM devices: EEPROM protection byte
+;                          (FEPROT).
+;   0x040D            1    Flash nonvolatile option byte (FOPT).
+;   0x040C            1    Flash security byte (FSEC).
+;
+;   Flash Configuration Field can be programmed using FLASH.AUTO command 
+;   with /CENSORSHIP option.
+;
+; @Chip: MK30D*
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 2903 $
+; $Id: mk30.cmm 2903 2014-07-16 11:19:46Z kjmal $
+;
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly &param_masserase
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  &param_masserase=(STRing.SCAN(STRing.UPpeR("&parameters"),"MASSERASE",0)!=-1)
+
+  LOCAL &param_cpu
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+  IF "&param_cpu"==""
+  (
+    ; For script backward compatibility
+    &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"MK30","")
+    IF "&param_cpu"!=""
+      &param_cpu="MK30"+"&param_cpu"
+    ELSE
+    (
+      &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"K30","")
+      IF "&param_cpu"!=""
+        &param_cpu="K30"+"&param_cpu"
+    )
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF (SYStem.MODE()<5)||&param_masserase
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(MK30*)&&!CPUIS(K30*)
+      SYStem.CPU MK30*
+
+    IF CABLE.TWOWIRE()
+    (
+      SYStem.CONFIG.DEBUGPORTTYPE SWD
+    )
+    ELSE
+    (
+      SYStem.CONFIG.DEBUGPORTTYPE JTAG
+    )
+
+    IF &param_masserase
+      GOSUB MassErase
+
+    ON.ERROR GOSUB Unsecure
+    SYStem.Up
+    ON.ERROR
+  )
+
+  ; Unsecure device
+  IF VERSION.BUILD()>=34133.
+  (
+    IF (Data.Long(EDBG:0x40000100)&0x04)==0x04
+      GOSUB Unsecure
+  )
+
+  ; Disable watchdog
+  ON.ERROR GOSUB Unsecure
+  GOSUB DisableWatchdog
+  ON.ERROR
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+
+    ; Disable watchdog
+    GOSUB DisableWatchdog
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Disable watchdog
+
+DisableWatchdog:
+
+  ; The watchdog has a restrictive timing. It has to be configured and unlocked within a peripod
+  ; of 20+256 cycles. Therefor the unlock sequence need to be done by a small target program.
+  Data.Assemble ST:0x20000000  strh r1,[r0]  ;SD:0x4005200E = 0xC520   (Key 1)
+  Data.Assemble ,              strh r2,[r0]  ;SD:0x4005200E = 0xD928   (Key 2)
+  Data.Assemble ,              strh r4,[r3]  ;SD:0x40052000 = 0x0000   (Config register)
+  Data.Assemble ,              bkpt #0
+  Register.Set PC 0x20000000
+  Register.Set R0 0x4005200E
+  Register.Set R1 0xC520
+  Register.Set R2 0xD928
+  Register.Set R3 0x40052000
+  Register.Set R4 0x0
+  Go.direct
+  WAIT !RUN()
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Try to unsecure a secured device
+
+Unsecure:
+  IF VERSION.BUILD()<48722.
+    DO ~~~~/kinetis-unsecure
+  ELSE
+  (
+    ; Print security state information
+    SYStem.Mode.Prepare
+    PRINT "MDM-AP Status Register is 0x" Data.Long(EDBG:0x40000100)
+
+    DIALOG.YESNO "Execute mass erase to unsecure chip?"
+    LOCAL &masserase
+    ENTRY &masserase
+    IF &masserase
+    (
+      ON.ERROR DEFault
+
+      ; Unsecure device
+      SYStem.Down
+      FLASH.UNSECUREerase
+      SYStem.Mode.Prepare
+      IF (Data.Long(EDBG:0x40000100)&0x04)==0x04
+      (
+        PRINT %ERROR "Unsecure failed, MDM-AP Status Register is 0x" Data.Long(EDBG:0x40000100)
+        SYStem.Down
+        ENDDO
+      )
+    )
+    ELSE
+      ENDDO
+  )
+
+  SYStem.Up
+
+  ; Disable watchdog
+  GOSUB DisableWatchdog
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Try to mass erase the device
+
+MassErase:
+  IF VERSION.BUILD.BASE()<49714.
+    DO ~~~~/kinetis-unsecure
+  ELSE
+  (
+    ; Mass erase device by unsecure command
+    SYStem.Down
+    FLASH.UNSECUREerase
+    SYStem.Mode.Prepare
+    IF (Data.Long(EDBG:0x40000100)&0x24)!=0x20
+    (
+      PRINT %ERROR "Mass erase failed, MDM-AP Status Register is 0x" Data.Long(EDBG:0x40000100)
+      SYStem.Down
+      ENDDO
+    )
+  )
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &PFlashSize &FlexNVMSize
+  LOCAL &PSectorSize &DSectorSize
+  LOCAL &flashdriver
+  ;LOCAL &EEPROMSize
+
+  &FlexNVMSize=0x0
+  &DSectorSize=0x0
+  ;&EEPROMSize=0x0
+  &flashdriver="t.b.d."
+
+  ; Setup configuration values
+  IF CPUIS("MK30DX64V??7")||CPUIS("K30X64VYY72")
+  (
+    &PFlashSize=0x10000
+    &PSectorSize=0x800
+    &FlexNVMSize=0x8000
+    &DSectorSize=0x400
+    ;&EEPROMSize=0x800
+    &flashdriver="ftfl1x.bin"
+  )
+  ELSE IF CPUIS("MK30DX128V??7")||CPUIS("K30X128VYY72")
+  (
+    &PFlashSize=0x20000
+    &PSectorSize=0x800
+    &FlexNVMSize=0x8000
+    &DSectorSize=0x400
+    ;&EEPROMSize=0x800
+    &flashdriver="ftfl1x.bin"
+  )
+  ELSE IF CPUIS("MK30DX128V??10")||CPUIS("K30X128VYY100")
+  (
+    &PFlashSize=0x20000
+    &PSectorSize=0x800
+    &FlexNVMSize=0x20000
+    &DSectorSize=0x800
+    ;&EEPROMSize=0x1000
+    &flashdriver="ftfl2x.bin"
+  )
+  ELSE IF CPUIS("MK30DX256V??7")||CPUIS("K30X256VYY72")
+  (
+    &PFlashSize=0x40000
+    &PSectorSize=0x800
+    &FlexNVMSize=0x8000
+    &DSectorSize=0x400
+    ;&EEPROMSize=0x1000
+    &flashdriver="ftfl1x.bin"
+  )
+  ELSE IF CPUIS("MK30DX256V??10")||CPUIS("K30X256VYY100")
+  (
+    &PFlashSize=0x40000
+    &PSectorSize=0x800
+    &FlexNVMSize=0x40000
+    &DSectorSize=0x800
+    ;&EEPROMSize=0x1000
+    &flashdriver="ftfl2x.bin"
+  )
+  ELSE IF CPUIS("MK30DN512*")||CPUIS("K30N512*")
+  (
+    &PFlashSize=0x80000
+    &PSectorSize=0x800
+    &flashdriver="ftfl2n.bin"
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is not supported by the script"
+    ENDDO
+  )
+
+  ; Program Flash
+  IF &PFlashSize>=0x10000
+    FLASH.Create 1. 0x00000000--0x0000FFFF &PSectorSize TARGET Long
+  IF &PFlashSize>=0x20000
+    FLASH.Create 1. 0x00010000--0x0001FFFF &PSectorSize TARGET Long
+  IF &PFlashSize>=0x40000
+    FLASH.Create 1. 0x00020000--0x0003FFFF &PSectorSize TARGET Long
+  IF &PFlashSize>=0x80000
+    FLASH.Create 2. 0x00040000--0x0007FFFF &PSectorSize TARGET Long
+
+  ; FlexNVM
+  IF &FlexNVMSize>=0x8000
+    FLASH.Create 2. 0x10000000--0x10007FFF &DSectorSize TARGET Long
+  IF &FlexNVMSize>=0x20000
+    FLASH.Create 2. 0x10008000--0x1001FFFF &DSectorSize TARGET Long
+  IF &FlexNVMSize>=0x40000
+    FLASH.Create 2. 0x10020000--0x1003FFFF &DSectorSize TARGET Long
+
+  ; EEPROM
+  ; preliminary not supported
+  ;IF &EEPROMSize>=0x800
+  ;  FLASH.Create 3. 0x14000000--0x140007FF "t.b.d." TARGET Long
+  ;IF &EEPROMSize>=0x1000
+  ;  FLASH.Create 3. 0x14000800--0x14000FFF "t.b.d." TARGET Long
+
+  FLASH.TARGET 0x1FFFF000 0x20000000 &PSectorSize ~~/demo/arm/flash/long/&flashdriver
+
+  RETURN

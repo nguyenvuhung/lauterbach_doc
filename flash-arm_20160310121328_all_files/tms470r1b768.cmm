@@ -1,0 +1,129 @@
+; --------------------------------------------------------------------------------
+; @Title: TMS470 internal flash of TMS470R1B768
+;
+; @Description:
+; Script arguments:
+;
+;   DO tms470r1b768 [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/tms470r1b768 PREPAREONLY
+;
+; Flash size is 768 kMBytes.
+; RAM size is 48 kBytes.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: TMS470R1B768
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: tms470r1b768.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+LOCAL &parameters
+ENTRY %LINE &parameters
+
+LOCAL &param_prepareonly
+&param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+; --------------------------------------------------------------------------------
+; Module configuration 
+;
+
+; Flash control register base address
+&FlashControl_Base=0xffe88000
+; Flash clock setup
+&Frequency="12MHz"
+
+; Flash protection
+&Protection_Keys=0x00003ff0    ; Protection key location in first sector of flash
+
+; JSM - JTAG Security Module
+&JTAG_Security_Keys=0x0      ; JSM is not available
+
+; MSM - Memory Security Module 1
+&Memory_Security_1_Keys=0x0    ; MSM is not available
+
+; RAM configuration
+&RamStart=0x01000000
+&RamSize=0x0000c000
+
+; --------------------------------------------------------------------------------
+; Setup CPU
+
+DO ~~~~/tms470r1-func Setup_CPU TMS470R1B768
+
+; --------------------------------------------------------------------------------
+; MSM - Memory security module handling
+
+DO ~~~~/tms470r1-func Memory_Security_1 0xffffffff 0xffffffff 0xffffffff 0xffffffff
+
+; --------------------------------------------------------------------------------
+; Initialization
+
+&MFBAHR2=&RamStart>>16.
+&MFBALR2=(&RamStart&0x0000fc00)|0x70
+
+;  Bus configuration
+Data.Set 0xFFFFFE00 %Long 0x00000000 0x000000a0            ; MFBAxR0 - 512 kByte flash at 0x00000000
+Data.Set 0xFFFFFE08 %Long 0x00000008 0x00000090            ; MFBAxR1 - 256 kByte flash at 0x00080000
+Data.Set 0xFFFFFE10 %Long &MFBAHR2   &MFBALR2              ; MFBAxR2 - 48 kByte RAM at &RamStart
+Data.Set 0xFFFFFE18 %Long 0x00000000 0x00000000            ; MFBAxR3
+Data.Set 0xFFFFFE04 %Long Data.Long(SD:0xFFFFFE04)|0x100   ; MFBAxR0 - Enable memory map
+
+;  Configure PLL
+Data.Set 0xFFFFFFDC %Long 0x00000007
+
+; --------------------------------------------------------------------------------
+; Flash declaration
+
+FLASH.RESet
+;                              addr       size    core sector
+DO ~~~~/tms470r1-func DeclareSector 0x00000000 0x04000 0x00 0x00
+DO ~~~~/tms470r1-func DeclareSector 0x00004000 0x04000 0x00 0x01
+DO ~~~~/tms470r1-func DeclareSector 0x00008000 0x08000 0x00 0x02
+DO ~~~~/tms470r1-func DeclareSector 0x00010000 0x08000 0x00 0x03
+DO ~~~~/tms470r1-func DeclareSector 0x00018000 0x08000 0x00 0x04
+DO ~~~~/tms470r1-func DeclareSector 0x00020000 0x08000 0x00 0x05
+DO ~~~~/tms470r1-func DeclareSector 0x00028000 0x08000 0x00 0x06
+DO ~~~~/tms470r1-func DeclareSector 0x00030000 0x08000 0x00 0x07
+DO ~~~~/tms470r1-func DeclareSector 0x00038000 0x04000 0x00 0x08
+DO ~~~~/tms470r1-func DeclareSector 0x0003c000 0x04000 0x00 0x09
+DO ~~~~/tms470r1-func DeclareSector 0x00040000 0x10000 0x01 0x00
+DO ~~~~/tms470r1-func DeclareSector 0x00050000 0x10000 0x01 0x01
+DO ~~~~/tms470r1-func DeclareSector 0x00060000 0x10000 0x01 0x02
+DO ~~~~/tms470r1-func DeclareSector 0x00070000 0x10000 0x01 0x03
+
+DO ~~~~/tms470r1-func DeclareAlgorithm &RamStart &RamSize
+
+FLASH.CLocK &Frequency
+
+; --------------------------------------------------------------------------------
+; Unprotect flash
+
+DO ~~~~/tms470r1-func FlashProtection 0xffffffff 0xffffffff 0xffffffff 0xffffffff
+
+; Flash script ends here if called with parameter PREPAREONLY
+IF &param_prepareonly
+  ENDDO PREPAREDONE
+; --------------------------------------------------------------------------------
+; Flash programming example
+;
+FLASH.List
+;
+DIALOG.YESNO "Program flash memory?"
+ENTRY &progflash
+
+IF &progflash 
+(
+  FLASH.Erase ALL
+  FLASH.Program ALL
+  Data.LOAD.auto * /Word
+  FLASH.Program off
+  Data.LOAD.auto * /Word /ComPare
+)
+
+ENDDO
+
+

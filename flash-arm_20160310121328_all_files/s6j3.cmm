@@ -1,0 +1,291 @@
+;@Title: Script for Spansion S6J3xx series internal flash.
+;@Description:
+;  Example for flash declaration of Spansion S6J3xx internal 
+;  flash.
+;
+;   Script arguments:
+;
+;    DO s6j3 [PREPAREONLY] [CPU=<cpu>]
+;
+;       PREPAREONLY only declares flash but does not execute flash programming
+;
+;       CPU=<cpu> selects CPU derivative <cpu>. <cpu> can be CPU name out of the
+;               table listed below. For these derivatives the flash declaration
+;               is done by the script.
+;
+;   For example:
+;
+;     DO ~~/demo/arm/flash/s6j3 PREPAREONLY CPU=S6J311EJAA
+;
+;   List of S6J3 derivatives and their configuration:
+;
+;     CPU-Type          Program Flash
+;                          [Byte]
+;     S6J3118HAA         512kB + 64kB 
+;     S6J3119HAA         768kB + 64kB
+;     S6J311AHAA        1024kB + 64kB
+;     S6J311BJAA        1536kB + 64kB
+;     S6J311CJAA        2048kB + 64kB
+;     S6J311DJAA        3072kB + 64kB
+;     S6J311EJAA        4096kB + 64kB
+;     S6J311BHAA        1536kB + 64kB
+;     S6J311CHAA        2048kB + 64kB
+;     S6J311DHAA        3072kB + 64kB
+;     S6J311EHAA        4096kB + 64kB
+; --------------------------------------------------------------------------------
+;     S6J3128HAA         512kB + 64kB
+;     S6J3129HAA         768kB + 64kB
+;     S6J312AHAA        1024kB + 64kB
+; --------------------------------------------------------------------------------
+;     S6J323CKSA        2048kB + 64kB
+;     S6J323CKUA        2048kB + 64kB
+;     S6J323CLSA        2048kB + 64kB
+;     S6J323CLUA        2048kB + 64kB
+;     S6J323CMSA        2048kB + 64kB
+;     S6J323CMUA        2048kB + 64kB 
+; --------------------------------------------------------------------------------
+;     S6J324CKSA        2048kB + 64kB
+;     S6J324CKUA        2048kB + 64kB
+;     S6J324CLSA        2048kB + 64kB
+;     S6J324CLUA        2048kB + 64kB
+;     S6J324CMSA        2048kB + 64kB
+;     S6J324CMUA        2048kB + 64kB 
+; --------------------------------------------------------------------------------
+;     S6J325CKSA        2048kB + 64kB
+;     S6J325CLSA        2048kB + 64kB
+;     S6J325CKUA        2048kB + 64kB
+;     S6J325CLUA        2048kB + 64kB
+;     S6J325CMSA        2048kB + 64kB
+;     S6J325CMUA        2048kB + 64kB
+; --------------------------------------------------------------------------------
+;     S6J326CK          2048kB + 64kB
+;     S6J326CKSA        2048kB + 64kB
+;     S6J326CKUA        2048kB + 64kB 
+;     S6J326CLSA        2048kB + 64kB
+;     S6J326CLUA        2048kB + 64kB
+;     S6J326CMSA        2048kB + 64kB
+;     S6J326CMUA        2048kB + 64kB
+; --------------------------------------------------------------------------------
+;     S6J327CKSA        2048kB + 64kB
+;     S6J327CKUA        2048kB + 64kB
+;     S6J327CLSA        2048kB + 64kB
+;     S6J327CLUA        2048kB + 64kB
+;     S6J327CMSA        2048kB + 64kB
+;     S6J327CMUA        2048kB + 64kB
+; --------------------------------------------------------------------------------
+;     S6J328CKSA        2048kB + 64kB
+;     S6J328CKUA        2048kB + 64kB
+;     S6J328CLSA        2048kB + 64kB
+;     S6J328CLUA        2048kB + 64kB
+;     S6J328CMSA        2048kB + 64kB
+;     S6J328CMUA        2048kB + 64kB
+; --------------------------------------------------------------------------------
+;     S6J32AAKSB        1024kB + 64kB
+;     S6J32AAKUB        1024kB + 64kB
+;     S6J32AALSB        1024kB + 64kB
+;     S6J32AALUB        1024kB + 64kB
+; --------------------------------------------------------------------------------
+;     S6J32BAKSB        1024kB + 64kB
+;     S6J32BAKUB        1024kB + 64kB
+;     S6J32BALSB        1024kB + 64kB
+;     S6J32BALUB        1024kB + 64kB
+; --------------------------------------------------------------------------------
+;     S6J32CAKSB        1024kB + 64kB
+;     S6J32CAKUB        1024kB + 64kB
+;     S6J32CALSB        1024kB + 64kB
+;     S6J32CALUB        1024kB + 64kB
+; --------------------------------------------------------------------------------
+;     S6J32DAKSB        1024kB + 64kB
+;     S6J32DAKUB        1024kB + 64kB
+;     S6J32DALSB        1024kB + 64kB
+;     S6J32DALUB        1024kB + 64kB
+; --------------------------------------------------------------------------------
+;
+;   BOOTROM Markers 0x019f0000++0x14f can be programmed using FLASH.AUTO command 
+;   with /CENSORSHIP option.
+;
+;   Note:
+;       This script masks the WATCHDOG RESET. Please perform a RESET or POWER-CYCLE
+;       to reenable it.
+;
+;@Author: FLC
+;@Board: SK-Leo
+;@Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: s6j3.cmm 3548 2015-12-18 15:01:55Z fcaron $
+   
+LOCAL &parameters &param_prepareonly &scscu_content
+ENTRY %LINE &parameters
+&param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+&param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+; ------------------------------------------------------------------------------
+; Start debugging
+
+IF SYStem.MODE()<0x5
+(
+  SYStem.RESet
+  
+  IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+      
+  SYStem.Option.ResBreak OFF
+  SYStem.Option.WaitReset 500us
+  SYStem.Up
+)
+
+; Mask Watchdog-RESET
+LOCAL &scscu_content
+&scscu_content=Data.Long(APB:0x000C01B4)|0x00010100
+Data.Set APB:0x000C01A4 %Long 0x5ECACCE5     ; Unlock register write access
+Data.Set APB:0x000C01B4 %Long &scscu_content ; Make user configuration (SCSCU_CNTL_JTAGCON bit and SCSCU_CNTL_WDGRSTMASK)
+Data.Set APB:0x000C01A4 %Long 0xA135331A     ; Lock register write access again
+
+; ------------------------------------------------------------------------------
+; Flash declaration
+LOCAL &FlashDriver &TCFlashSectorSize &WFlashSectorSize
+
+IF (CPUIS("S6J31*")||CPUIS("S6J32*"))
+(
+  &TCFlashSectorSize=0x10000
+  &WFlashSectorSize=0x2000
+)
+ELSE IF CPUIS("S6J33*")
+(
+  &TCFlashSectorSize=0x8000
+  &WFlashSectorSize=0x1000
+  
+)
+ELSE
+(
+  PRINT %ERROR "Sector size CPU type is unknown"
+  ENDDO
+)
+
+FLASH.RESet
+;TC Flash large sectors (AXI address range)
+IF CPUIS("S6J3??8*")
+(
+  ;TC Flash
+  FLASH.Create 2. 0x01A00000--0x01A7FFFF &TCFlashSectorSize TARGET Long
+  ;Work Flash
+  FLASH.Create 4. 0x0E000000--0x0E01BFFF &WFlashSectorSize TARGET Long
+  ;Map TCM address range to AXI address range
+  FLASH.CreateALIAS 0x009F0000--0x00A7FFFF 0x019F0000
+  ; initialize memory to get ECC bits right
+  Data.Set 0x00000000++0x3fff %Long 0x0
+  &FlashDriver="s6j3.bin"
+)
+ELSE IF CPUIS("S6J3??9*")
+(
+  ;TC Flash
+  FLASH.Create 2. 0x01A00000--0x01ABFFFF &TCFlashSectorSize TARGET Long
+  ;Work Flash
+  FLASH.Create 4. 0x0E000000--0x0E01BFFF &WFlashSectorSize TARGET Long
+  ;Map TCM address range to AXI address range
+  FLASH.CreateALIAS 0x009F0000--0x00ABFFFF 0x019F0000
+  ; initialize memory to get ECC bits right
+  Data.Set 0x00000000++0x3fff %Long 0x0
+  &FlashDriver="s6j3.bin"
+)
+ELSE IF CPUIS("S6J3??A*")
+(
+  ;TC Flash
+  FLASH.Create 2. 0x01A00000--0x01AFFFFF &TCFlashSectorSize TARGET Long
+  ;Work Flash
+  FLASH.Create 4. 0x0E000000--0x0E01BFFF &WFlashSectorSize TARGET Long
+  ;Map TCM address range to AXI address range
+  FLASH.CreateALIAS 0x009F0000--0x00AFFFFF 0x019F0000
+  ; initialize memory to get ECC bits right
+  Data.Set 0x00000000++0x3fff %Long 0x0
+  &FlashDriver="s6j3.bin"
+)
+ELSE IF CPUIS("S6J3??B*")
+(
+  ;TC Flash
+  FLASH.Create 2. 0x01A00000--0x01B7FFFF &TCFlashSectorSize TARGET Long
+  ;Work Flash
+  FLASH.Create 4. 0x0E000000--0x0E01BFFF &WFlashSectorSize TARGET Long
+  ;Map TCM address range to AXI address range
+  FLASH.CreateALIAS 0x009F0000--0x00B7FFFF 0x019F0000
+  ; initialize memory to get ECC bits right
+  Data.Set 0x00000000++0x3fff %Long 0x0
+  &FlashDriver="s6j3.bin"
+)
+ELSE IF CPUIS("S6J3??C*")
+(
+  ;TC Flash
+  FLASH.Create 2. 0x01A00000--0x01BFFFFF &TCFlashSectorSize TARGET Long
+  ;Work Flash
+  FLASH.Create 4. 0x0E000000--0x0E01BFFF &WFlashSectorSize TARGET Long
+  ;Map TCM address range to AXI address range
+  FLASH.CreateALIAS 0x009F0000--0x00BFFFFF 0x019F0000
+  ; initialize memory to get ECC bits right
+  Data.Set 0x00000000++0x3fff %Long 0x0
+  &FlashDriver="s6j3.bin"
+)
+ELSE IF CPUIS("S6J3??D*")
+(
+  ;TC Flash
+  FLASH.Create 2. 0x01A00000--0x01BFFFFF &TCFlashSectorSize TARGET Long
+  FLASH.Create 3. 0x01C00000--0x01CFFFFF &TCFlashSectorSize TARGET Long
+  ;Work Flash
+  FLASH.Create 4. 0x0E000000--0x0E01BFFF &WFlashSectorSize TARGET Long
+  ;Map TCM address range to AXI address range
+  FLASH.CreateALIAS 0x009F0000--0x00CFFFFF 0x019F0000
+  ; initialize memory to get ECC bits right
+  Data.Set 0x00000000++0x3fff %Long 0x0
+  &FlashDriver="s6j3.bin"
+)
+ELSE IF CPUIS("S6J3??E*")
+(
+  ;TC Flash
+  FLASH.Create 2. 0x01A00000--0x01BFFFFF &TCFlashSectorSize TARGET Long
+  FLASH.Create 3. 0x01C00000--0x01DFFFFF &TCFlashSectorSize TARGET Long
+  ;Work Flash
+  FLASH.Create 4. 0x0E000000--0x0E01BFFF &WFlashSectorSize TARGET Long
+  ;Map TCM address range to AXI address range
+  FLASH.CreateALIAS 0x009F0000--0x00DFFFFF 0x019F0000
+  ; initialize memory to get ECC bits right
+  Data.Set 0x00000000++0x3fff %Long 0x0
+  &FlashDriver="s6j3.bin"
+)
+ELSE
+(
+  PRINT %ERROR "FLASH size of CPU type is not supported by the script"
+  ENDDO
+)
+;TC Flash small sectors (AXI address range)
+IF ((VERSION.BUILD()<57164.)||(FLASH.TARGET.BUILD(~~/demo/arm/flash/long/&FlashDriver)<3000.)) 
+(
+  FLASH.Create 1. 0x019F0000--0x019F1FFF  NOP Long ; Security Markers   
+)
+ELSE
+(
+  FLASH.Create 1. 0x019F0000--0x019F1FFF  TARGET Long /CENSORSHIP 0x19F0000--0x19F014F ; Security Markers   
+)
+FLASH.Create 1. 0x019F2000--0x019FFFFF  0x2000 TARGET Long 
+
+FLASH.TARGET 0x1000 0x2000 0x1000 ~~/demo/arm/flash/long/&FlashDriver
+
+;Flash script ends here if called with parameter PREPAREONLY
+IF &param_prepareonly
+  ENDDO PREPAREDONE
+
+; ------------------------------------------------------------------------------
+; Flash programming example
+
+DIALOG.YESNO "Program flash memory?"
+LOCAL &progflash
+ENTRY &progflash
+IF &progflash 
+(
+  FLASH.ReProgram.ALL /Erase
+  Data.LOAD.auto *
+  FLASH.ReProgram.off
+)
+
+ENDDO
+  
+  
+

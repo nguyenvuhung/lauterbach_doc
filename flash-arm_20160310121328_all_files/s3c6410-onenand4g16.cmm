@@ -1,0 +1,106 @@
+; --------------------------------------------------------------------------------
+; @Title: S3C64xx OneNAND FLASH Programming Script
+; @Description:
+; OneNAND FLASH(SAMSUNG, KBZ00900PM) is connected to the SROMC Bank2 (0x20000000)
+;
+; S(D)RAM            : 0x50000000
+; OneNAND BaseAddr : 0x20000000
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ARM1176JZF-S
+; @Keywords: SAMSUNG KBZ00900PM NAND
+; --------------------------------------------------------------------------------
+; $Id: s3c6410-onenand4g16.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  SYStem.CPU ARM1176JZF
+  SYStem.JtagClock RTCK
+  SYStem.Option ResBreak OFF
+  SYStem.CONFIG.IRPRE 4
+  SYStem.CONFIG.DRPRE 1
+  SYStem.CONFIG.ETBIRPOST 5
+  SYStem.CONFIG.ETBDRPOST 1
+
+  TrOnchip.Set DABORT OFF
+  TrOnchip.Set PABORT OFF
+  TrOnchip.Set UNDEF OFF
+
+  SYStem.Mode.Attach
+  WAIT 1.5s
+
+IF RUN()
+Break.direct
+
+  PER.Set.simple  C15:0x1        %Long  0x45107C   ; MMU disable
+  Data.Set ASD:0x70100140 %Long  0x1        ; TRANS_SPARE0, to access spare area
+
+  Break.RESet
+
+  FLASHFILE.RESet
+
+  FLASHFILE.RESet
+
+	//FLASHFILE.CONFIG <OneNAND Base Address>  ,, ,,
+  FLASHFILE.CONFIG    0x20000000  ,, ,,   
+  
+  //FLASHFILE.TARGET <Code_range>      <Data_range>        <Algorithm file>
+  FLASHFILE.TARGET 0x50000000++0x1FFF  0x50002000++0x1FFF  ~~/demo/arm/flash/word/onenand4g16_s3c6410.bin
+
+  //Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+  //Open the OneNAND Dump Windows - Main Area
+  FLASHFILE.DUMP 0x0
+
+  //Erase FLASH
+  ;FLASHFILE.ERASE 0x0--0x3FFFFF  /EraseBadBlocks
+
+  //Program FLASH
+  ;FLASHFILE.LOAD * 0x0 
+  ;FLASHFILE.LOAD * 0x0 /ComPare
+
+  //Save FLASH
+  ;FLASHFILE.SAVE  dump.bin 0x0--0x3FFFFF
+
+ENDDO
+
+
+onenand_businit:
+  Data.Set ASD:0x70100000 %Long 0xC7E2
+  Data.Set ASD:0x70100010 %Long 0x10
+  Data.Set ASD:0x70100020 %Long 0x0
+  Data.Set ASD:0x70100030 %Long 0xC90
+  Data.Set ASD:0x70100040 %Long 0x3FFF
+  Data.Set ASD:0x70100050 %Long 0x0
+  Data.Set ASD:0x70100060 %Long 0x0
+//Data.Set ASD:0x70100070 %LONG 0xEC
+//Data.Set ASD:0x70100080 %LONG 0x58
+//Data.Set ASD:0x70100090 %LONG 0x800
+//Data.Set ASD:0x701000A0 %LONG 0x200
+//Data.Set ASD:0x701000B0 %LONG 0x201
+//Data.Set ASD:0x701000C0 %LONG 0x0
+  Data.Set ASD:0x701000D0 %Long 0xB
+  Data.Set ASD:0x701000E0 %Long 0x6
+  Data.Set ASD:0x701000F0 %Long 0x2
+//Data.Set ASD:0x70100100 %LONG 0x2
+  Data.Set ASD:0x70100110 %Long 0x2
+  Data.Set ASD:0x70100120 %Long 0x3
+//Data.Set ASD:0x70100130 %LONG 0x3
+  Data.Set ASD:0x70100140 %Long 0x1
+  Data.Set ASD:0x70100160 %Long 0x1
+//Data.Set ASD:0x70100170 %LONG 0x0
+//Data.Set ASD:0x70100180 %LONG 0x0
+//Data.Set ASD:0x70100190 %LONG 0x4
+  Data.Set ASD:0x701001A0 %Long 0x0
+  Data.Set ASD:0x701001B0 %Long 0x1F4
+  Data.Set ASD:0x701001C0 %Long 0x7
+  Data.Set ASD:0x701001D0 %Long 0x0
+//Data.Set ASD:0x701001E0 %LONG 0x0
+//Data.Set ASD:0x701001F0 %LONG 0x2C
+  Data.Set ASD:0x70100300 %Long 0x1
+//Data.Set ASD:0x70100310 %LONG 0x0
+
+RETURN
+
+
+

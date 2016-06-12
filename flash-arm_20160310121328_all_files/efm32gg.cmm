@@ -1,0 +1,150 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of EnergyMicro EFM32 Giant Gecko internal flash.
+;
+; @Description: 
+; Script arguments:
+;
+;   DO efm32gg [PREPAREONLY] [CPU=<cpu>]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/efm32gg CPU=EFM32GG230F PREPAREONLY
+;
+; List of EFM32 Giant Gecko derivatives and their configuration:
+;
+;   CPU                              FlashSize  RamSize
+;   Derivative         CpuType          [kB]      [kB]
+; --------------------------------------------------------------------------------
+;   EFM32GG230F512     EFM32GG230F      512.      128.
+;   EFM32GG230F1024    EFM32GG230F     1024.      128.
+;   EFM32GG232F512     EFM32GG232F      512.      128.
+;   EFM32GG232F1024    EFM32GG232F     1024.      128.
+;   EFM32GG280F512     EFM32GG280F      512.      128.
+;   EFM32GG280F1024    EFM32GG280F     1024.      128.
+;   EFM32GG290F512     EFM32GG290F      512.      128.
+;   EFM32GG290F1024    EFM32GG290F     1024.      128.
+;   EFM32GG295F512     EFM32GG295F      512.      128.
+;   EFM32GG295F1024    EFM32GG295F     1024.      128.
+;   EFM32GG330F512     EFM32GG330F      512.      128.
+;   EFM32GG330F1024    EFM32GG330F     1024.      128.
+;   EFM32GG332F512     EFM32GG332F      512.      128.
+;   EFM32GG332F1024    EFM32GG332F     1024.      128.
+;   EFM32GG380F512     EFM32GG380F      512.      128.
+;   EFM32GG380F1024    EFM32GG380F     1024.      128.
+;   EFM32GG390F512     EFM32GG390F      512.      128.
+;   EFM32GG390F1024    EFM32GG390F     1024.      128.
+;   EFM32GG395F512     EFM32GG395F      512.      128.
+;   EFM32GG395F1024    EFM32GG395F     1024.      128.
+;   EFM32GG840F512     EFM32GG840F      512.      128.
+;   EFM32GG840F1024    EFM32GG840F     1024.      128.
+;   EFM32GG842F512     EFM32GG842F      512.      128.
+;   EFM32GG842F1024    EFM32GG842F     1024.      128.
+;   EFM32GG880F512     EFM32GG880F      512.      128.
+;   EFM32GG880F1024    EFM32GG880F     1024.      128.
+;   EFM32GG890F512     EFM32GG890F      512.      128.
+;   EFM32GG890F1024    EFM32GG890F     1024.      128.
+;   EFM32GG895F512     EFM32GG895F      512.      128.
+;   EFM32GG895F1024    EFM32GG895F     1024.      128.
+;   EFM32GG940F512     EFM32GG940F      512.      128.
+;   EFM32GG940F1024    EFM32GG940F     1024.      128.
+;   EFM32GG942F512     EFM32GG942F      512.      128.
+;   EFM32GG942F1024    EFM32GG942F     1024.      128.
+;   EFM32GG980F512     EFM32GG980F      512.      128.
+;   EFM32GG980F1024    EFM32GG980F     1024.      128.
+;   EFM32GG990F512     EFM32GG990F      512.      128.
+;   EFM32GG990F1024    EFM32GG990F     1024.      128.
+;   EFM32GG995F512     EFM32GG995F      512.      128.
+;   EFM32GG995F1024    EFM32GG995F     1024.      128.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: EFM32GG*
+; --------------------------------------------------------------------------------
+; $Rev: 3503 $
+; $Id: efm32gg.cmm 3503 2015-11-20 15:57:45Z fcaron $
+
+  LOCAL &parameters &param_prepareonly
+  ENTRY %LINE &parameters
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &param_cpu
+  &param_cpu=STRing.MID(STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=",""),0.,11.)
+
+  LOCAL &FlashSize
+
+  ; ------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(EFM32GG*)
+      SYStem.CPU EFM32GG*
+
+    SYStem.Option.ResBreak OFF
+    IF CABLE.TWOWIRE()
+    (
+      SYStem.CONFIG.DEBUGPORTTYPE SWD
+    )
+    ELSE
+    (
+      PRINT %ERROR "Serial Wire Debug (SWD) not supported by debug cable"
+      ENDDO
+    )
+    SYStem.JtagClock 500Khz
+
+    SYStem.Up
+
+    ; After SYStem.Up the JTAG clock can be set to higher frequency.
+    SYStem.JtagClock 10Mhz
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  ; Detect flash size in kByte via device information page
+  &FlashSize=Data.Word(SD:0x0FE081F8)
+  PRINT "Detected flash size is "+FORMAT.Decimal(1.,&FlashSize)+"kB"
+  IF &FlashSize==0x00
+  (
+    &FlashSize=512.
+  )
+
+  FLASH.RESet
+
+  IF &FlashSize>=512.
+    FLASH.Create 1. 0x000000--0x07FFFF 0x1000 TARGET Long
+  IF &FlashSize>=1024.
+    FLASH.Create 1. 0x080000--0x0FFFFF 0x1000 TARGET Long
+
+  FLASH.TARGET 0x20000000 0x20001000 0x1000 ~~/demo/arm/flash/long/efm32.bin
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO

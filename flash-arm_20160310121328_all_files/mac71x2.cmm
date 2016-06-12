@@ -1,0 +1,109 @@
+; --------------------------------------------------------------------------------
+; @Title: Script for flashing Motorola MAC71x2 internal flash
+;
+; @Description: 
+; mac71x2 [unsecure | unlock]
+;
+; Motorola MAC71x2 internal flash. Core is ARM7TDMI-S.
+; - MAC7112
+; - MAC7122
+; - MAC7142
+;
+; 256 kByte Program Flash address is depending on Operation mode.
+;   Expanded:            0x20000000--0x2003ffff
+;   Single Chip:         0x00000000--0x0003ffff
+;   Program interface:   0xfc100000--0xfc13ffff
+; 32 kByte Data Flash at 0xfe000000--0xfe007fff
+; 16 kByte RAM at        0x40000000--0x40003fff
+;
+; Optional argument unsecure is used to a unsecure a secured chip.
+;
+; Optional argument unlock is used to a reset LOCK bit of CFMMCR register.
+;
+; HINTS:
+;   Security word only can be written by a explicit data set to that 
+;   location, for example "Data.Set 0xfc100414 %Long 0x80000000".
+;   All other operations do not allow securing the device. The two security 
+;   bits are forced to unsecure value.
+;
+;   Program and data flash have same unit number in flash declaration because 
+;   mass erase does erase program and data flash.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: MAC71?2
+; --------------------------------------------------------------------------------
+; $Id: mac71x2.cmm 2881 2014-07-07 10:35:48Z kjmal $
+; wrd - 20.12.2004
+;
+
+ENTRY &arg
+LOCAL &arg
+
+; Select program flash base address for programming, one of above.
+&progflashbase=0xfc100000
+
+; Set RAM address to internal or external RAM
+&rambase=0x40000000
+
+; --------------------------------------------------------------------------------
+; Setup CPU
+SYStem.JtagClock 1.25MHz 
+SYStem.CPU mac71xx 
+SYStem.Option BigEndian ON
+
+; Ensure enabling runtime measurement to adjust flash programming timing.
+IF POWERNEXUS()
+(
+  SYStem.Option BTM ON
+)
+
+; --------------------------------------------------------------------------------
+; Flash declaration
+;
+FLASH.RESet
+; Program Flash declaration
+FLASH.Create 1. &progflashbase++0x3ffff 0x1000 TARGET Long 0x00004001
+; Data Flash declaration
+FLASH.Create 1. 0xfe000000--0xfe007fff 0x400 TARGET Word 0x00004001
+FLASH.TARGET &rambase &rambase+0x2000 0x1000 ~~/demo/arm/flash/long_be/cfm.bin
+
+; --------------------------------------------------------------------------------
+; Unsecure chip by erasing flash and programming security word to 
+; unsecure value.
+;
+IF "&arg"=="unsecure"
+(
+  ; Setup PC fetch location to internal RAM for the case flash is not 
+  ; secured but first flash page is accidental set to data access only.
+  SYStem.Option PC &rambase
+  
+  ; Erase flash and unsecure device by JTAG sequence
+  ; The argument to diag 3500 command is decimal value of fSYS clock 
+  ; frequency at time of reset. The default value of 8000000. (8MHz) can
+  ; be omitted. 
+  SYStem.Down
+  DIAG 3500 8000000.
+  SYStem.Up
+
+  ; Watchdog off
+  Data.Set SD:0xFC040016 %BE %Word 0x0
+  
+  ; Program security word to unsecure value
+  FLASH.Program ALL
+  Data.Set &progflashbase+0x414 %Long Data.Long(ASD:&progflashbase+0x414)&0xfffffffe
+  FLASH.Program off
+  
+  SYStem.Down
+)
+
+; --------------------------------------------------------------------------------
+; Start debugging
+
+SYStem.Up
+
+; Watchdog off
+Data.Set SD:0xFC040016 %BE %Word 0x0
+
+
+ENDDO

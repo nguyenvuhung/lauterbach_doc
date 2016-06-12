@@ -1,0 +1,182 @@
+; --------------------------------------------------------------------------------
+; @Title: Generic script for Fujitsu MB9B500, MB9B500A and MB9B500B series internal flash
+;
+; @Description: 
+; Example for flash declaration of Fujitsu MB9B500, MB9B500A and MB9B500B
+; series internal flash.
+; Script arguments:
+;
+;   DO mb9b500 [PREPAREONLY] [CPU=<cpu>]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/mb9b500 CPU=MB9BF506N PREPAREONLY
+;
+; List of MB9B500, MB9B500A and MB9B500B series derivatives and their
+; configuration:
+;
+;   CPU-Type   Derivatives   FlashSize   RamSize
+;                               [kB]       [kB]
+; --------------------------------------------------------------------------------
+;   MB9BF500N  MB9BF500N        256.       32.
+;   MB9BF500R  MB9BF500R        256.       32.
+;   MB9BF504N  MB9BF504N        256.       32.
+;              MB9BF504NA
+;              MB9BF504NB
+;   MB9BF504R  MB9BF504R        256.       32.
+;              MB9BF504RA
+;              MB9BF504RB
+;   MB9BF505N  MB9BF505N        384.       48.
+;              MB9BF505NA
+;              MB9BF505NB
+;   MB9BF505R  MB9BF505R        384.       48.
+;              MB9BF505RA
+;              MB9BF505RB
+;   MB9BF506N  MB9BF506N        512.       64.
+;              MB9BF506NA
+;              MB9BF506NB
+;   MB9BF506R  MB9BF506R        512.       64.
+;              MB9BF506RA
+;              MB9BF506RB
+; @Chip: MB9BF50*
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 2903 $
+; $Id: mb9b500.cmm 2903 2014-07-16 11:19:46Z kjmal $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &param_cpu
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  ; ------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    Break.RESet
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(MB9BF50*)
+      SYStem.CPU MB9BF50*
+
+    IF CABLE.TWOWIRE()
+      SYStem.CONFIG.DEBUGPORTTYPE SWD
+    ELSE
+      SYStem.CONFIG.DEBUGPORTTYPE JTAG
+
+    SYStem.Option.ResBreak OFF
+    SYStem.Up
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    ; Disable watchdogs
+    GOSUB disableWatchdog
+
+    ; Program flash
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &FlashSize
+
+  IF (CPUIS("MB9BF500?")||CPUIS("MB9BF504?"))
+  (
+    &FlashSize=0x40000
+  )
+  ELSE IF CPUIS("MB9BF505?")
+  (
+    &FlashSize=0x60000
+  )
+  ELSE IF CPUIS("MB9BF506?")
+  (
+    &FlashSize=0x80000
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  IF &FlashSize>=0x40000
+  (
+    FLASH.Create 1. 0x000000--0x007FFF  0x4000 TARGET Word
+    FLASH.Create 1. 0x008000--0x01FFFF 0x18000 TARGET Word
+    FLASH.Create 1. 0x020000--0x03FFFF 0x20000 TARGET Word
+  )
+  IF &FlashSize>=0x60000
+  (
+    FLASH.Create 1. 0x040000--0x05FFFF 0x20000 TARGET Word
+  )
+  IF &FlashSize>=0x80000
+  (
+    FLASH.Create 1. 0x060000--0x07FFFF 0x20000 TARGET Word
+  )
+
+  FLASH.TARGET 0x1FFFF000 0x20000000 0x2000 ~~/demo/arm/flash/word/fm3t0.bin
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Disable hardware and software watchdog 
+
+disableWatchdog:
+
+  ; Hardware watchdog
+  IF (Data.Byte(SD:0x40011008)&0x01)==0x01
+  (
+    Data.Set SD:0x40011C00 %Long 0x1ACCE551
+    Data.Set SD:0x40011C00 %Long 0xE5331AAE
+    Data.Set SD:0x40011008 %Byte 0x00
+  )
+
+  ; Software watchdog
+  IF (Data.Byte(SD:0x40012008)&0x01)==0x01
+  (
+    Data.Set SD:0x40012C00 %Long 0x1ACCE551
+    Data.Set SD:0x40012008 %Byte 0x00
+    Data.Set SD:0x40012C00 %Long 0x00000000
+  )
+
+  RETURN

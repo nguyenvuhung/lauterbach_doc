@@ -1,0 +1,134 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Toshiba TMPM37x internal flash. 
+;
+; @Description:
+; Script arguments:
+;
+;   DO tmpm37x [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/tmpm37x PREPAREONLY
+;
+; List of TMPM37x derivatives and their configuration:
+;
+;   CPU-Type        Flash size   SRAM size   Page size
+;                     [Byte]       [Byte]      [Byte]
+; --------------------------------------------------------------------------------
+;   TMPM370FY        0x40000       0x2800      0x100
+;   TMPM372FW        0x20000       0x1800
+;   TMPM373FW        0x20000       0x1800
+;   TMPM374FW        0x20000       0x1800
+;
+; The internal flash is located at 0x00000000 (User boot mode)
+;                               or 0x3F800000 (Single boot mode)
+; The internal RAM is located at   0x20000000
+; The BOOTROM is located at        0x00000000 (Single boot mode)
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: TMPM37*
+; --------------------------------------------------------------------------------
+; $Rev: 2903 $
+; $Id: tmpm37x.cmm 2903 2014-07-16 11:19:46Z kjmal $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &flashbase
+  LOCAL &flashsize
+  LOCAL &RAMsize
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU TMPM370FY
+    SYStem.Option EnReset OFF
+    SYStem.Up
+  )
+
+  ; Disable watchdog
+  Data.Set 0x40040000 %Long 0x00000000   ; disable timer
+  Data.Set 0x40040004 %Long 0x000000B1   ; write key
+
+  ; Setup flash base address depending on boot mode
+  &flashbase=0x00000000
+
+  ; ------------------------------------------------------------------------------
+  ; Setup flash configuration depending on selected CPU.
+
+  IF ((CPU()=="TMPM370FY"))
+  (
+    &flashsize=0x40000
+    &RAMsize=0x2800
+  )
+  ELSE IF ((CPU()=="TMPM372FW")||(CPU()=="TMPM373FW")||(CPU()=="TMPM374FW"))
+  (
+    &flashsize=0x20000
+    &RAMsize=0x1800
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+; --------------------------------------------------------------------------------
+; Flash declaration
+
+  FLASH.RESet
+
+  IF &flashsize>=0x20000
+  (
+    FLASH.Create 1. (&flashbase+0x00000)++0x07fff 0x04000 TARGET Long
+    FLASH.Create 1. (&flashbase+0x08000)++0x07fff 0x08000 TARGET Long
+    FLASH.Create 1. (&flashbase+0x10000)++0x0ffff 0x10000 TARGET Long
+  )
+  IF &flashsize>=0x40000
+  (
+    FLASH.Create 1. (&flashbase+0x20000)++0x1ffff 0x10000 TARGET Long
+  )
+
+  IF &RAMsize>=0x2800
+  (
+    FLASH.TARGET 0x20000400 0x20000800 0x1c00 ~~/demo/arm/flash/long/tmpm370.bin
+  )
+  ELSE IF &RAMsize>=01800
+  (
+    FLASH.TARGET 0x20000400 0x20000800 0x0c00 ~~/demo/arm/flash/long/tmpm370.bin
+  )
+  ELSE
+  (
+    PRINT %ERROR "RAM size is not supported by the script"
+    ENDDO
+  )
+  
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO

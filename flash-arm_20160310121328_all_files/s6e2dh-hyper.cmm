@@ -1,0 +1,63 @@
+; --------------------------------------------------------------------------------
+; @Title: S6E2DH (FM4) Serial FLASH Programming Script
+; @Description:
+; Hyper FLASH( spansion, KL512S) is connected the GDC_RPC_HYPERBUS CS0
+;
+; SRAM: 0x1FFF8000
+; Hyper flash memory mapped address: 0xC0000000
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Keywords: S6E2DH5J Hyper flash
+; --------------------------------------------------------------------------------
+; $Id: s6e2dh-hyper.cmm 3535 2015-12-15 16:27:01Z fcaron $
+
+  RESet
+  SYStem.CPU S6E2DH5J
+  SYStem.Option.ResBreak OFF
+  SYStem.Mode Up
+ 
+//disable Watchdog
+  Data.Set A:0x40011008 %LE %Long 0x0
+  Data.Set A:0x40012008 %LE %Long 0x0
+
+  GOSUB Init_HyperBus
+
+  Break.RESet
+
+  FLASH.RESet
+  FLASH.CFI 0xC0000000 Word /TARGET 0x1FFF8000 AHB:0x1FFF9000 0x1000 /DualPort
+  
+ENDDO
+
+
+Init_HyperBus:
+
+//GDC Prescaler
+Data.Set A:0x4003D104 %LE %Long 0x1   ; GPCR1
+Data.Set A:0x4003D110 %LE %Long 0x63  ; GPCR4
+Data.Set A:0x4003D100 %LE %Long 0x1   ; GCCR
+
+
+//GDC hyperbus clock
+Data.Set A:0xD0A00088 %LE %Long 0x0   ; RPCC_ClcokDivider
+Data.Set A:0xD0A0008C %LE %Long 0x0   ; RPCC_DomainControl, clk disable
+Data.Set A:0xD0A00088 %LE %Long 0x1   ; RPCC_ClcokDivider
+Data.Set A:0xD0A0008C %LE %Long 0x1   ; RPCC_DomainControl, clk enable
+
+
+//GPIO muxing
+Data.Set A:0x4006F00C %Long 0x7E0  ; FM4_GPIO->PFR3 
+Data.Set A:0x4006F01C %Long 0xFFF  ; FM4_GPIO->PFR7 
+Data.Set A:0x4006F66C %Long 0x55555555  ; FM4_GPIO->EPFR27  
+
+//GDC_hyperbus interface
+Data.Set A:0xD0A05010 %Long 0xC0000000  ; CS0_BASE
+Data.Set A:0xD0A05014 %Long 0xC8000000  ; CS1_BASE
+Data.Set A:0xD0A05020 %Long 0x3   ;CS0_MEMCONFIG
+Data.Set A:0xD0A05024 %Long 0x13  ;CS1_MEMCONFIG
+Data.Set A:0xD0A05030 %Long 0x00111101  ;CS0_TIMING
+Data.Set A:0xD0A05034 %Long 0x00111101  ;CS1_TIMING
+Data.Set A:0xD0A00020 %Long 0x0   ;CLK_DIV
+
+RETURN

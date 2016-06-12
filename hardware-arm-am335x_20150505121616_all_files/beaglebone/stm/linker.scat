@@ -1,0 +1,24 @@
+RAM 0x402F0400 0x10000
+{
+	.text +0
+	{
+		crt0.* (+CODE,+ENTRY)
+		* (+CODE)
+	}
+	.rodata +0
+	{
+		* (+CONST)
+	}
+	.data +0
+	{
+		* (+DATA)
+	}
+	.bss +0
+	{
+		* (+BSS)
+	}
+	.stack +0 EMPTY 0x1000
+	{
+	}
+}
+

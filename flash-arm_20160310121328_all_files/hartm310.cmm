@@ -1,0 +1,97 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Samsung HART-M310 internal flash 
+;
+; @Description: 
+; Script arguments:
+;
+;   DO hartm310 [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/hartm310 PREPAREONLY
+;
+; Memory ranges:
+;
+;   256 kByte code flash area at 0x00000000--0x0003ffff
+;   512 Byte  code flash INFO at 0x00100000--0x001001ff
+;    32 kByte data flash area at 0x0f000000--0x0f007fff
+;   256 Byte  data flash INFO at 0x0f100000--0x001000ff
+;    24 kByte internal RAM at    0x20000000--0x20005fff
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: 
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: hartm310.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  
+  ; --------------------------------------------------------------------------------
+  ; CPU setup
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    ON ERROR GOSUB ErrorSystemCPU
+    SYStem.CPU HART-M310
+    ON ERROR
+    SYStem.Option.ResBreak OFF
+    SYStem.Option.WaitReset 100.ms
+
+    SYStem.Up
+  )
+
+  ; Setup flash wait states to 3 wait cycle for code and data flash
+  ;Data.Set 0x40000100 %Word 0x0202
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+
+  ; Program flash
+  FLASH.Create 1. 0x00000000--0x0003ffff 0x1000 TARGET Long
+  ; Data flash
+  FLASH.Create 2. 0x0f000000--0x0f007fff 0x1000 TARGET Byte
+
+  FLASH.TARGET 0x20001000 0x20002000 0x1000 ~~/demo/arm/flash/byte/hartm310.bin
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+  
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; CPU selection for the case selection HART-M310 is not supported by 
+; Trace32 software version.
+
+ErrorSystemCPU:
+  SYStem.CPU CortexM3
+  RETURN

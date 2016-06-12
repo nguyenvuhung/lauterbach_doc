@@ -1,0 +1,99 @@
+; @Title: Menu File for Debugging u-boot on ARM Targets
+; @Description: -
+; @Keywords: u-boot uboot
+; @Author: KJM
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; $Id: u-boot.men 8974 2015-12-24 10:45:59Z kjmal $  
+
+ADD
+MENU
+(
+  POPUP "u-boot"
+  (
+    MENUITEM "[:btnok] Check Version"
+    (
+      LOCAL &version &str
+      &version=Var.STRing(version_string)
+      &str=STRing.MID("&version",0,6)
+      PRINT "&version"
+      IF "&str"!="U-Boot"
+      (
+         DIALOG.OK "Error checking U-Boot version!"
+      )
+      ELSE
+      (
+        DIALOG.OK "Version check passed with no errors. U-Boot version: ""&version"""
+      )
+    )
+    MENUITEM "[:dump] Download u-boot"   
+    (
+      &filepath="u-boot"
+      IF !OS.FILE("&filepath")
+        &filepath=sYmbol.SEARCHFILE("&filepath")
+      IF !OS.FILE("&filepath")
+      (
+         LOCAL &file &spath
+         &file=OS.FILE.NAME("u-boot")
+         WinPOS ,,,,,, filebox normal "Searching u-boot"
+         DIALOG.File "*&file*"
+         ENTRY %LINE &filepath
+         IF "&filepath"==""
+           ENDDO
+         &spath=OS.FILE.PATH("&filepath")
+         sYmbol.SourcePATH.Set "&spath"
+      )
+    
+      DO "~~/demo/arm64/kernel/uboot/load_uboot.cmm" "&filepath"
+    )
+    MENUITEM "[:symbols] Re-load symbols"
+    (
+      &filepath="u-boot"
+      IF !OS.FILE("&filepath")
+        &filepath=sYmbol.SEARCHFILE("&filepath")
+      IF !OS.FILE("&filepath")
+      (
+        LOCAL &file &spath
+        &file=OS.FILE.NAME("u-boot")
+        WinPOS ,,,,,, filebox normal "Searching u-boot"
+        DIALOG.File "*&file*"
+        ENTRY %LINE &filepath
+        IF "&filepath"==""
+          ENDDO
+        &spath=OS.FILE.PATH("&filepath")
+        sYmbol.SourcePATH.Set "&spath"
+      )
+      
+      DO "~~/demo/arm64/kernel/uboot/load_uboot_symbols_reloc.cmm" "&filepath"
+    )
+    MENUITEM "[:term] printenv"
+    (
+        IF STATE.RUN()
+          Break
+        IF sYmbol.EXIST(env_htab)
+        (
+          AREA.CREATE PRINTENV
+          AREA PRINTENV
+          AREA.CLEAR PRINTENV
+          LOCAL &i &htab_size
+          &i=1
+          &htab_size=Var.Value(env_htab.size)
+          RePeaT
+          (
+            LOCAL &key &data
+            &key=Var.Value(env_htab.table[&i].entry.key)
+            &data=Var.Value(env_htab.table[&i].entry.data)
+            IF &key!=0&&Var.Value(env_htab.table[&i].used)!=&i
+                goto printenv_fail
+            IF (&key!=0)&&(&data!=0)
+            (
+              PRINT %ATTR 8. Data.STRing(D:&key) %ATTR 0. "=" Data.STRing(D:&data)
+            )
+            &i=&i+1
+          )
+          WHILE &i<=&htab_size
+printenv_fail:
+          AREA.Select A000
+        )
+    )
+  )
+)

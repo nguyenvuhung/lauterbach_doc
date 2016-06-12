@@ -1,0 +1,102 @@
+; --------------------------------------------------------------------------------
+; @Title:  Vayu EVM CPU TI Jacinto6 QSPI FLASH Program script
+;
+; @Description:
+; SRAM: 0x40300000
+; QSPI Base Register Address : 0x4B300000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: DRA74x
+; @Board: Vayu EVM
+; @Keywords: DRA7xx (Jacinto 6) QSPI
+; --------------------------------------------------------------------------------
+; $Id: dra7xx-spi.cmm 3432 2015-10-05 14:20:17Z jjeong $
+
+&QSPI_BASE=0x4B300000
+
+LOCAL &arg1
+ENTRY &arg1
+&arg1=STRing.UPpeR("&arg1")  // for example "PREPAREONLY"
+
+RESet
+SYStem.Down
+SYStem.CPU DRA74x                 ; J6
+SYStem.JtagClock RTCK             ; use adaptive clock as some higher fixed freq's fail
+SYStem.MemAccess DAP              ; allow dap access
+CORE.ASSIGN 1 
+SYStem.Up
+
+//disable MMU & cache
+PER.Set.simple C15:0x1 %Long Data.Long(C15:0x1)&~0x1005
+
+//watchdog disable
+Data.Set 0x4AE14048 %Long 0x0xAAAA
+Data.Set 0x4AE14048 %Long 0x0x5555
+
+Data.Set A:&QSPI_BASE+0x40 %LE %Long 0x00000009 
+Data.Set A:&QSPI_BASE+0x40 %LE %Long 0x80000009  ; QSPI_SPI_CLOCK_CNTRL_REG, clk div [11:0]
+
+//[23:16] write command
+//[13:12] read type
+//[11:10] Number of Dummy bytes
+//[9:8] Number of Bytes n-1
+//[7:0] Read CMD
+Data.Set A:&QSPI_BASE+0x54 %LE %Long 0x20203  ; QSPI_SPI_SETUP0_REG
+
+GOSUB READ_ID_TEST
+
+programFlash:
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.CONFIG  <QuadSPI Base>  0x0 0x0 <cs>
+  FLASHFILE.CONFIG  &QSPI_BASE      0x0 0x0  0x0
+
+//FLASHFILE.TARGET <Code_range>        <Data_range>          <Algorithm file>
+  FLASHFILE.TARGET 0x40300000++0x1FFF  EAHB:0x40302000++0x1FFF    ~~/demo/arm/flash/byte/spi64_tiqspi.bin /STACKSIZE 0x200 /DUALPORT /KEEP
+
+  FLASHFILE.GETID
+
+//End of the test prepareonly
+IF "&arg1"=="PREPAREONLY"
+ENDDO
+
+  FLASHFILE.DUMP 0x0
+
+  ;FLASHFILE.unlock 0x0--0xFFFFFF
+  ;FLASHFILE.erase 0x0--0xFFFFF
+  ;FLASHFILE.load * 0x0
+  ;FLASHFILE.load * 0x0  /ComPare
+
+ENDDO
+
+READ_ID_TEST:
+&QSPI_CMD_REG=&QSPI_BASE+0x48
+&QSPI_DAT_REG=&QSPI_BASE+0x50
+&QSPI_STAT_REG=&QSPI_BASE+0x4C
+
+&RE=(0x1<<16.)  ; read
+&WR=(0x2<<16.)  ; write
+&END=(0x4<<16.) ;
+&cmd_reg_def=0x0|(0x7<<19.)|(0x0<<28.)|0xFFF ;
+
+Data.Set A:&QSPI_DAT_REG %Long 0x9F              ;write data reg
+Data.Set A:&QSPI_CMD_REG %Long (&cmd_reg_def|&WR);cmd reg
+//print "status 0x" data.long(A:&QSPI_STAT_REG)  ;read status reg
+
+Data.Set A:&QSPI_CMD_REG %Long (&cmd_reg_def|&RE)                   ;cmd reg
+PRINT "read 1st 0x" Data.Long(A:&QSPI_DAT_REG)  " (manufacture ID)" ; read data reg
+
+Data.Set A:&QSPI_CMD_REG %Long (&cmd_reg_def|&RE)             ;cmd reg
+PRINT "read 2nd 0x" Data.Long(A:&QSPI_DAT_REG) " (device ID)" ; read data reg
+
+Data.Set A:&QSPI_CMD_REG %Long (&cmd_reg_def|&RE);cmd reg
+PRINT "read 3rd 0x" Data.Long(A:&QSPI_DAT_REG)  ; read data reg
+
+Data.Set A:&QSPI_BASE+0x48 %Long (&cmd_reg_def|&END) 
+WAIT 100.ms
+
+RETURN

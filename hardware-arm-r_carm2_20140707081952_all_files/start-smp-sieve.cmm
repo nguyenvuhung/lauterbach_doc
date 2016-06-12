@@ -1,0 +1,74 @@
+; --------------------------------------------------------------------------------
+; @Title: Start-up Script file for R-CARM2 on KOELSCH board (Cortex-A15)
+; @Description: 
+;   Demonstrates debugging of the four Cortex-A15 of the R-CARM2 using a simple 
+;   sieve demo.
+;   The first core is used to power and deassert reset of the other core.
+;   As the boot-code is not thread save we stop all cores at reset via CTI
+;   and load our sieve demo into SRAM.
+;   Prerequisites:
+;    * JTAG is connected
+;    * Renesas bootloader is installed on the board
+; @Keywords: Cortex-A15, R-CARM2, RCARM2
+; @Author: AME
+; @Board: KOELSCH
+; @Chip: R8A7791
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: start-smp-sieve.cmm 7350 2014-07-07 06:19:52Z amerkle $
+
+; System Settings - use only first core
+  RESet
+  SYStem.CPU R8A7791X
+  CORE.ASSIGN 1
+  SYStem.Up
+
+; let the bootloader execute
+  Go.direct
+  WAIT 1.s
+  Break.direct
+
+; reset control setting for debug mode
+  Data.Set ANSD:0xE6152180 %Long 0x01f80000 ; CA15_PCCU_PWRCTL
+
+; control power and isolation of other CPUs
+  Data.Set ANSD:0xe6152010 %Long 0x1 ; CA15_WUPCR (CPU0)
+  Data.Set ANSD:0xe6152010 %Long 0x2 ; CA15_WUPCR (CPU1)
+
+; set CTI Event on second core -> stop at reset vector
+; use CTI address of second core!
+  Per.Set.Field EDAP:0x800B90A0 %Long 0x4 0x1 ; CTIOUTEN0  -> Enable Ch2
+  Per.Set.Field EDAP:0x800B9000 %Long 0x1 0x1 ; CTICONTROL, GLBEN
+  Per.Set       EDAP:0x800B9014 %Long 0x4     ; CTIAPPSET  -> Ch2=0x4
+
+; module reset deassert and reset vector break
+  Data.Set ANSD:0xe6160040 %Long 0xa5a50007 ; CA15_RESCNT (CPU0)
+  Data.Set ANSD:0xe6160040 %Long 0xa5a50003 ; CA15_RESCNT (CPU1)
+
+; restore CTI of second core
+  Per.Set       EDAP:0x800B9018 %Long 0x4     ; CTIAPPCLEAR -> Ch2=0x4
+  Per.Set.Field EDAP:0x800B90A0 %Long 0x4 0x0 ; CTIOUTEN0   -> Disable Ch2
+; now the second core is powered up and stopped at the reset vector
+
+; reconnect with all cores now
+  SYStem.Down
+  CORE.ASSIGN 1,2
+  SYStem.Mode Attach
+
+; load some code
+  CORE.select 0.
+  DO ~~/demo/arm/compiler/gnu-pic/demo_sieve 0x40001000
+
+; set second core to secondary entry
+  Register.RESet /CORE 1.
+  Register.Set PC _start_secondary /CORE 1.
+
+; run till main
+  Go main
+  WAIT !RUN()
+
+; open some windows
+  Mode.Hll
+  List.auto
+  
+  ENDDO

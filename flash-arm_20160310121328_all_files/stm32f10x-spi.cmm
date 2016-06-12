@@ -1,0 +1,88 @@
+; --------------------------------------------------------------------------------
+; @Title: STM32F10X Serial FLASH Programming Script
+; @Description:
+; Serial FLASH(ST, 25P64) is connected the SPI1(Serial Peripheral Interface)
+; The Serial Flash CS is connected to GPIO B.2
+; 
+; SRAM: 0x20000000
+; Serial FLASH Controller Addr: 0x40013000
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: STM32F103ZE
+; @Keywords: ST 25P64 SPI
+; --------------------------------------------------------------------------------
+; $Id: stm32f10x-spi.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  RESet
+  SYStem.RESet
+  MAP.DenyAccess 20005000--2000FFFF
+  SYStem.CPU STM32F103ZE
+  SYStem.CONFIG.ETMBASE  0xe0041000
+; SYStem.CONFIG.SWDP ON
+  SYStem.CONFIG.CONNECTOR MIPI20T 
+  SYStem.Up
+
+GOSUB enable_SPI
+
+Break.RESet
+
+FLASHFILE.RESet
+
+// For the Serial FLASH CS connected GPIO A.4 (Group A, port Number4)
+// GPIO A.4 Data Output register 0x4001080C
+//FLASFILE.CONFIG <Tx Reg>   <Rx Reg>   <CS Reg>    <Port Num>
+;FLASHFILE.CONFIG 0x4001300C 0x4001300C 0x4001080C    0x4
+
+// For the Serial FLASH CS connected GPIO B.2 (Group B, port Number2)
+// GPIO B.2 Data Output register 0x40010C0C 
+//FLASFILE.CONFIG <Tx Reg>   <Rx Reg>   <CS Reg>   <Port Num>
+FLASHFILE.CONFIG 0x4001300C 0x4001300C  0x40010C0C   0x2
+
+FLASHFILE.TARGET 0x20000000++0x1fff 0x20002000++0x1FFF ~~/demo/arm/flash/byte/spi64_stm.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Dump window for Serial FLASH
+  ;FLASHFILE.DUMP 0x0
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+  //Erase Serial FLASH 
+    FLASHFILE.Erase 0x0--0x7FFFFF  
+
+  //Write Serial FLASH
+    FLASHFILE.LOAD.binary  * 0x0 
+  
+  //Save Serial FLASH 
+    ;FLASHFILE.SAVE dump.bin 0x0--0x7FFFFF
+  )
+
+ENDDO
+
+enable_SPI:
+
+;Clock Enable to use FSMC and GPIO group related with SPI Flash.
+PER.Set.simple SD:0x40021014 %Long 0x114     ; FSCM Clock Enable
+PER.Set.simple SD:0x40021018 %Long 0x100C    ; SPI1 & GPIO A/B Enable
+
+PER.Set.simple SD:0x40010800 %Long 0xbbb34444   ; GPIOA setting for SPI pin
+PER.Set.simple SD:0x40010810 %Long 0xFF         ; deselect the SPI FLASH CS(GPIOA.4)
+
+PER.Set.simple SD:0x40010C00 %Long 44444344 ; GPIOB.2 output
+PER.Set.simple SD:0x40010C0C %Long 00000004 ; deselect the SPI FLASH CS(GPIOB.2)
+
+PER.Set.simple SD:0x40013000 %Word 0x30F ; SPI_Init
+PER.Set.simple SD:0x40013010 %Word 0x7   ; SPI_CRCPolynomial
+
+&spi_enable=Data.Word(SD:0x40013000)|0x40
+PER.Set.simple SD:0x40013000 %Word &spi_enable ; SPI1 Enable
+
+RETURN
+
+
+
+

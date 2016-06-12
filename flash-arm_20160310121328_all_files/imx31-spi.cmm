@@ -1,0 +1,155 @@
+; --------------------------------------------------------------------------------
+; @Title: i.MX31 Serial FLASH Programming Script
+; @Description:
+; Serial FLASH(ST, M25P64) is connected to CSPI1_SS0
+; 
+; SDRAM: 0x80000000
+; SPI Tx Register : 0x43FA4004   
+; SPI Rx Register : 0x43FA4000   
+; SPI CS Register : 0x43FA4008
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: IMX31
+; @Keywords: ST M25P64 Flash SPI 
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: imx31-spi.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  AREA.RESet
+  AREA.view
+  
+//SYStem configuration
+
+  PRINT "Starting the debugger..."
+  SYStem.RESet
+  SYStem.CPU MCIMX31
+  SYStem.Option ResBreak OFF
+  SYStem.JtagClock RTCK
+  SYStem.Up
+
+  WAIT 2.S
+
+//Call SDRAM initialization
+  GOSUB sdram_init
+
+//Init CSPI registers
+PER.Set.simple ASD:0x43FAC008 %Long 0x00000000 ; General Purpose Register (GPR), bit2=0 for the enable CSPI0
+PER.Set.simple ASD:0x43FAC088 %Long 0x10101010 ; SW_MUX_CTL for the CSPI1
+PER.Set.simple ASD:0x43FAC08C %Long 0x10021010 ; SW_MUX_CTL for the CSPI1
+PER.Set.simple ASD:0x43FA4008 %Long 0x00010703 ; CSPI1 CONREG1, SS0, Master, 8bits, Div by 8
+
+Break.RESet
+
+FLASHFILE.RESet
+
+//FLASFILE.CONFIG  <TXDATA Reg>    <RXDATA Reg>      <CONREG >
+  FLASHFILE.CONFIG  0x43FA4004      0x43FA4000        0x43FA4008
+
+//FLASHFILE.TARGET <code range>        <data range>        <algorithm file>
+  FLASHFILE.TARGET 0x80008000++0x3fff  0x8000C000++0x3FFF  ~~/demo/arm/flash/byte/spi64_imx.bin 
+
+//Dump window for Serial FLASH
+  FLASHFILE.DUMP 0x0
+
+//Unlock Serial FLASH
+  FLASHFILE.UNLOCK 0x0--0x7FFFFF 
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+
+    //Erase Serial FLASH 8MB
+    &addr=0x0 
+    RePeaT 8.
+    (
+    PRINT "Erasing 1MB from 0x" &addr
+    FLASHFILE.Erase &addr++0xFFFFF
+    &addr=&addr+0x100000
+    )
+
+    //Write Serial FLASH
+    FLASHFILE.LOAD.binary  * 0x0
+  
+  //Save Serial FLASH 
+    ;FLASHFILE.SAVE dump.bin 0x0--0x7FFFFF
+  )
+
+ENDDO 
+; --------------------------------------------------------------------------------
+; Initialization script for 32 bit DDR on Tortola EVB 
+; --------------------------------------------------------------------------------
+
+sdram_init:
+
+; SDCLK
+	Data.Set 0x43FAC26C %Long 0
+
+; CAS
+	Data.Set 0x43FAC270 %Long 0
+
+; RAS
+	Data.Set 0x43FAC274 %Long 0
+
+; CS2 (CSD0)
+	Data.Set 0x43FAC27C %Long 0x1000
+    
+; DQM3
+	Data.Set 0x43FAC284 %Long 0
+
+; DQM2, DQM1, DQM0, SD31-SD0, A25-A0, MA10 (0x288..0x2DC)
+	Data.Set 0x43FAC288 %Long 0
+	Data.Set 0x43FAC28C %Long 0
+	Data.Set 0x43FAC290 %Long 0
+	Data.Set 0x43FAC294 %Long 0
+	Data.Set 0x43FAC298 %Long 0
+	Data.Set 0x43FAC29C %Long 0
+	Data.Set 0x43FAC2A0 %Long 0
+	Data.Set 0x43FAC2A4 %Long 0
+	Data.Set 0x43FAC2A8 %Long 0
+	Data.Set 0x43FAC2AC %Long 0
+	Data.Set 0x43FAC2B0 %Long 0
+	Data.Set 0x43FAC2B4 %Long 0
+	Data.Set 0x43FAC2B8 %Long 0
+	Data.Set 0x43FAC2BC %Long 0
+	Data.Set 0x43FAC2C0 %Long 0
+	Data.Set 0x43FAC2C4 %Long 0
+	Data.Set 0x43FAC2C8 %Long 0
+	Data.Set 0x43FAC2CC %Long 0
+	Data.Set 0x43FAC2D0 %Long 0
+	Data.Set 0x43FAC2D4 %Long 0
+	Data.Set 0x43FAC2D8 %Long 0
+	Data.Set 0x43FAC2DC %Long 0
+	
+	
+	Data.Set 0xB8001010 %Long 0x00000004
+	Data.Set 0xB8001004 %Long 0x006ac73a
+	Data.Set 0xB8001000 %Long 0x92100000
+	Data.Set 0x80000f00 %Long 0x12344321
+	Data.Set 0xB8001000 %Long 0xa2100000
+	Data.Set 0x80000000 %Long 0x12344321
+	Data.Set 0x80000000 %Long 0x12344321
+	Data.Set 0xB8001000 %Long 0xb2100000
+	Data.Set 0x80000033 %Byte 0xda
+	Data.Set 0x81000000 %Byte 0xff
+	Data.Set 0xB8001000 %Long 0x82226080
+	Data.Set 0x80000000 %Long 0xDEADBEEF
+	Data.Set 0xB8001010 %Long 0x0000000c
+
+RETURN
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,48 @@
+; --------------------------------------------------------------------------------
+; @Title: NAND FLASH Programming script for DB-88F6281/88F6192 board from Marvell
+; @Description:
+; NAND1GW3B(ST Micro)
+;
+; SDRAM: 0x00120000
+;
+; After booting up
+; Command Register : 0xF9000001  
+; Address Register : 0xF9000002
+; Data Register    : 0xF9000000
+;
+; before booting up
+; Command Register : 0xD8000001 
+; Address Register : 0xD8000002 
+; Data Register    : 0xD8000000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: 88FR531
+; @Board: DB-88F5281-DDR1-BP-A
+; @Keywords: Marvell NAND1GW3B ST flash NAND
+; --------------------------------------------------------------------------------
+; $Id: 88f6281-nand1g08.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.config <Cmd_reg>  <Addr_reg>  <Data_reg>
+  FLASHFILE.CONFIG 0xF9000001  0xF9000002  0xF9000000
+
+// FLASHFILE.TARGET <code range>       <data range>        <Algorithm file>
+  FLASHFILE.TARGET 0x00120000++0x1FFF  0x00122000++0x1FFF  ~~/demo/arm/flash/byte/nand1g08.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Open the NAND Dump Windows - Main Area
+  FLASHFILE.DUMP 0x0
+
+//Open the NAND Dump Windows - Spare Area
+  FLASHFILE.DUMP /SPARE /TRACK
+
+ENDDO 
+
+
+
+
+

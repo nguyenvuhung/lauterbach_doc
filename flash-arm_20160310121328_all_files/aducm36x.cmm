@@ -1,0 +1,92 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Analog Devices ADuCM36x internal flash.
+; 
+; @Description:
+; DO aduc36x [PREPAREONLY] [CPU=<cpu>] [DUALPORT=0|1]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;
+;     DUALPORT default value is 0 (disabled). If DualPort mode is enabled
+;             flash algorithm stays running until flash programming is
+;             finished. Data is tranferred via dual port memory access. 
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/aduc36x CPU=ADUCM361 DUALPORT=1 PREPAREONLY
+;
+; Memory location:
+;
+;   Program flash starting at 0x00000000
+;   SRAM starting at          0x20000000
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ADuCM36*
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: aducm36x.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &param_cpu
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  LOCAL &param_dualport
+  &param_dualport=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"DUALPORT=","0")
+
+  ; --------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(ADUCM36*)
+      SYStem.CPU ADUCM36*
+
+    SYStem.Option.ResBreak OFF
+    SYStem.CONFIG.DEBUGPORTTYPE SWD
+    SYStem.JtagClock 1MHz
+    SYStem.Up
+  )
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  FLASH.Create 1. 0x00000000--0x0001FFFF 0x200 TARGET Long /KEEP 0x1FFEC--0x1FFFF
+  IF &param_dualport==0
+    FLASH.TARGET 0x20000000 0x20000800 0x400 ~~/demo/arm/flash/long/aducm360.bin
+  ELSE
+    FLASH.TARGET 0x20000000 EAHB:0x20000800 0x400 ~~/demo/arm/flash/long/aducm360.bin /DualPort
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO

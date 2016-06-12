@@ -1,0 +1,271 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of NXP LPC12xx internal flash.
+;
+; @Description: 
+; Script arguments:
+;
+;  DO lpc12xx [PREPAREONLY] [CPU=<cpu>]
+;
+;   PREPAREONLY only declares flash but does not execute flash programming
+;   example
+;
+;   CPU=<cpu> selects CPU derivative <cpu>
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/lpc12xx CPU=LPC1227/301 PREPAREONLY
+;
+; List of LPC12xx derivatives and their configuration:
+;
+;   CPU-Type       Device-ID    FlashSize  RamSize
+;                                  [kB]      [kB]
+; --------------------------------------------------------------------------------
+;   LPC1224/101    0x3640c02b       32.       4.
+;   LPC1224/121    0x3642c02b       48.       4.
+;   LPC1225/301    0x3650002b       64.       8.
+;   LPC1225/321    0x3652002b       80.       8.
+;   LPC1226/301    0x3660002b       96.       8.
+;   LPC1227/301    0x3670002b      128.       8.
+;   LPC12D27/301   0x3670002b      128.       8.
+;
+; Code Read Protection (CRP):
+;
+;   CRP is invoked by programming a specific pattern in flash location 
+;   at 0x000002FC.
+;
+;  Name     Pattern      Description
+; --------------------------------------------------------------------------------
+;  NO_ISP   0x4E697370   Prevents sampling of pin PIO0_12 for entering ISP 
+;                        mode. PIO0_12 is available for other uses.
+;  CRP1     0x12345678   Access to chip via the JTAG pins is disabled.  
+;                        This mode allows partial flash update using the 
+;                        following ISP commands and restrictions:
+;                        • Write to RAM command cannot access RAM below
+;                          0x10000300.
+;                        • Copy RAM to flash command can not write to Sector 0.
+;                        • Erase command can erase Sector 0 only when all 
+;                          sectors are selected for erase.
+;                        • Compare command is disabled.
+;                        • Read Memory command is disabled.
+;                        This mode is useful when CRP is required and flash  
+;                        field updates are needed but all sectors can not 
+;                        be erased.
+;  CRP2     0x87654321   Access to chip via the JTAG pins is disabled. The 
+;                        following ISP commands are disabled:
+;                        • Read Memory
+;                        • Write to RAM
+;                        • Go
+;                        • Copy RAM to flash
+;                        • Compare
+;                        When CRP2 is enabled the ISP erase command only allows
+;                        erasure of all user sectors.
+;  CRP3     0x43218765   Access to chip via the JTAG pins is disabled. ISP 
+;                        entry by pulling PIO0_12 LOW is disabled if a valid 
+;                        user code is present in flash sector 0.
+;                        This mode effectively disables ISP override using  
+;                        PIO0_1 pin. It is up to the user’s application to  
+;                        provide a flash update mechanism using IAP calls or 
+;                        call reinvoke ISP command to enable flash update via
+;                        UART.
+;                        Caution: If CRP3 is selected, no future factory 
+;                        testing can be performed on the device.
+;
+; RAM used by IAP command handler:
+;
+;   Flash programming commands use the top 32 bytes of on-chip RAM. 
+;   The maximum stack usage in the user allocated stack space is 128
+;   bytes and it grows downwards.
+;
+; HINTS:
+;
+;   Flash clock has to match System Clock Frequency (CCLK). 
+;   FLASH.CLocK.AUTO can be used for automatic flash clock measurement.
+;
+;   Boot flash cannot be programmed or erased with builtin flash 
+;   algorithm. 
+;
+;   Data has to be loaded to flash alignment to page boundaries.
+;
+;   Vector table checksum generation is done by script, so that it 
+;   can be used or switched off, as needed.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: LPC12*
+; --------------------------------------------------------------------------------
+; $Rev: 2903 $
+; $Id: lpc12xx.cmm 2903 2014-07-16 11:19:46Z kjmal $
+
+  LOCAL &parameters &param_prepareonly
+  ENTRY %LINE &parameters
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &param_cpu
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  ; ------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(LPC12*)
+    (
+      IF VERSION.BUILD()>=37389.
+        SYStem.CPU LPC12*
+      ELSE
+        SYStem.CPU LPC1227
+    )
+
+    SYStem.Option EnReset OFF
+    IF CABLE.TWOWIRE()
+    (
+      SYStem.CONFIG.DEBUGPORTTYPE SWD
+    )
+    ELSE
+    (
+      PRINT %ERROR "Serial Wire Debug (SWD) not supported by debug cable"
+      ENDDO
+    )
+
+    SYStem.Up
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  FLASH.CLocK.AUTO
+  GOSUB FlashDeclaration
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    ; Switch memory mapping to user flash mode, so that on-chip flash is 
+    ; mapped to address 0x0--0x1ff. System Memory Remap register 
+    ; SYSMEMREMAP:0..1 = 10b
+    Data.Set 0x40048000 %Long 0x02
+
+    ; Example for download 
+    FLASH.ReProgram.ALL /Erase
+    ; 1. Download file
+    Data.LOAD.auto *
+    ; 2. Checksum generation
+    Data.SUM 0x0--0x1B /Long         ;Calculate checksum of all (other) vectors
+    Data.Set 0x1C %Long -Data.SUM()  ;Write the 2's complement in reserved vector's spot
+    ; 3. Flash programming
+    FLASH.ReProgram.off
+
+    ; Reset device and execute boot code until application start
+    LOCAL &startAddress
+    &startAddress=Data.Long(SD:0x04)&0xFFFFFFFE
+    SYStem.Up
+    Go.direct &startAddress
+    WAIT 100.ms
+    IF RUN()
+    (
+      Break.direct
+      Data.List
+      PRINT %ERROR "Boot code didn't branch to application start"
+      ENDDO
+    )
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &FlashSize
+  LOCAL &RAMSize
+
+  IF ((CPU()=="LPC1227")||(CPU()=="LPC12D27"))
+  (
+    &FlashSize=0x20000
+    &RAMSize=0x2000
+  )
+  ELSE IF ((CPU()=="LPC1226"))
+  (
+    &FlashSize=0x18000
+    &RAMSize=0x1000
+  )
+  ELSE IF ((CPU()=="LPC1225"))
+  (
+    &FlashSize=0x10000
+    &RAMSize=0x2000
+    IF (Data.Long(SD:0x400483F4)&0x00020000)==0x00020000
+      &FlashSize=0x14000
+  )
+  ELSE IF ((CPU()=="LPC1224"))
+  (
+    &FlashSize=0x8000
+    &RAMSize=0x1000
+    IF (Data.Long(SD:0x400483F4)&0x00020000)==0x00020000
+      &FlashSize=0xc000
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  IF &FlashSize>=0x8000
+  (
+    FLASH.Create 1. 0x000000--0x007FFF 0x1000 TARGET Long
+  )
+  IF &FlashSize>=0xC000
+  (
+    FLASH.Create 1. 0x008000--0x00BFFF 0x1000 TARGET Long
+  )
+  IF &FlashSize>=0x10000
+  (
+    FLASH.Create 1. 0x00C000--0x00FFFF 0x1000 TARGET Long
+  )
+  IF &FlashSize>=0x14000
+  (
+    FLASH.Create 1. 0x010000--0x013FFF 0x1000 TARGET Long
+  )
+  IF &FlashSize>=0x18000
+  (
+    FLASH.Create 1. 0x014000--0x017FFF 0x1000 TARGET Long
+  )
+  IF &FlashSize>=0x20000
+  (
+    FLASH.Create 1. 0x018000--0x01FFFF 0x1000 TARGET Long
+  )
+
+  IF &RAMSize>=0x2000
+  (
+    FLASH.TARGET 0x10001200 0x10000000 0x1000 ~~/demo/arm/flash/long/lpc1100.bin
+  )
+  ELSE IF &RAMSize>=0x1000
+  (
+    FLASH.TARGET 0x10000A00 0x10000000 0x800 ~~/demo/arm/flash/long/lpc1100.bin
+  )
+  ELSE
+  (
+    PRINT %ERROR "RAM size is not supported by the script"
+    ENDDO
+  )
+
+  IF (&FlashSize>0x10000)&&(FLASH.TARGET.BUILD(~~/demo/arm/flash/long/lpc1100.bin)<1934.)
+  (
+    PRINT %ERROR "Please request flash algorithm update to support more than 64 kByte flash"
+    ENDDO
+  )
+
+  RETURN

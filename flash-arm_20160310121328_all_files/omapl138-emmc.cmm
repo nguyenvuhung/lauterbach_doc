@@ -1,0 +1,213 @@
+; --------------------------------------------------------------------------------
+; @Title: OMAP-L138 eMMC FLASH Programming Script
+; @Description:
+;   FLASH Type: eMMC FLASH(Numonyx, NAND16GXH) connected to the MMC controller
+;
+;   SDRAM: 0x80002000
+;   MMC Controller Register : 0x01C40000      
+;
+; @Author: jjeong
+; @Chip: OMAP-L138
+; @Keywords: Numonyx NAND16GXH L138 eMMC
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: omapl138-emmc.cmm 3178 2015-02-20 11:20:01Z jjeong $
+
+LOCAL &MMC_BASE
+
+&MMC_BASE=0x01C40000 
+
+SYStem.RESet
+SYStem.CPU OMAP-L138
+SYStem.Option EnReset OFF
+SYStem.CONFIG.Slave OFF
+SYStem.JtagClock RTCK
+SYStem.Mode Up
+
+PER.Set.simple C15:0x1 %Long 0x00053078  ; disable MMU & Cache
+
+//pll configuration to do cpu speed up
+Data.Set 0x01C11100 %Long 0x00000049 
+
+//Setup PSC for LPSC_MMCSD0  ( ex. "GOSUB Setup_Psc_All_On" or "GOSUB psc_change_state 5. 0x3" )
+Data.Set A:0x1C10A14 %Long Data.Long(A:0x1C10A14)&~0x1F
+Data.Set A:0x1C10A14 %Long Data.Long(A:0x1C10A14)|0x3
+Data.Set A:0x1C10120 %Long Data.Long(A:0x1C10120)|0x1
+
+// enable MMC and pin muxing
+Data.Set A:0x1C14038 %Long 0x83E70B13  ; unlock code1 for pin muxing
+Data.Set A:0x1C1403C %Long 0x95A4F1E0  ; unlock code2 for pin muxing
+
+Data.Set A:0x1C14148 %Long 0x22222222  
+Data.Set A:0x1C1414C %Long 0x22
+
+//Init MMCSD0
+Data.Set A:0x01C40004  %Long 0x01A0   ;MMC CLK
+Data.Set A:0x01C40000  %Long 0x0007   ;MMCCTL , reset
+Data.Set A:0x01C40000  %Long 0x0000   ;MMCCTL , release 
+Data.Set A:0x01C40014  %Long 0x00FF   ;MMCTOR
+Data.Set A:0x01C40018  %Long 0xFFFF   ;MMCTOD
+Data.Set A:0x01C40020  %Long 0x1      ;MMCNBLK  
+Data.Set A:0x01C40074  %Long 0x0      ;4bytes, 256bits fifo or 512bits fifo (0x4)
+
+//FLASH READ ID TEST
+AREA.CLEAR
+AREA.view
+GOSUB READ_ID_TEST
+DIALOG.YESNO "the flash id is correct on AREA window?"
+ENTRY &result
+IF !&result
+(
+ PRINT "pls, check your register configuration to enable your flash controller"
+ ENDDO
+)
+
+//S(D)RAM TEST for algorithm file
+;GOSUB SDRAM_INIT
+    Data.Test 0x80002000++0x3FFF  /Prime ;s(d)ram test
+IF FOUND()
+( 
+ PRINT "s(d)ram is NOT initialized around 0x" ADDRESS.OFFSET(TRACK.ADDRESS())
+ ENDDO
+)
+
+programFlash:
+
+//FLASHFILE configuration
+  FLASHFILE.RESet
+  Break.RESet
+
+//FLASHFILE.CONFIG <MMC Controller Base>  0x0   0x0
+  FLASHFILE.CONFIG &MMC_BASE    0x0    0x0
+
+//FLASHFILE.TARGET <Code Range>       <Data Range>        <Algorithm File>
+  FLASHFILE.TARGET 0x80002000++0x1FFF 0x80004000++0x1FFF  ~~/demo/arm/flash/byte/emmc_dm365.bin  /KEEP
+
+  Data.Set A:0x01C40004  %Long 0x01A0  ; MMC_CLK have to be less than "<400khz"
+  FLASHFILE.GETID
+
+  Data.Set A:0x01C40004  %Long 0x0101  ; MMC_CLK speed up
+//read FLASH 
+  FLASHFILE.DUMP 0x0
+
+//Erase FLASH 
+ ;FLASHFILE.Erase 0x0--0xFFFFFF  
+
+//Write FLASH
+ ;FLASHFILE.LOAD.binary  * 0x0 
+
+//Verify FLASH
+ ;FLASHFILE.LOAD  * 0x0  /ComPare
+
+ENDDO 
+
+Setup_Psc_All_On:
+
+LOCAL &i
+&i=0x0
+
+PRINT "Setup Power Modules (All on)... " 
+
+RePeaT 53.
+(
+
+ IF &i!=41.
+ (
+  GOSUB psc_change_state &i 0x3
+ )
+ &i=&i+0x1
+ )
+
+// GOSUB psc_change_state 41. 0x3
+
+PRINT "[Done]" 
+
+RETURN
+
+
+psc_change_state:
+LOCAL &id 
+LOCAL &state
+
+ENTRY &id &state
+
+LOCAL &PSC_PTCMD
+LOCAL &PSC_PTSTAT
+LOCAL &mdstat
+LOCAL &mdctl
+
+&PSC_PTCMD=0x1C10120
+&PSC_PTSTAT=0x1C10128
+
+&mdstat=0x1C10800+(0x4*&id)
+&mdctl=0x1C10A00+(0x4*&id)
+
+IF (Data.Long(SD:&mdstat)&0x1F)==&state
+RETURN
+WAIT 10.ms
+
+Data.Set &mdctl %Long Data.Long(SD:&mdctl)&~0x1F
+Data.Set &mdctl %Long Data.Long(SD:&mdctl)|&state
+
+Data.Set &PSC_PTCMD %Long Data.Long(SD:&PSC_PTCMD)|0x1
+
+WAIT 10.ms
+
+RETURN
+
+READ_ID_TEST:
+//MMC interface, not SD(HC)
+
+&MMCCMD_REG=&MMC_BASE+0x30
+&MMCARG_REG=&MMC_BASE+0x34
+
+//CMD0
+RePeaT 2.
+(
+ Data.Set &MMCARG_REG %Long 0x0     ;arg 
+ Data.Set &MMCCMD_REG %Long 0x4000  ;cmd
+ WAIT 10.ms
+ )
+
+//CMD1
+RePeaT 10.
+(
+ Data.Set &MMCARG_REG %Long 0x40FF8000 ;arg
+ Data.Set &MMCCMD_REG %Long 0x0601 ;cmd1
+ WAIT 10.ms
+ 
+ &resp=Data.Long(A:(&MMC_BASE+0x44))
+ //print "CMD1 resp: 0x" &resp
+ IF (&resp&0x80000000)==0x80000000
+ (
+  GOTO jump_cmd2
+ )
+ )
+
+PRINT "CMD1 fail"
+END
+
+jump_cmd2:
+//CMD2
+Data.Set &MMCARG_REG %Long 0x0     ;arg
+Data.Set &MMCCMD_REG %Long 0x0402 ;cmd2
+WAIT 10.ms
+
+//CMD3
+Data.Set &MMCARG_REG %Long 0x00010000  ; arg, MMC RCA is (0x0001<<16.)
+Data.Set &MMCCMD_REG %Long 0x0203  ;cmd3
+WAIT 10.ms
+
+//CMD10
+Data.Set &MMCARG_REG %Long 0x00010000 ; arg, MMC RCA is (0x0001<<16.)
+Data.Set &MMCCMD_REG %Long 0x040a  ;cmd10
+WAIT 10.ms
+
+//Response2
+PRINT "CID register"
+PRINT "[127:104] 0x" Data.Long(A:(&MMC_BASE+0x44))
+PRINT "[103:72]  0x" Data.Long(A:(&MMC_BASE+0x40))
+PRINT "[71:40]   0x" Data.Long(A:(&MMC_BASE+0x3C))
+PRINT "[39:8]    0x" Data.Long(A:(&MMC_BASE+0x38))
+
+RETURN

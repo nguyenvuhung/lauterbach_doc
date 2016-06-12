@@ -1,0 +1,75 @@
+; --------------------------------------------------------------------------------
+; @Title: NVIDIA TEGRA250 NAND FLASH Programming Script
+; @Description:
+; NAND FLASH(HYNIX,27UF08) is connected NANDCE0
+; 
+; Internal SRAM     : 0x40000000
+; NFC Base Register : 0x70008000 
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Keywords: HYNIX 27UF08 NAND
+; --------------------------------------------------------------------------------
+; $Id: tegra250-nand2g08.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+SYStem.RESet
+SYStem.JtagClock RTCK
+
+SYStem.CPU CORTEXA9
+SYStem.Option DACR ON 
+
+SYStem.Option EnReset OFF
+
+SYStem.CONFIG.COREBASE APB:0x80010000
+
+SYStem.CONFIG.IRPRE 0.
+SYStem.CONFIG.IRPOST 0.
+SYStem.CONFIG.DRPRE 0.
+SYStem.CONFIG.DRPOST 0.
+
+SYStem.CONFIG.DAPIRPOST 4
+SYStem.CONFIG.DAPDRPOST 1
+SYStem.CONFIG.DAPIRPRE 0
+SYStem.CONFIG.DAPDRPRE 0
+
+Trace.DISable
+
+SYStem.Mode.Attach
+
+IF run()
+   Break.direct
+
+SYStem.Option.INTDIS ON
+
+&cp15=Data.Long(C15:0x1)
+IF (&cp15&0x1)==0x1
+(
+PRINT "MMU Address"
+;D.S ZSD:0xFE7080144 %LE %LONG 0xC8830000  ; Ecc
+FLASHFILE.CONFIG 0xFE708000 0x0 0x0
+FLASHFILE.TARGET 0xCF800000++0x1FFF 0xCF802000++0x1FFF ~~/demo/arm/flash/byte/nand2g08_tegra.bin
+)
+ELSE
+(
+;D.S ZSD:0x700080144 %LE %LONG 0xC8830000  ; Ecc
+FLASHFILE.RESet
+FLASHFILE.CONFIG 0x70008000 0x0 0x0
+FLASHFILE.TARGET 0x40000000++0x1FFF 0x40002000++0x1FFF ~~/demo/arm/flash/byte/nand2g08_tegra.bin
+)
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Erase NAND FLASH Main and Bad block inforamtion
+; FLASHFILE.ERASE 0x0--0xFFFFFFF  /EraseBadBlocks
+
+//Write NAND FLASH
+; FLASHFILE.LOAD  * 0x0   /WriteBadBlocks
+
+//Dump Window
+  FLASHFILE.DUMP 0x0  ; Main Area
+; FLASHFILE.DUMP 0x0 /Spare /Track ; Spare Area
+
+ENDDO
+
+

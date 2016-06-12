@@ -1,0 +1,91 @@
+; --------------------------------------------------------------------------------
+; @Title: SPI FLASH Programming script for LPC4088
+; @Description:
+; SPI FLASH(Winbond, 25Q64) is connected SPIFI
+;
+; Internal SRAM    : 0x10000000
+; SPIFI : 0x20094000  
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: LPC1850
+; @Keywords: Winbond 25Q64 flash SPI
+; --------------------------------------------------------------------------------
+; $Id: lpc40xx-spifi.cmm 3499 2015-11-19 10:42:08Z jjeong $
+
+&spifi_base=0x20094000
+
+RESet
+SYStem.RESet
+SYStem.CPU LPC4088FET208
+SYStem.CONFIG.DEBUGPORTTYPE SWD
+SYStem.CONFIG.CONNECTOR MIPI20T
+SYStem.Up
+
+Data.Set D:0x40000000 %Long 0x0 ;disable watch dog
+
+Data.Set D:0x400FC0C4 %Long Data.Long(D:0x400FC0C4)|(0x1<<16.)   ; spifi power/clk enable
+Data.Set D:0x400FC1B4 %Long 0x2  ;spifi clk enable  /2
+
+Data.Set D:0x4002C03C %Long 0xB5
+Data.Set D:0x4002C040 %Long 0xB5
+Data.Set D:0x4002C044 %Long 0xB5
+Data.Set D:0x4002C048 %Long 0xB5
+Data.Set D:0x4002C058 %Long 0xb5  ;clk
+
+Data.Set D:0x4002C11C %Long 0xB5  ;cs
+
+Data.Set SD:(&spifi_base+0x18) %LE %Long (0x03<<24.)|(4.<<21.)   //3Byte address
+
+//FLASH READ ID TEST
+AREA.CLEAR
+AREA.view
+GOSUB READ_ID_TEST
+DIALOG.YESNO "the flash id is correct on AREA window?"
+ENTRY &result
+IF !&result
+(
+PRINT "pls, check your register configuration to enable your flash controller"
+ENDDO
+)
+
+//S(D)RAM TEST for algorithm file
+Data.Test 0x10000000++0x3FFF  /Prime ;s(d)ram test
+IF FOUND()
+( 
+PRINT "s(d)ram is NOT initialized around 0x" ADDRESS.OFFSET(TRACK.ADDRESS())
+ENDDO
+)
+
+programFlash:
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.CONFIG  <SPIFI Base>
+  FLASHFILE.CONFIG  &spifi_base
+
+// FLASHFILE.TARGET <code range>        <data range>            <Algorithm file>
+  FLASHFILE.TARGET 0x10000000++0x1FFF  EAHB:0x10002000++0x21FF   ~~/demo/arm/flash/byte/spi64_spifi.bin  /KEEP  /DualPort
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+ ;FLASHFILE.DUMP 0x0               ; Read
+ ;FLASHFILE.ERASE 0x0--0xFFFFF     ; Erase 
+ ;FLASHFILE.LOAD * 0x0             ; Write 
+ ;FLASHFILE.LOAD * 0x0  /ComPare   ; Verify
+
+ENDDO
+
+READ_ID_TEST:
+
+Data.Set D:(&spifi_base+0x4) %Long 0x9F200004   ; opcode with no address / input (cpu-> flash) / data length 4
+
+PRINT "read 1st: 0x" Data.Byte(D:(&spifi_base+0x14))
+PRINT "read 2nd: 0x" Data.Byte(D:(&spifi_base+0x14))
+PRINT "read 3rd: 0x" Data.Byte(D:(&spifi_base+0x14))
+PRINT "read 4th: 0x" Data.Byte(D:(&spifi_base+0x14))
+
+RETURN
+

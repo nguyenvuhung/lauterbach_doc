@@ -1,0 +1,114 @@
+; --------------------------------------------------------------------------------
+; @Title: Example script for flash declaration of Infineon XMC4200 internal flash.
+;
+; @Description: 
+; Synopsis:
+;
+;   DO xmc4200 [PREPAREONLY]
+;
+; Description:
+;
+;   Script arguments are not case sensitive.
+;
+;   PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/xmc4200 PREPAREONLY
+;
+; List of XMC4200 derivatives and their configuration:
+;
+;   CPU-Type              Flash
+;   ----------------------------
+;   XMC4200-X256          256kB
+;
+; Memories:
+;
+;   00000000--00003FFF BROM (PMU ROM)
+;   08000000--0803FFFF PMU/FLASH (cached)
+;   0C000000--0C03FFFF PMU/FLASH (uncached)
+;   1FFFC000--1FFFFFFF PSRAM (code)
+;   20000000--20005FFF DSRAM1 (system)
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: xmc4200*
+; --------------------------------------------------------------------------------
+; $Rev: 3472 $
+; $Id: xmc4200.cmm 3472 2015-10-28 14:47:29Z fcaron $
+;
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  ; --------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF !CPUIS(XMC420*)
+      SYStem.CPU XMC420*
+
+    IF CABLE.TWOWIRE()
+      SYStem.CONFIG.DEBUGPORTTYPE SWD
+    ELSE
+      SYStem.CONFIG.DEBUGPORTTYPE JTAG
+
+    SYStem.CONFIG.CONNECTOR MIPI20T
+    SYStem.Option.ResBreak OFF
+    SYStem.Up
+
+    ; Initialize internal SRAM
+    Data.Set 0x1FFFC000--0x1FFFFFFF %Long 0x0
+    Data.Set 0x20000000--0x20005FFF %Long 0x0
+  )
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+
+  FLASH.Create 1. 0x0C000000--0x0C00FFFF  0x4000 TARGET Long
+  FLASH.Create 2. 0x0C010000--0x0C01FFFF  0x4000 TARGET Long
+  FLASH.Create 3. 0x0C020000--0x0C03FFFF 0x20000 TARGET Long
+
+  FLASH.CreateALIAS 0x08000000--0x0803FFFF 0x0C000000
+
+  FLASH.TARGET 0x1FFFC000 0x20000000 0x1000 ~~/demo/arm/flash/long/xmc4000.bin
+
+  RETURN

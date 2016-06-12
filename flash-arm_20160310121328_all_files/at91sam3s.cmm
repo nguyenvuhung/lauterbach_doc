@@ -1,0 +1,187 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Atmel AT91SAM3S internal flash. 
+; 
+; @Description: 
+; Script arguments:
+;
+;   DO atsam3s [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; List of AT91SAM3S derivatives and their configuration:
+;
+;   CPU-Type        Flash size   Page size    SRAM size 
+;                     (Byte)      (Byte)       (Byte)   
+; --------------------------------------------------------------------------------
+;   AT91SAM3S1A       0x10000      0x100       0x4000   
+;   AT91SAM3S1B       0x10000      0x100       0x4000   
+;   AT91SAM3S1C       0x10000      0x100       0x4000   
+;   AT91SAM3S2A       0x20000      0x100       0x8000   
+;   AT91SAM3S2B       0x20000      0x100       0x8000   
+;   AT91SAM3S2C       0x20000      0x100       0x8000   
+;   AT91SAM3S4A       0x40000      0x100       0xc000   
+;   AT91SAM3S4B       0x40000      0x100       0xc000   
+;   AT91SAM3S4C       0x40000      0x100       0xc000  
+;   AT91SAM3S8B       0x80000      0x100      0x10000        
+;   AT91SAM3S8C       0x80000      0x100      0x10000 
+;   AT91SAM3SD8B      0x80000      0x100      0x10000  
+;   AT91SAM3SD8C      2*0x40000    0x100      0x10000  
+;   
+;
+; The flash is divided into pages of 256 Byte. 
+;
+; The internal flash is located at 0x00400000
+; The internal SRAM is located at  0x20000000
+; The internal ROM is located at   0x00800000.
+;
+; The system always boot at address 0x0. If GPNVM bit 1 is set the 
+; internal flash is mirrored to address 0x0 before remap command. 
+; Otherwise ROM is mapped to address 0x0. After remap command 
+; internal SRAM is mirrored to address 0x0.
+;
+; HINTS:
+;
+;   Locked pages can be unlocked with FLASH.UNLOCK command and can be 
+;   locked again with FLASH.LOCK command.
+;
+;   Watchdog is critical for flash programming. The flash algorithm is 
+;   serving the watchdog if the watchdog is not used in window mode.
+;
+;   If the watchdog is setup to window mode by a running application 
+;   the watchdog should be either disabled after first power-up or the 
+;   board should be power-up before every flash programming. If the 
+;   watchdog is disabled after power-up it cannot be enabled again by 
+;   the application because WDT_MR register is write once. Please see 
+;   below the command to disable the watchdog.
+;
+;   GPNVM bit values can be changed via at91sam3-nvm.cmm script.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: AT91SAM3S*
+; --------------------------------------------------------------------------------
+; $Rev: 3494 $
+; $Id: at91sam3s.cmm 3494 2015-11-17 14:33:52Z fcaron $
+
+  LOCAL &parameters &param_prepareonly
+  ENTRY %LINE &parameters
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  LOCAL &cpu
+  LOCAL &efc0flashsize 
+  LOCAL &efc1flashsize
+  LOCAL &flashdriver
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(AT91SAM3S*)
+      SYStem.CPU AT91SAM3S*
+    SYStem.JtagClock RTCK
+    SYStem.Option.ResBreak OFF
+    SYStem.Up
+  )
+
+  ; Disable watchdog for flash programming if watchdog may be used in 
+  ; window mode.
+  ;DATA.SET 0x400E1254 %LONG DATA.LONG(ASD:0x400E1254)|0x00008000
+
+  ; ------------------------------------------------------------------------------
+  ; Setup flash configuration depending on selected CPU.
+
+  &cpu=CPU()
+  IF (("&cpu"=="AT91SAM3S1A")||("&cpu"=="AT91SAM3S1B")||("&cpu"=="AT91SAM3S1C")||("&cpu"=="AT91SAM3S16C"))
+  (
+    &efc0flashsize=0x10000
+    &efc1flashsize=0x0
+    &flashdriver="eefcsam3s.bin"
+  )
+  ELSE IF (("&cpu"=="AT91SAM3S2A")||("&cpu"=="AT91SAM3S2B")||("&cpu"=="AT91SAM3S2C"))
+  (
+    &efc0flashsize=0x20000
+    &efc1flashsize=0x0
+    &flashdriver="eefcsam3s.bin"
+  )
+  ELSE IF (("&cpu"=="AT91SAM3S4A")||("&cpu"=="AT91SAM3S4B")||("&cpu"=="AT91SAM3S4C"))
+  (
+    &efc0flashsize=0x40000
+    &efc1flashsize=0x0
+    &flashdriver="eefcsam3s.bin"
+  )
+  ELSE IF (("&cpu"=="AT91SAM3S8B")||("&cpu"=="AT91SAM3S8C"))
+  (
+    &efc0flashsize=0x80000
+    &efc1flashsize=0x0
+    &flashdriver="eefcsam3s.bin"
+  )
+  ELSE IF (("&cpu"=="AT91SAM3SD8B")||("&cpu"=="AT91SAM3SD8C"))
+  (
+    &efc0flashsize=0x40000
+    &efc1flashsize=0x40000
+    &flashdriver="eefcsam3.bin"
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  ; Setup EEFC wait states in EEFC_FMR register, FWS = 6
+  Data.Set ASD:0x400E0A00 %Long (Data.Long(ASD:0x400E0A00)&0xFFFFF0FF)|0x00000600
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  FLASH.Create 1. 0x00400000++(&efc0flashsize-1) 0x100 TARGET Long
+  IF &efc1flashsize>1
+  (
+    FLASH.Create 2. 0x00440000++(&efc1flashsize-1) 0x100 TARGET Long
+  )
+  FLASH.TARGET 0x20000000 0x20000800 0x400 ~~/demo/arm/flash/long/&flashdriver
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash NVM bit programming example
+
+  DIALOG.YESNO "Program flash NVM bits"
+  LOCAL &prognvm
+  ENTRY &prognvm
+  IF &prognvm 
+  (
+    DO ~~~~/at91sam3-nvm
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    ; Unlock locked pages if necessary
+    ;FLASH.UNLOCK ALL
+
+    ; Because of small sector size and very fast chip erase feature 
+    ; FLASH.Erase and FLASH.Program is used instead of FLASH.ReProgram.
+    FLASH.Erase.ALL
+    FLASH.Program.ALL
+    Data.LOAD.auto * /Long
+    FLASH.Program.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO

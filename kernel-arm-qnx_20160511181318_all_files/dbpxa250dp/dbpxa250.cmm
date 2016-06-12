@@ -1,0 +1,77 @@
+; --------------------------------------------------------------------------------
+; @Title: Setup Script for Intel DBPXA250DP Board (Lubbock)
+; @Description: -
+; @Author: DIE
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $ID: dbpxa250.cmm 6908 2014-04-21 15:25:19Z wwbenayed $
+
+
+; turn off MMU
+ Data.Set C15:1 %Long 0
+ 
+; set up clock configuration
+ Data.Set ASD:41300000 %Long 0x00000141
+ Data.Set ASD:41300004 %Long 0x00000000
+ 
+; invoke the frequency change sequence
+ Data.Set C14:6 %Long 2
+ 
+; set up DRAM controller
+ Data.Set ASD:48000008 %Long 0x23f223f2 ; MSC0
+ Data.Set ASD:4800000c %Long 0x3ff1a441 ; MSC1
+ Data.Set ASD:48000010 %Long 0x7ff17ff1 ; MSC2
+ Data.Set ASD:48000014 %Long 0x00000001 ; MECR
+ Data.Set ASD:48000028 %Long 0x00010504 ; MCMEM0
+ Data.Set ASD:4800002c %Long 0x00010504 ; MCMEM1
+ Data.Set ASD:48000030 %Long 0x00010504 ; MCMEM0
+ Data.Set ASD:48000034 %Long 0x00010504 ; MCMEM1
+ Data.Set ASD:48000038 %Long 0x00004715 ; MCIO0
+ Data.Set ASD:4800003c %Long 0x00004715 ; MCIO1
+ Data.Set ASD:48000004 %Long 0x004a7018 ; MDREFR
+ Data.Set ASD:4800001c %Long 0x00000000 ; SXCNFG
+ Data.Set ASD:48000024 %Long 0x00000000 ; SXMRS
+ Data.Set ASD:48000018 %Long 0x00000000 ; SXLCR
+ Data.Set ASD:48000004 %Long Data.Long(ASD:48000004)|0x00050000 ; MDREFR
+ Data.Set ASD:48000004 %Long Data.Long(ASD:48000004)&0xffbfffff ; MDREFR
+ Data.Set ASD:48000004 %Long Data.Long(ASD:48000004)|0x00008000 ; MDREFR
+ Data.Set ASD:48000000 %Long 0x00001ac8 ; MDCNFG
+ WAIT 10.ms
+ &tmp = Data.Long(D:0xa0000000)
+ &tmp = Data.Long(D:0xa0000000)
+ &tmp = Data.Long(D:0xa0000000)
+ &tmp = Data.Long(D:0xa0000000)
+ &tmp = Data.Long(D:0xa0000000)
+ &tmp = Data.Long(D:0xa0000000)
+ &tmp = Data.Long(D:0xa0000000)
+ &tmp = Data.Long(D:0xa0000000)
+ Data.Set ASD:48000000 %Long Data.Long(ASD:48000000)|1 ; MDCNFG
+ Data.Set ASD:48000040 %Long 0x0000000 ; MDMRS
+ 
+; enable I cache and BTB
+ Data.Set C15:1 %Long Data.Long(C15:1)|0x1800
+ 
+; set GPIO values
+ Data.Set ASD:40E00018 %Long 0x00008800 ; GPSR0
+ Data.Set ASD:40E0001c %Long 0xFC002b82 ; GPSR1
+ Data.Set ASD:40E00020 %Long 0x0001ffff ; GPSR2
+ Data.Set ASD:40E0000c %Long 0x0000a800 ; GPDR0
+ Data.Set ASD:40E00010 %Long 0xfc002b82 ; GPDR1
+ Data.Set ASD:40E00014 %Long 0x0001ffff ; GPDR2
+ Data.Set ASD:40E00054 %Long 0x98400000 ; GAFR0_L
+ Data.Set ASD:40E00058 %Long 0x00000000 ; GAFR0_U
+ Data.Set ASD:40E0005c %Long 0x099A9558 ; GAFR1_L
+ Data.Set ASD:40E00060 %Long 0xAAA00000 ; GAFR1_U
+ Data.Set ASD:40E00064 %Long 0xAAAAAAAA ; GAFR2_L
+ Data.Set ASD:40E00068 %Long 0x00000002 ; GAFR2_U
+
+; clear PH and RDH bits in PSSR
+ Data.Set ASD:0x40f00004 %Long 0x00000030 
+ 
+; enable various clocks
+ Data.Set ASD:0x41300004 %Long 0x00017def 
+
+; set up the stack pointer
+ Register.Set R0  0xa0000000
+ Register.Set R13 0xa0001000 ; SP
+ 

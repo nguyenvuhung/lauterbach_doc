@@ -1,0 +1,100 @@
+; --------------------------------------------------------------------------------
+; @Title: QNX Symbol Autoloader Script
+; @Description: Autoload script, called by TRACE32 if symbols are to be loaded
+; @Keywords: QNX
+; @Author: DIE
+; @Copyright: (c) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: autoload.cmm 1506 2015-12-22 09:18:48Z rdienstbeck $
+
+// define local macros
+ LOCAL &filename &type &code &data &space &basename &progname &symfilename &filepath
+
+// get filename and relocation information
+ // these parameters are passed from TRACE32 when calling this skript
+ 
+ ENTRY &filename &type &code &data &space
+ 
+ //print "autoload: " &filename " " &type " " &code " " &data " " &space
+ 
+ // &filename:      name of process/file
+ // &type:          type of file: 0=kernel, 1=process, 2=library, 3=kernel module
+ // &code:          text segment address
+ // &data:          data segment address
+ // &space:         space id of process
+
+// no processing for kernel
+ if (&type==0)  // kernel
+   ENDDO
+ 
+// get symbol file name and program name
+ &basename=STRing.CUT(&filename,-STRing.LENgth(OS.FILE.EXTENSION(&filename)))
+ IF (&type==1)      // processes
+ (
+   &progname=OS.FILE.NAME(&filename)
+   &symfilename=&filename
+ )
+ if ((&type&0xffff)==2)     // libraries
+ (
+   &progname=OS.FILE.NAME("&basename")
+   &symfilename=&filename
+   if "&space"!=""
+     &progname="&progname"+"_"+"&space"
+ )
+
+// set space id to zero if not given
+ IF "&space"==""
+   &space=0
+
+// delete program if it already exists or other code is already there
+ IF sYmbol.EXIST("\\&progname")
+ (
+   &pnquoted="`\\&progname`"
+   sYmbol.Delete &pnquoted
+ )
+ GROUP.Delete "&progname"
+ 
+// search file in source search path and open dialog when not there
+ &filepath=sYmbol.SEARCHFILE("&symfilename")
+ IF !OS.FILE("&filepath")               // not found
+ (
+    &sym_g="&symfilename"+"_g"          // try _g extension
+    &filepath=y.searchfile("&sym_g")
+ )
+ IF !OS.FILE("&filepath")
+ (
+   LOCAL &file &spath
+   &file=OS.FILE.NAME("&symfilename")
+   WinPOS ,,,,,, filebox normal "Searching symbols for &filename"
+   DIALOG.File "*\&file"
+   ENTRY %LINE &filepath
+   IF "&filepath"==""
+     ENDDO
+   &spath=OS.FILE.PATH("&filepath")
+   sYmbol.SourcePATH.Set &spath
+ )
+
+// load symbol file (options for sourcepath, e.g. /STRIPPART may need to be added when required)
+
+ IF (&type==1)  // processes
+ (
+   // hack for run mode: if no address available, load without location
+   if (&code==0)&&(&data==0)
+   (
+       Data.LOAD.Elf "&filepath" &space:0 /nocode /noclear /name &progname
+       ENDDO
+   )
+       
+   // /locateat is necessary for PIE code (since QNX 6.6)
+   Data.LOAD.Elf "&filepath" &space:0 /locateat &code /nocode /noclear /name &progname
+   if task.y.o(mmuscan)==1      // scan only if TRANSlation.TABLEWALK not configured
+     MMU.SCAN TaskPageTable &space:0
+   GROUP.Create "&progname" &space:0x0--0xffffffff /GREEN
+ )
+ 
+ IF ((&type&0xffff)==2) // libraries
+ (
+   Data.LOAD.Elf &filepath &space:&code /nocode /noclear /name &progname
+ )
+ 
+ ENDDO

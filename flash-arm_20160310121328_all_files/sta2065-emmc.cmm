@@ -1,0 +1,101 @@
+; --------------------------------------------------------------------------------
+; @Title: eMMC FLASH Programming script for STA2065
+; @Description:
+; eMMC FLASH is connected
+;
+; Internal SRAM: 0xA0000000
+; SD/MMC Controller Register : 0x101F6000  
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: sta2065
+; @Keywords: STM eMMC
+; --------------------------------------------------------------------------------
+; $Id: sta2065-emmc.cmm 3373 2015-08-19 13:29:54Z jjeong $
+
+LOCAL &arg1
+ENTRY &arg1
+&arg1=STRing.UPpeR("&arg1")  // for example "PREPAREONLY"
+
+SYStem.RESet
+SYStem.CPU sta2065
+SYStem.Option.ResBreak OFF
+SYStem.Option.WaitReset 10.ms
+SYStem.Mode Up
+
+&MMC_BASE=0x101F6000 
+
+Data.Set C15:0x1 %Long 0x452a7a  ;disable cache and mmu
+
+Data.Set ASD:0x101E1008 %Long 0x0  ;wdog disable
+
+GOSUB pll_setting
+
+//clk enable
+Data.Set ASD:0x101E0024 %Long (0x1<<8.)      //PCKEN0, PCLKSDI
+Data.Set ZSD:0x101E0034 %LE %Long (0x1<<8.)  //PCKEN1, SDICLK
+Data.Set ASD:0x101E0048 %Long (0x3<<1.)      //PCKEN2
+
+
+//SDIO controller configuration
+Data.Set A:&MMC_BASE %Long 0x3     ;power on  
+Data.Set A:&MMC_BASE+0x24 %Long 0xFFFFFFFF
+Data.Set A:&MMC_BASE+0x28 %Long 0x200
+Data.Set A:&MMC_BASE+0x2C %Long 0x0      ;0x4099
+Data.Set A:&MMC_BASE+0x04 %Long 0x176   ;clk 400Khz  ; 0x7401
+
+Break.RESet
+
+  FLASHFILE.RESet 
+  FLASHFILE.CONFIG  &MMC_BASE  0x0 0x0 0x0
+
+// FLASHFILE.TARGET <<code range>> <<data range>> <<algorithm file>>
+  FLASHFILE.TARGET A:0xA0000000++0x1fff A:0xA0002000++0x1fff   ~~/demo/arm/flash/byte/emmc_stm32.bin /KEEP    ;for mmc
+  
+Data.Set A:&MMC_BASE+0x04 %Long 0x176   ; clk 400Khz
+FLASHFILE.GETID
+
+Data.Set A:&MMC_BASE+0x04 %Long 0x107   ; speed up the clk
+FLASHFILE.GETEXTCSD
+
+//End of the test prepareonly
+IF "&arg1"=="PREPAREONLY"
+ENDDO
+
+FLASHFILE.DUMP 0x0
+
+ENDDO
+
+pll_setting:
+
+; Going to Slow Mode
+Data.Set ZSD:0x101E0000 %LE %Long 0x00021003 
+WAIT 200.ms
+
+Data.Set ZSD:0x101E0010 %LE %Long 0x00
+
+Data.Set ZSD:0x101E0000 %LE %Long    0x1A93
+
+; (PLL1 PHIB)/2-->HCLK = 208 MHz
+; DDR Synch mode
+; HCLK-->DCLK
+; Normal Mode
+Data.Set ZSD:0x101E0000 %LE %Long    0x4001A93
+
+;HCLKDIV = 1 ==> Divide by 2
+;DCLKDIV = 1 ==> Divide by 2
+Data.Set ZSD:0x101E0058 %LE %Long    0x80e5
+
+; Programming PLL1 and PLL2 multiplication factors
+; PLL1 VCO Freq= 26*48 = 1248 MHz. CLK = VCO/2 = 624 MHz
+; PLL2 VCO Freq= 26*24 = 624 MHz. PLL2CLK = VCO/1 = 624 MHz
+Data.Set ZSD:0x101E0014 %LE %Long    0x18001f01
+
+; Enabling PLL2
+Data.Set ZSD:0x101E0010 %LE %Long    0x10000002
+
+Data.Set ZSD:0x101E0000 %LE %Long    0x4001A97
+
+RETURN
+
+

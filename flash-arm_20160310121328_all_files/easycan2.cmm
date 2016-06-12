@@ -1,0 +1,110 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration for Scaleo easyCAN2 F512K-16 internal flash 
+;
+; @Description: 
+; Script arguments:
+;
+;  DO easycan2 [PREPAREONLY]
+;
+;   PREPAREONLY only declares flash but does not execute flash 
+;   programming example
+;
+; Memory ranges (reset values):
+;
+;   512 kByte code flash at  0x00000000--0x0007ffff
+;   32 kByte data flash at   0x80000000--0x8003ffff
+;   16 kByte internal RAM at 0x00300000--0x00303fff
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: EASYCAN2
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: easycan2.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  LOCAL &parameters &param_prepareonly
+  ENTRY %LINE &parameters
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &ifcbase &dfcbase &rambase
+
+  ; --------------------------------------------------------------------------------
+  ; CPU setup
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU EASYCAN2
+    SYStem.JtagClock 3Mhz
+    SYStem.Up
+  )
+
+  ; Disable Watchdog 
+  //DATA.SET SD:0xFFE14050 %LE %LONG 0x80000000
+  //DATA.SET SD:0xFFE14060 %LE %LONG 0x0000C071
+  //DATA.SET SD:0xFFE14068 %LE %LONG 0x00002340
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+
+  &ifcbase=Data.Long(SD:0xffe04064)&0xff000000
+  &dfcbase=Data.Long(SD:0xffe00064)&0xff000000
+  &rambase=Data.Long(SD:0xffff0000)&0xfff00000
+
+  ; Program flash
+  FLASH.Create 1. (&ifcbase+0x000000)--(&ifcbase+0x07ffff) 0x4000 TARGET Long 0xffe04000
+  ; Data flash
+  FLASH.Create 2. (&dfcbase+0x000000)--(&dfcbase+0x001fff)  0x100 TARGET Byte 0xffe00000  ; Sector 0
+  FLASH.Create 3. (&dfcbase+0x002000)--(&dfcbase+0x003fff)  0x100 TARGET Byte 0xffe00000  ; Sector 1
+  FLASH.Create 4. (&dfcbase+0x004000)--(&dfcbase+0x005fff)  0x100 TARGET Byte 0xffe00000  ; Sector 2
+  FLASH.Create 5. (&dfcbase+0x006000)--(&dfcbase+0x007fff)  0x100 TARGET Byte 0xffe00000  ; Sector 3
+
+  FLASH.TARGET &rambase+0x1000 &rambase+0x2000 0x1000 ~~/demo/arm/flash/byte/easycan.bin
+
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  DIALOG.YESNO "Program IFC flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram 1. /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+  )
+
+  DIALOG.YESNO "Program DFC data flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    LOCAL &dfc &mr
+
+    ; Enable and activate DFC
+    &dfc=Data.Long(SD:0xFFE00058)&0x02
+    Data.Set 0xFFE00050 %Long 0x02
+    &mr=Data.Long(SD:0xFFE00064)
+    Data.Set 0xFFE00064 %Long (Data.Long(SD:0xFFE00064)|0x7800)&~0x10
+
+    ; Program data flash memory
+    FLASH.AUTO 2.
+    FLASH.AUTO 3.
+    FLASH.AUTO 4.
+    FLASH.AUTO 5.
+    Data.LOAD.auto *
+    FLASH.AUTO.off
+
+    ; Restore DFC configuration
+    Data.Set 0xFFE00064 %Long &mr|0x7800
+    IF &dfc==0x0
+      Data.Set 0xFFE00054 %Long 0x02
+  )
+
+  ENDDO

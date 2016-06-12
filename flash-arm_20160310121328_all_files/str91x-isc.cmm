@@ -1,0 +1,3515 @@
+; --------------------------------------------------------------------------------
+; @Title: STR9 Flash Dialog for programming additional Flash bits.
+; @Description:
+;   STR9 Flash Dialog for programming additional Flash bits, which are only
+;   accessible via an extra TAP
+; @Author: WRD
+; @Chip: STR91*
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 2960 $
+; $Id: str91x-isc.cmm 2960 2014-08-21 10:03:31Z mobermeir $
+
+
+; History:
+;
+;   2008-04-08, STK:
+;   - Correction in testing the different JTAG clock settings.
+;
+;   2008-01-30, STK:
+;    - Smaller bug fixed.
+;    - Support targets, that do not provide RTCK.
+;
+;   2007-09-26, STK:
+;   - New buttons for loading main and secondary flash content by a Intel 
+;     hex file.
+;   - New button for storing the object file. The object file now must have
+;     the ending *.OBJ.
+;   - Modified OTP access.
+;   - "Program Sectors" and "Erase Sectors" buttons are only enabled, if at 
+;     least one sector is selected to be programmed or erased.
+;   - Add default system option for the case, that they are changed by the user.
+;
+;   2007-07-09, STK:
+;   Flash content is read on startup, if the device is not locked.
+;
+;   2007-07-09, STK:
+;   - Added check, if the values in the edit fields are valid.
+;   - Bug fixed in "Update from Flash" function.
+;
+;   2007-07-04, STK:
+;    Public release.
+;   - New sub window for selecting the flash areas for programming replaces 
+;     the three buttons for programming.
+;   - Target Power Down check added. This prevents a Practice Stack Overflow
+;     message.
+;   - Disabling buttons, when a sub window is open to keep the coherency 
+;     between the windows.
+;   - Save termination of the main window added.
+;
+;   2007-06-15, STK:
+;   First test release.
+
+; Create local macros
+  LOCAL &id_code
+  LOCAL &user_code
+  LOCAL &configuration
+  LOCAL &revision
+  LOCAL &part_number
+  LOCAL &manufacturer
+  LOCAL &status
+  LOCAL &file
+  LOCAL &flashtype
+  LOCAL &temp
+  LOCAL &cpu
+  LOCAL &vtref
+  LOCAL &jtagclock
+  
+
+  &file_load=""
+  &flashtype=4
+  
+; Basic checks
+  
+  ; Checking CPU selection
+  &cpu=CPU()
+  &cpu=STRing.MID("&cpu",0.,5.)
+  IF "&cpu"!="STR91"
+  (
+    ; Besser allgemein auf STR9* überprüfen
+    DIALOG.OK "CPU selection not supported!"
+    SYStem.View
+    ENDDO
+  )
+  
+  IF SYStem.MODE()>=5
+  (
+    DIALOG.YESNO "This dialog need to close the current debug session! Proceed?"
+    ENTRY &result
+  
+    IF !&result
+      ENDDO
+  )
+  
+  WinCLEAR
+  
+; Settings for flash access
+  SYStem.Down
+  SYStem.Option TRST      ON
+  SYStem.Option EnReset   ON
+  SYStem.Option ResBreak  OFF
+  SYStem.Option WaitReset OFF
+  SYStem.Option TURBO     OFF
+  
+; Checking best JTAG clock settings
+  ON ERROR GOSUB
+  (
+    RETURN
+  )
+  
+  &jtagclock="RTCK"
+  
+  SYStem.JtagClock &jtagclock
+  SYStem.Up
+  
+  IF SYStem.MODE()<5
+  (
+    PRINT "RTCK not available"
+    PRINT "Trying 20MHz..."
+    
+    SYStem.JtagClock 20MHZ
+    SYStem.Mode Attach
+      
+    IF SYStem.MODE()<5
+    (
+      PRINT "20MHz JTAG clock too high."
+      PRINT "Trying 10MHz..."
+      
+      SYStem.JtagClock 10MHZ
+      SYStem.Mode Attach
+      
+      IF SYStem.MODE()<5
+      (
+        PRINT "10MHz JTAG clock too high."
+        PRINT "Trying 5MHz..."
+      
+        SYStem.JtagClock 5MHZ
+        SYStem.Mode Attach
+        
+        IF SYStem.MODE()<5
+        (
+          PRINT "5MHz JTAG clock too high."
+          PRINT "Trying 2MHz..."
+        
+          SYStem.JtagClock 2MHZ
+          SYStem.Mode Attach
+        
+          IF SYStem.MODE()<5
+          (
+            PRINT "2MHz JTAG clock too high."
+            PRINT "Trying 1MHz..."
+            
+            SYStem.JtagClock 1MHZ
+            SYStem.Mode Attach
+            
+            IF SYStem.MODE()<5
+            (
+              PRINT "1MHz JTAG clock too high."
+              PRINT "Trying 500KHz..."
+            
+              SYStem.JtagClock 500KHZ
+              SYStem.Mode Attach
+              
+              IF SYStem.MODE()<5
+              (
+                PRINT "500KHz JTAG clock too high."
+                PRINT "Trying 100KHz..."
+              
+                SYStem.JtagClock 100KHZ
+                SYStem.Mode Attach
+                
+                IF SYStem.MODE()<5
+                (
+                  DIALOG.OK "All JTAG setting have failed." "Please contact technical support!"
+                  END
+                )
+                ELSE
+                (
+                  &jtagclock="100KHZ"
+                )
+              )
+              ELSE
+              (
+                &jtagclock="500KHZ"
+              )
+            )
+            ELSE
+            (
+              &jtagclock="1MHZ"
+            )
+          )
+          ELSE
+          (
+            &jtagclock="2MHZ"
+          )
+        )
+        ELSE
+        (
+          &jtagclock="5MHZ"
+        )
+      )
+      ELSE
+      (
+        &jtagclock="10MHZ"
+      )
+    )
+    ELSE
+    (
+      &jtagclock="20MHZ"
+    )
+  )
+  ELSE
+  (
+    &jtagclock="RTCK"
+  )
+  
+  ; Basic checks
+  ON POWERDOWN GOSUB
+  (
+    DIALOG.OK "Target Power Fail!"
+    WinCLEAR
+    END
+  )
+
+  ON ERROR GOSUB
+  (
+    ; Check Power Down
+    ; Otherwise a practice overflow occurs
+    &vtref=JTAG.PIN(VTREF)
+    
+    IF &vtref==0
+    (
+      DIALOG.OK "Target Power Fail!"
+      WinCLEAR
+      END
+    )
+    
+    IF SYStem.MODE()<5
+    (
+      DIALOG.OK "Unexpected error! System is down."
+      WinCLEAR
+      END
+    )
+    
+    SYStem.Mode Prepare
+    
+    RETURN
+  )
+  
+  SYStem.JtagClock 1MHz
+  SYStem.Mode Prepare
+  
+  ; Checking ID code register of the flash TAP
+  &id_code=Data.Long(DBG:0x00600000)              ; Reading the ID code
+  
+  IF (&id_code!=0x4570041)&&(&id_code!=0x14570041)
+  (
+    DIALOG.OK "The ID code of the flash does not match: "+FORMAT.HEX(8.,&id_code)
+    SYStem.Down
+    ENDDO
+  )
+  
+  &revision=(&id_code>>28.)&0xF
+  &part_number=(&id_code>>12.)&0xFFFF
+  &manufacturer=(&id_code>>1.)&0x7FF
+
+  ; Clear VM memory
+  Data.Set VM:0x0000000++0x520008 %Byte 0xFF
+  Data.Set VM:0x0520000++0x000007 %Byte 0x00
+  Data.Set VM:0x0520008 %Byte 0x00
+  
+; Creating the dialog
+  WinPOS 50. 5. 70. 30.
+  DIALOG.view
+(&
+            HEADER "STR9 Flash Programming Settings"
+             
+             POS 3. 1. 10. 1.
+            TEXT ""+FORMAT.HEX(8.,&id_code)
+            
+            POS 12. 1. 10. 1.
+            TEXT "Revision:"
+            
+            POS 18. 1. 3. 1.
+            TEXT ""+FORMAT.HEX(1.,&revision)
+            
+            POS 22. 1. 10. 1.
+            TEXT "Part Number:"
+            
+            POS 31. 1. 8. 1.
+            TEXT ""+FORMAT.HEX(4.,&part_number)
+            
+            POS 37. 1. 10. 1.
+            TEXT "Manufacturer:"
+            
+            POS 46. 1. 4. 1.
+            TEXT ""+FORMAT.HEX(3.,&manufacturer)
+            
+            POS 1. 0. 50. 3.
+            BOX "Flash ID Code"
+            
+             POS 1. 3. 50. 3.
+             BOX "User Code"
+             
+             POS 3. 4. 15. 1.
+EDIT_UC:    EDIT "" "GOSUB UpdateUC"
+    
+             POS 1. 6. 50. 18.
+             BOX "Configuration"
+             
+            POS 3. 8. 15. 1.
+CHK_OTP:    CHECKBOX "OTP Lock" "GOSUB LockOTP"
+
+            POS 20. 8. 15. 1.
+CHK_SEC:    CHECKBOX "Secure Device" "GOSUB UpdateSec"
+
+
+            POS 3. 10. 15. 1.
+CHK_LVDWS:  CHECKBOX "LVD Warning Select" "GOSUB UpdateConfig"
+
+            POS 20. 10. 15. 1.
+CHK_LVDRS:  CHECKBOX "LVD Reset Select" "GOSUB UpdateConfig"
+
+            POS 37. 10. 10. 1.
+CHK_LVDTH:  CHECKBOX "LVD TH" "GOSUB UpdateConfig"
+
+            POS 3. 12. 15. 1.
+            TEXT "Bank 1 Sector Protection"
+
+            POS 3. 13. 4. 1.
+CHK_B1SP0:  CHECKBOX "0" "GOSUB UpdateConfig"
+            POS 9. 13. 4. 1.
+CHK_B1SP1:  CHECKBOX "1" "GOSUB UpdateConfig"
+            POS 15. 13. 4. 1.
+CHK_B1SP2:  CHECKBOX "2" "GOSUB UpdateConfig"
+            POS 21. 13. 4. 1.
+CHK_B1SP3:  CHECKBOX "3" "GOSUB UpdateConfig"
+            POS 27. 13. 4. 1.
+CHK_B1SP4:  CHECKBOX "4" "GOSUB UpdateConfig"
+            POS 33. 13. 4. 1.
+CHK_B1SP5:  CHECKBOX "5" "GOSUB UpdateConfig"
+            POS 39. 13. 4. 1.
+CHK_B1SP6:  CHECKBOX "6" "GOSUB UpdateConfig"
+            POS 45. 13. 4. 1.
+CHK_B1SP7:  CHECKBOX "7" "GOSUB UpdateConfig"
+
+            POS 3. 15. 15. 1.
+            TEXT "Bank 0 Sector Protection"
+
+            POS 3. 16. 4. 1.
+CHK_B0SP0:  CHECKBOX "0" "GOSUB UpdateConfig"
+            POS 9. 16. 4. 1.
+CHK_B0SP1:  CHECKBOX "1" "GOSUB UpdateConfig"
+            POS 15. 16. 4. 1.
+CHK_B0SP2:  CHECKBOX "2" "GOSUB UpdateConfig"
+            POS 21. 16. 4. 1.
+CHK_B0SP3:  CHECKBOX "3" "GOSUB UpdateConfig"
+            POS 27. 16. 4. 1.
+CHK_B0SP4:  CHECKBOX "4" "GOSUB UpdateConfig"
+            POS 33. 16. 4. 1.
+CHK_B0SP5:  CHECKBOX "5" "GOSUB UpdateConfig"
+            POS 39. 16. 4. 1.
+CHK_B0SP6:  CHECKBOX "6" "GOSUB UpdateConfig"
+            POS 45. 16. 4. 1.
+CHK_B0SP7:  CHECKBOX "7" "GOSUB UpdateConfig"
+            POS 3. 17. 4. 1.
+CHK_B0SP8:  CHECKBOX "8" "GOSUB UpdateConfig"
+            POS 9. 17. 4. 1.
+CHK_B0SP9:  CHECKBOX "9" "GOSUB UpdateConfig"
+            POS 15. 17. 4. 1.
+CHK_B0SP10:  CHECKBOX "10" "GOSUB UpdateConfig"
+            POS 21. 17. 4. 1.
+CHK_B0SP11:  CHECKBOX "11" "GOSUB UpdateConfig"
+            POS 27. 17. 4. 1.
+CHK_B0SP12:  CHECKBOX "12" "GOSUB UpdateConfig"
+            POS 33. 17. 4. 1.
+CHK_B0SP13:  CHECKBOX "13" "GOSUB UpdateConfig"
+            POS 39. 17. 4. 1.
+CHK_B0SP14:  CHECKBOX "14" "GOSUB UpdateConfig"
+            POS 45. 17. 4. 1.
+CHK_B0SP15:  CHECKBOX "15" "GOSUB UpdateConfig"
+            POS 3. 18. 4. 1.
+CHK_B0SP16:  CHECKBOX "16" "GOSUB UpdateConfig"
+            POS 9. 18. 4. 1.
+CHK_B0SP17:  CHECKBOX "17" "GOSUB UpdateConfig"
+            POS 15. 18. 4. 1.
+CHK_B0SP18:  CHECKBOX "18" "GOSUB UpdateConfig"
+            POS 21. 18. 4. 1.
+CHK_B0SP19:  CHECKBOX "19" "GOSUB UpdateConfig"
+            POS 27. 18. 4. 1.
+CHK_B0SP20:  CHECKBOX "20" "GOSUB UpdateConfig"
+            POS 33. 18. 4. 1.
+CHK_B0SP21:  CHECKBOX "21" "GOSUB UpdateConfig"
+            POS 39. 18. 4. 1.
+CHK_B0SP22:  CHECKBOX "22" "GOSUB UpdateConfig"
+            POS 45. 18. 4. 1.
+CHK_B0SP23:  CHECKBOX "23" "GOSUB UpdateConfig"
+            POS 3. 19. 4. 1.
+CHK_B0SP24:  CHECKBOX "24" "GOSUB UpdateConfig"
+            POS 9. 19. 4. 1.
+CHK_B0SP25:  CHECKBOX "25" "GOSUB UpdateConfig"
+            POS 15. 19. 4. 1.
+CHK_B0SP26:  CHECKBOX "26" "GOSUB UpdateConfig"
+            POS 21. 19. 4. 1.
+CHK_B0SP27:  CHECKBOX "27" "GOSUB UpdateConfig"
+            POS 27. 19. 4. 1.
+CHK_B0SP28:  CHECKBOX "28" "GOSUB UpdateConfig"
+            POS 33. 19. 4. 1.
+CHK_B0SP29:  CHECKBOX "29" "GOSUB UpdateConfig"
+            POS 39. 19. 4. 1.
+CHK_B0SP30:  CHECKBOX "30" "GOSUB UpdateConfig"
+            POS 45. 19. 4. 1.
+CHK_B0SP31:  CHECKBOX "31" "GOSUB UpdateConfig"
+
+            POS 3. 21. 10. 1.
+            TEXT "Boot Flash Bank:"
+            POS 16. 21. 12. 1.
+CHSB.B0:     CHOOSEBOX "Flash Bank 0" "GOSUB UpdateConfig"
+CHSB.B1:     CHOOSEBOX "Flash Bank 1" "GOSUB UpdateConfig"
+
+            POS 1. 24. 50. 6.
+             BOX "OTP"
+            
+            POS 3. 25. 4. 1.
+            TEXT "0x00"
+            POS 7. 25. 4. 1.
+EDIT_OTP00:  EDIT "" "GOSUB UpdateOTP"
+            POS 12. 25. 4. 1.
+EDIT_OTP01:  EDIT "" "GOSUB UpdateOTP"
+            POS 17. 25. 4. 1.
+EDIT_OTP02:  EDIT "" "GOSUB UpdateOTP"
+            POS 22. 25. 4. 1.
+EDIT_OTP03:  EDIT "" "GOSUB UpdateOTP"
+            POS 27. 25. 4. 1.
+EDIT_OTP04:  EDIT "" "GOSUB UpdateOTP"
+            POS 32. 25. 4. 1.
+EDIT_OTP05:  EDIT "" "GOSUB UpdateOTP"
+            POS 37. 25. 4. 1.
+EDIT_OTP06:  EDIT "" "GOSUB UpdateOTP"
+            POS 42. 25. 4. 1.
+EDIT_OTP07:  EDIT "" "GOSUB UpdateOTP"
+
+            POS 3. 26. 4. 1.
+            TEXT "0x08"
+            POS 7. 26. 4. 1.
+EDIT_OTP08:  EDIT "" "GOSUB UpdateOTP"
+            POS 12. 26. 4. 1.
+EDIT_OTP09:  EDIT "" "GOSUB UpdateOTP"
+            POS 17. 26. 4. 1.
+EDIT_OTP0A:  EDIT "" "GOSUB UpdateOTP"
+            POS 22. 26. 4. 1.
+EDIT_OTP0B:  EDIT "" "GOSUB UpdateOTP"
+            POS 27. 26. 4. 1.
+EDIT_OTP0C:  EDIT "" "GOSUB UpdateOTP"
+            POS 32. 26. 4. 1.
+EDIT_OTP0D:  EDIT "" "GOSUB UpdateOTP"
+            POS 37. 26. 4. 1.
+EDIT_OTP0E:  EDIT "" "GOSUB UpdateOTP"
+            POS 42. 26. 4. 1.
+EDIT_OTP0F:  EDIT "" "GOSUB UpdateOTP"
+
+            POS 3. 27. 4. 1.
+            TEXT "0x10"
+            POS 7. 27. 4. 1.
+EDIT_OTP10:  EDIT "" "GOSUB UpdateOTP"
+            POS 12. 27. 4. 1.
+EDIT_OTP11:  EDIT "" "GOSUB UpdateOTP"
+            POS 17. 27. 4. 1.
+EDIT_OTP12:  EDIT "" "GOSUB UpdateOTP"
+            POS 22. 27. 4. 1.
+EDIT_OTP13:  EDIT "" "GOSUB UpdateOTP"
+            POS 27. 27. 4. 1.
+EDIT_OTP14:  EDIT "" "GOSUB UpdateOTP"
+            POS 32. 27. 4. 1.
+EDIT_OTP15:  EDIT "" "GOSUB UpdateOTP"
+            POS 37. 27. 4. 1.
+EDIT_OTP16:  EDIT "" "GOSUB UpdateOTP"
+            POS 42. 27. 4. 1.
+EDIT_OTP17:  EDIT "" "GOSUB UpdateOTP"
+
+            POS 3. 28. 4. 1.
+            TEXT "0x18"
+            POS 7. 28. 4. 1.
+EDIT_OTP18:  EDIT "" "GOSUB UpdateOTP"
+            POS 12. 28. 4. 1.
+EDIT_OTP19:  EDIT "" "GOSUB UpdateOTP"
+            POS 17. 28. 4. 1.
+EDIT_OTP1A:  EDIT "" "GOSUB UpdateOTP"
+            POS 22. 28. 4. 1.
+EDIT_OTP1B:  EDIT "" "GOSUB UpdateOTP"
+            POS 27. 28. 4. 1.
+EDIT_OTP1C:  EDIT "" "GOSUB UpdateOTP"
+            POS 32. 28. 4. 1.
+EDIT_OTP1D:  EDIT "" "GOSUB UpdateOTP"
+            POS 37. 28. 4. 1.
+EDIT_OTP1E:  EDIT "" "GOSUB UpdateOTP"
+            POS 42. 28. 4. 1.
+EDIT_OTP1F:  EDIT "" "GOSUB UpdateOTP"
+
+            POS 53. 0. 16. 6.
+             BOX ""
+
+            POS 54. 1. 14. 1.
+BT_PROG:    BUTTON "Program Flash..." "GOSUB ProgramFlashDialog"
+                        
+            POS 54. 4. 14. 1.
+BT_ERASE:    BUTTON "Erase Flash..." "GOSUB EraseFlashDialog"
+            
+            POS 53. 6. 16. 14.
+             BOX ""
+            
+            POS 54. 7. 14. 1.
+BT_LOAD:    BUTTON "Load OBJ File..." "GOSUB LoadOBJ"
+
+            POS 54. 9. 14. 1.
+BT_LOAD_B0:  BUTTON "Load Main Flash..." "GOSUB LoadMainFlash"
+
+            POS 54. 11. 14. 1.
+BT_LOAD_B1:  BUTTON "Load Secondary Flash..." "GOSUB LoadSecondaryFlash"
+
+            POS 54. 13. 14. 1.
+BT_SAVE:    BUTTON "Save OBJ File..." "GOSUB SaveOBJ"
+            
+            POS 54. 16. 14. 1.
+BT_UPDATE:  BUTTON "Update From Flash" "GOSUB UpdateFromFlash"
+            
+            POS 54. 18. 14. 1.
+BT_VIEW:    BUTTON "View OBJ File..." "GOSUB ViewOBJ"
+                        
+            POS 53. 24. 16. 3.
+             BOX "Flash Type"
+            
+            POS 54. 25. 14. 1.
+COMB.SEL:    COMBOBOX "STR91xFAxx2,STR91xFAxx4,STR91xFAxx6,STR91xFAxx7" "GOSUB CheckFlashType"
+
+            CLOSE "CONTinue"
+  )
+  
+; Update data
+  ; Try autodetect flash settings:
+  DIALOG.Set COMB.SEL "STR91xFAxx4"
+  
+  &cpu=CPU()
+  IF (STRing.LENgth("&cpu")==11.)
+  (
+    &cpu=STRing.MID("&cpu",10.,1.)
+    IF "&cpu"=="2"
+    (
+      DIALOG.Set COMB.SEL "STR91xFAxx2"
+      &flashtype=2
+    )
+    ELSE IF "&cpu"=="4"
+    (
+      DIALOG.Set COMB.SEL "STR91xFAxx4"
+      &flashtype=4
+    )
+    ELSE IF "&cpu"=="6"
+    (
+      DIALOG.Set COMB.SEL "STR91xFAxx6"
+      &flashtype=6
+    )
+    ELSE
+    (
+      DIALOG.Set COMB.SEL "STR91xFAxx7"
+      &flashtype=7
+    )
+  )
+  
+  &status=Data.Byte(DBG:600004)
+  
+  GOSUB UpdateConfigFromFlash
+  
+  GOSUB CheckFlashType
+  GOSUB SecureCheck
+  
+  ; Wait until The close button was pressed.
+  STOP
+  
+  DIALOG.END
+  SYStem.Down
+  
+  ENDDO
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Erase Flash Dialog
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+EraseFlashDialog:
+
+  &status=Data.Byte(DBG:0x600004)
+  
+  ; Check, if device locked, then immediatly perform a full chip erase.
+  IF (&status&0x40)!=0
+  (
+    GOSUB FullChipErase
+    Data.Set DBG:0x600004 %Byte 0x00
+    GOSUB SecureCheck
+    RETURN
+  )
+  
+  ; Disable Buttons in the main window to keep the coherency between the two windows.
+  DIALOG.Disable BT_PROG
+  DIALOG.Disable BT_ERASE
+  DIALOG.Disable BT_LOAD
+  DIALOG.Disable BT_LOAD_B0
+  DIALOG.Disable BT_LOAD_B1
+  DIALOG.Disable BT_SAVE
+  DIALOG.Disable BT_UPDATE
+  DIALOG.Disable BT_VIEW
+  DIALOG.Disable COMB.SEL
+  
+  ; Open the dialog
+  WinPOS 55. 10. 60. 16.
+  DIALOG.view
+(&
+            HEADER "STR9 Flash erase"
+            
+            POS 1. 0. 58. 14.
+            BOX "Sector Selection"
+            
+            POS 7. 2. 5. 1.
+CHK_EOTP:    CHECKBOX "OTP" "GOSUB EraseUpdateWindow"
+
+            POS 24. 2. 14. 1.
+CHK_ECONF:  CHECKBOX "Configuration" "GOSUB EraseUpdateWindow"
+
+            POS 43. 2. 14. 1.
+CHK_EUC:    CHECKBOX "User Code" "GOSUB EraseUpdateWindow"
+
+
+            POS 7. 4. 15. 1.
+            TEXT "Bank 1 Sector Erase"
+
+            POS 7. 5. 4. 1.
+CHK_EB1SP0:  CHECKBOX "0" "GOSUB EraseUpdateWindow"
+            POS 13. 5. 4. 1.
+CHK_EB1SP1:  CHECKBOX "1" "GOSUB EraseUpdateWindow"
+            POS 19. 5. 4. 1.
+CHK_EB1SP2:  CHECKBOX "2" "GOSUB EraseUpdateWindow"
+            POS 25. 5. 4. 1.
+CHK_EB1SP3:  CHECKBOX "3" "GOSUB EraseUpdateWindow"
+            POS 31. 5. 4. 1.
+CHK_EB1SP4:  CHECKBOX "4" "GOSUB EraseUpdateWindow"
+            POS 37. 5. 4. 1.
+CHK_EB1SP5:  CHECKBOX "5" "GOSUB EraseUpdateWindow"
+            POS 43. 5. 4. 1.
+CHK_EB1SP6:  CHECKBOX "6" "GOSUB EraseUpdateWindow"
+            POS 49. 5. 4. 1.
+CHK_EB1SP7:  CHECKBOX "7" "GOSUB EraseUpdateWindow"
+
+             POS 7. 7. 15. 1.
+             TEXT "Bank 0 Sector Erase"
+
+             POS 7. 8. 4. 1.
+CHK_EB0SP0:   CHECKBOX "0" "GOSUB EraseUpdateWindow"
+             POS 13. 8. 4. 1.
+CHK_EB0SP1:   CHECKBOX "1" "GOSUB EraseUpdateWindow"
+             POS 19. 8. 4. 1.
+CHK_EB0SP2:   CHECKBOX "2" "GOSUB EraseUpdateWindow"
+             POS 25. 8. 4. 1.
+CHK_EB0SP3:   CHECKBOX "3" "GOSUB EraseUpdateWindow"
+             POS 31. 8. 4. 1.
+CHK_EB0SP4:   CHECKBOX "4" "GOSUB EraseUpdateWindow"
+             POS 37. 8. 4. 1.
+CHK_EB0SP5:   CHECKBOX "5" "GOSUB EraseUpdateWindow"
+             POS 43. 8. 4. 1.
+CHK_EB0SP6:   CHECKBOX "6" "GOSUB EraseUpdateWindow"
+             POS 49. 8. 4. 1.
+CHK_EB0SP7:   CHECKBOX "7" "GOSUB EraseUpdateWindow"
+             POS 7. 9. 4. 1.
+CHK_EB0SP8:   CHECKBOX "8" "GOSUB EraseUpdateWindow"
+             POS 13. 9. 4. 1.
+CHK_EB0SP9:   CHECKBOX "9" "GOSUB EraseUpdateWindow"
+             POS 19. 9. 4. 1.
+CHK_EB0SP10: CHECKBOX "10" "GOSUB EraseUpdateWindow"
+             POS 25. 9. 4. 1.
+CHK_EB0SP11: CHECKBOX "11" "GOSUB EraseUpdateWindow"
+             POS 31. 9. 4. 1.
+CHK_EB0SP12: CHECKBOX "12" "GOSUB EraseUpdateWindow"
+             POS 37. 9. 4. 1.
+CHK_EB0SP13: CHECKBOX "13" "GOSUB EraseUpdateWindow"
+             POS 43. 9. 4. 1.
+CHK_EB0SP14: CHECKBOX "14" "GOSUB EraseUpdateWindow"
+             POS 49. 9. 4. 1.
+CHK_EB0SP15: CHECKBOX "15" "GOSUB EraseUpdateWindow"
+             POS 7. 10. 4. 1.
+CHK_EB0SP16: CHECKBOX "16" "GOSUB EraseUpdateWindow"
+             POS 13. 10. 4. 1.
+CHK_EB0SP17: CHECKBOX "17" "GOSUB EraseUpdateWindow"
+             POS 19. 10. 4. 1.
+CHK_EB0SP18: CHECKBOX "18" "GOSUB EraseUpdateWindow"
+             POS 25. 10. 4. 1.
+CHK_EB0SP19: CHECKBOX "19" "GOSUB EraseUpdateWindow"
+             POS 31. 10. 4. 1.
+CHK_EB0SP20: CHECKBOX "20" "GOSUB EraseUpdateWindow"
+             POS 37. 10. 4. 1.
+CHK_EB0SP21: CHECKBOX "21" "GOSUB EraseUpdateWindow"
+             POS 43. 10. 4. 1.
+CHK_EB0SP22: CHECKBOX "22" "GOSUB EraseUpdateWindow"
+             POS 49. 10. 4. 1.
+CHK_EB0SP23: CHECKBOX "23" "GOSUB EraseUpdateWindow"
+             POS 7. 11. 4. 1.
+CHK_EB0SP24: CHECKBOX "24" "GOSUB EraseUpdateWindow"
+             POS 13. 11. 4. 1.
+CHK_EB0SP25: CHECKBOX "25" "GOSUB EraseUpdateWindow"
+             POS 19. 11. 4. 1.
+CHK_EB0SP26: CHECKBOX "26" "GOSUB EraseUpdateWindow"
+             POS 25. 11. 4. 1.
+CHK_EB0SP27: CHECKBOX "27" "GOSUB EraseUpdateWindow"
+             POS 31. 11. 4. 1.
+CHK_EB0SP28: CHECKBOX "28" "GOSUB EraseUpdateWindow"
+             POS 37. 11. 4. 1.
+CHK_EB0SP29: CHECKBOX "29" "GOSUB EraseUpdateWindow"
+             POS 43. 11. 4. 1.
+CHK_EB0SP30: CHECKBOX "30" "GOSUB EraseUpdateWindow"
+             POS 49. 11. 4. 1.
+CHK_EB0SP31: CHECKBOX "31" "GOSUB EraseUpdateWindow"
+
+              
+              POS 1. 14. 13. 1.
+BT_ERASESEC:  BUTTON "Erase Sectors" 
+              (
+                GOSUB SectorErase
+                CONTinue
+              )
+              
+            POS 15. 14. 13. 1.
+            BUTTON "Full Chip Erase" 
+            (
+              GOSUB FullChipErase
+              CONTinue
+            )
+            
+            POS 32. 14. 13. 1.
+            BUTTON "Select All" "GOSUB EraseSelectAll"
+            
+            POS 46. 14. 13. 1.
+            BUTTON "Select None" "GOSUB EraseSelectNone"
+
+            CLOSE "CONTinue"
+)
+  GOSUB EraseUpdateWindow
+
+  IF (&flashtype==2)
+  (
+    ; Bank 0 settings
+    DIALOG.Disable CHK_EB0SP4
+    DIALOG.Disable CHK_EB0SP5
+    DIALOG.Disable CHK_EB0SP6
+    DIALOG.Disable CHK_EB0SP7
+    DIALOG.Disable CHK_EB0SP8
+    DIALOG.Disable CHK_EB0SP9
+    DIALOG.Disable CHK_EB0SP10
+    DIALOG.Disable CHK_EB0SP11
+    DIALOG.Disable CHK_EB0SP12
+    DIALOG.Disable CHK_EB0SP13
+    DIALOG.Disable CHK_EB0SP14
+    DIALOG.Disable CHK_EB0SP15
+    DIALOG.Disable CHK_EB0SP16
+    DIALOG.Disable CHK_EB0SP17
+    DIALOG.Disable CHK_EB0SP18
+    DIALOG.Disable CHK_EB0SP19
+    DIALOG.Disable CHK_EB0SP20
+    DIALOG.Disable CHK_EB0SP21
+    DIALOG.Disable CHK_EB0SP22
+    DIALOG.Disable CHK_EB0SP23
+    DIALOG.Disable CHK_EB0SP24
+    DIALOG.Disable CHK_EB0SP25
+    DIALOG.Disable CHK_EB0SP26
+    DIALOG.Disable CHK_EB0SP27
+    DIALOG.Disable CHK_EB0SP28
+    DIALOG.Disable CHK_EB0SP29
+    DIALOG.Disable CHK_EB0SP30
+    DIALOG.Disable CHK_EB0SP31
+    
+    DIALOG.Set CHK_EB0SP4  " "
+    DIALOG.Set CHK_EB0SP5  " "
+    DIALOG.Set CHK_EB0SP6  " "
+    DIALOG.Set CHK_EB0SP7  " "
+    DIALOG.Set CHK_EB0SP8  " "
+    DIALOG.Set CHK_EB0SP9  " "
+    DIALOG.Set CHK_EB0SP10 " "
+    DIALOG.Set CHK_EB0SP11 " "
+    DIALOG.Set CHK_EB0SP12 " "
+    DIALOG.Set CHK_EB0SP13 " "
+    DIALOG.Set CHK_EB0SP14 " "
+    DIALOG.Set CHK_EB0SP15 " "
+    DIALOG.Set CHK_EB0SP16 " "
+    DIALOG.Set CHK_EB0SP16 " "
+    DIALOG.Set CHK_EB0SP18 " "
+    DIALOG.Set CHK_EB0SP19 " "
+    DIALOG.Set CHK_EB0SP20 " "
+    DIALOG.Set CHK_EB0SP21 " "
+    DIALOG.Set CHK_EB0SP22 " "
+    DIALOG.Set CHK_EB0SP23 " "
+    DIALOG.Set CHK_EB0SP24 " "
+    DIALOG.Set CHK_EB0SP25 " "
+    DIALOG.Set CHK_EB0SP26 " "
+    DIALOG.Set CHK_EB0SP27 " "
+    DIALOG.Set CHK_EB0SP28 " "
+    DIALOG.Set CHK_EB0SP29 " "
+    DIALOG.Set CHK_EB0SP30 " "
+    DIALOG.Set CHK_EB0SP31 " "
+    
+    ; Bank 1 settings
+    DIALOG.Disable CHK_EB1SP4
+    DIALOG.Disable CHK_EB1SP5
+    DIALOG.Disable CHK_EB1SP6
+    DIALOG.Disable CHK_EB1SP7
+    
+    DIALOG.Set CHK_EB1SP4  " "
+    DIALOG.Set CHK_EB1SP5  " "
+    DIALOG.Set CHK_EB1SP6  " "
+    DIALOG.Set CHK_EB1SP7  " "
+  )
+  ELSE IF (&flashtype==4)
+  (
+    ; Bank 0 settings
+    DIALOG.Enable  CHK_EB0SP4
+    DIALOG.Enable  CHK_EB0SP5
+    DIALOG.Enable  CHK_EB0SP6
+    DIALOG.Enable  CHK_EB0SP7
+    DIALOG.Disable CHK_EB0SP8
+    DIALOG.Disable CHK_EB0SP9
+    DIALOG.Disable CHK_EB0SP10
+    DIALOG.Disable CHK_EB0SP11
+    DIALOG.Disable CHK_EB0SP12
+    DIALOG.Disable CHK_EB0SP13
+    DIALOG.Disable CHK_EB0SP14
+    DIALOG.Disable CHK_EB0SP15
+    DIALOG.Disable CHK_EB0SP16
+    DIALOG.Disable CHK_EB0SP17
+    DIALOG.Disable CHK_EB0SP18
+    DIALOG.Disable CHK_EB0SP19
+    DIALOG.Disable CHK_EB0SP20
+    DIALOG.Disable CHK_EB0SP21
+    DIALOG.Disable CHK_EB0SP22
+    DIALOG.Disable CHK_EB0SP23
+    DIALOG.Disable CHK_EB0SP24
+    DIALOG.Disable CHK_EB0SP25
+    DIALOG.Disable CHK_EB0SP26
+    DIALOG.Disable CHK_EB0SP27
+    DIALOG.Disable CHK_EB0SP28
+    DIALOG.Disable CHK_EB0SP29
+    DIALOG.Disable CHK_EB0SP30
+    DIALOG.Disable CHK_EB0SP31
+    
+    DIALOG.Set CHK_EB0SP8  " "
+    DIALOG.Set CHK_EB0SP9  " "
+    DIALOG.Set CHK_EB0SP10 " "
+    DIALOG.Set CHK_EB0SP11 " "
+    DIALOG.Set CHK_EB0SP12 " "
+    DIALOG.Set CHK_EB0SP13 " "
+    DIALOG.Set CHK_EB0SP14 " "
+    DIALOG.Set CHK_EB0SP15 " "
+    DIALOG.Set CHK_EB0SP16 " "
+    DIALOG.Set CHK_EB0SP16 " "
+    DIALOG.Set CHK_EB0SP18 " "
+    DIALOG.Set CHK_EB0SP19 " "
+    DIALOG.Set CHK_EB0SP20 " "
+    DIALOG.Set CHK_EB0SP21 " "
+    DIALOG.Set CHK_EB0SP22 " "
+    DIALOG.Set CHK_EB0SP23 " "
+    DIALOG.Set CHK_EB0SP24 " "
+    DIALOG.Set CHK_EB0SP25 " "
+    DIALOG.Set CHK_EB0SP26 " "
+    DIALOG.Set CHK_EB0SP27 " "
+    DIALOG.Set CHK_EB0SP28 " "
+    DIALOG.Set CHK_EB0SP29 " "
+    DIALOG.Set CHK_EB0SP30 " "
+    DIALOG.Set CHK_EB0SP31 " "
+    
+    ; Bank 1 settings
+    DIALOG.Disable CHK_EB1SP4
+    DIALOG.Disable CHK_EB1SP5
+    DIALOG.Disable CHK_EB1SP6
+    DIALOG.Disable CHK_EB1SP7
+    
+    DIALOG.Set CHK_EB1SP4  " "
+    DIALOG.Set CHK_EB1SP5  " "
+    DIALOG.Set CHK_EB1SP6  " "
+    DIALOG.Set CHK_EB1SP7  " "
+  )
+  ELSE IF (&flashtype==6)
+  (
+    ; Bank 0 settings
+    DIALOG.Enable  CHK_EB0SP4
+    DIALOG.Enable  CHK_EB0SP5
+    DIALOG.Enable  CHK_EB0SP6
+    DIALOG.Enable  CHK_EB0SP7
+    DIALOG.Enable  CHK_EB0SP8
+    DIALOG.Enable  CHK_EB0SP9
+    DIALOG.Enable  CHK_EB0SP10
+    DIALOG.Enable  CHK_EB0SP11
+    DIALOG.Enable  CHK_EB0SP12
+    DIALOG.Enable  CHK_EB0SP13
+    DIALOG.Enable  CHK_EB0SP14
+    DIALOG.Enable  CHK_EB0SP15
+    DIALOG.Disable CHK_EB0SP16
+    DIALOG.Disable CHK_EB0SP17
+    DIALOG.Disable CHK_EB0SP18
+    DIALOG.Disable CHK_EB0SP19
+    DIALOG.Disable CHK_EB0SP20
+    DIALOG.Disable CHK_EB0SP21
+    DIALOG.Disable CHK_EB0SP22
+    DIALOG.Disable CHK_EB0SP23
+    DIALOG.Disable CHK_EB0SP24
+    DIALOG.Disable CHK_EB0SP25
+    DIALOG.Disable CHK_EB0SP26
+    DIALOG.Disable CHK_EB0SP27
+    DIALOG.Disable CHK_EB0SP28
+    DIALOG.Disable CHK_EB0SP29
+    DIALOG.Disable CHK_EB0SP30
+    DIALOG.Disable CHK_EB0SP31
+    
+    DIALOG.Set CHK_EB0SP16 " "
+    DIALOG.Set CHK_EB0SP16 " "
+    DIALOG.Set CHK_EB0SP18 " "
+    DIALOG.Set CHK_EB0SP19 " "
+    DIALOG.Set CHK_EB0SP20 " "
+    DIALOG.Set CHK_EB0SP21 " "
+    DIALOG.Set CHK_EB0SP22 " "
+    DIALOG.Set CHK_EB0SP23 " "
+    DIALOG.Set CHK_EB0SP24 " "
+    DIALOG.Set CHK_EB0SP25 " "
+    DIALOG.Set CHK_EB0SP26 " "
+    DIALOG.Set CHK_EB0SP27 " "
+    DIALOG.Set CHK_EB0SP28 " "
+    DIALOG.Set CHK_EB0SP29 " "
+    DIALOG.Set CHK_EB0SP30 " "
+    DIALOG.Set CHK_EB0SP31 " "
+    
+    ; Bank 1 settings
+    DIALOG.Enable CHK_EB1SP4
+    DIALOG.Enable CHK_EB1SP5
+    DIALOG.Enable CHK_EB1SP6
+    DIALOG.Enable CHK_EB1SP7
+  )
+  ELSE IF (&flashtype==7)
+  (
+    ; Bank 0 settings
+    DIALOG.Enable  CHK_EB0SP4
+    DIALOG.Enable  CHK_EB0SP5
+    DIALOG.Enable  CHK_EB0SP6
+    DIALOG.Enable  CHK_EB0SP7
+    DIALOG.Enable  CHK_EB0SP8
+    DIALOG.Enable  CHK_EB0SP9
+    DIALOG.Enable  CHK_EB0SP10
+    DIALOG.Enable  CHK_EB0SP11
+    DIALOG.Enable  CHK_EB0SP12
+    DIALOG.Enable  CHK_EB0SP13
+    DIALOG.Enable  CHK_EB0SP14
+    DIALOG.Enable  CHK_EB0SP15
+    DIALOG.Enable  CHK_EB0SP16
+    DIALOG.Enable  CHK_EB0SP17
+    DIALOG.Enable  CHK_EB0SP18
+    DIALOG.Enable  CHK_EB0SP19
+    DIALOG.Enable  CHK_EB0SP20
+    DIALOG.Enable  CHK_EB0SP21
+    DIALOG.Enable  CHK_EB0SP22
+    DIALOG.Enable  CHK_EB0SP23
+    DIALOG.Enable  CHK_EB0SP24
+    DIALOG.Enable  CHK_EB0SP25
+    DIALOG.Enable  CHK_EB0SP26
+    DIALOG.Enable  CHK_EB0SP27
+    DIALOG.Enable  CHK_EB0SP28
+    DIALOG.Enable  CHK_EB0SP29
+    DIALOG.Enable  CHK_EB0SP30
+    DIALOG.Enable  CHK_EB0SP31
+    
+    ; Bank 1 settings
+    DIALOG.Enable CHK_EB1SP4
+    DIALOG.Enable CHK_EB1SP5
+    DIALOG.Enable CHK_EB1SP6
+    DIALOG.Enable CHK_EB1SP7
+  )
+  
+  STOP
+EraseDialogClose:
+  DIALOG.END
+
+  ; Reenable the dialog buttons.
+  DIALOG.Enable BT_PROG
+  DIALOG.Enable BT_ERASE
+  DIALOG.Enable BT_LOAD
+  DIALOG.Enable BT_LOAD_B0
+  DIALOG.Enable BT_LOAD_B1
+  DIALOG.Enable BT_SAVE
+  DIALOG.Enable BT_UPDATE
+  DIALOG.Enable BT_VIEW
+  DIALOG.Enable COMB.SEL
+  
+  Data.Set DBG:0x600004 %Byte 0x00
+  
+  GOSUB SecureCheck
+
+  RETURN
+  
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Program Flash Dialog
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+ProgramFlashDialog:
+
+  ; Disable buttons in the main window to keep the coherency between the two windows.
+  DIALOG.Disable BT_PROG
+  DIALOG.Disable BT_ERASE
+  DIALOG.Disable BT_LOAD
+  DIALOG.Disable BT_LOAD_B0
+  DIALOG.Disable BT_LOAD_B1
+  DIALOG.Disable BT_SAVE
+  DIALOG.Disable BT_UPDATE
+  DIALOG.Disable BT_VIEW
+  DIALOG.Disable COMB.SEL
+  
+  ; Open the dialog
+  WinPOS 60. 10. 36. 13.
+  DIALOG.view
+(&
+            HEADER "Select Sectors"
+            
+            POS 1. 0. 20. 13.
+            BOX "Sector Selection"
+            
+            POS 4. 2. 11. 1.
+CHK_POTP:    CHECKBOX "OTP" "GOSUB ProgramUpdateWindow"
+
+            POS 4. 4. 11. 1.
+CHK_PCONF:  CHECKBOX "Configuration" "GOSUB ProgramUpdateWindow"
+
+            POS 4. 6. 11. 1.
+CHK_PUC:    CHECKBOX "User Code" "GOSUB ProgramUpdateWindow"
+
+            POS 4. 8. 11. 1.
+CHK_PB0:    CHECKBOX "Flash Bank 0" "GOSUB ProgramUpdateWindow"
+            POS 4. 10. 11. 1.
+CHK_PB1:    CHECKBOX "Flash Bank 1" "GOSUB ProgramUpdateWindow"
+            
+
+            POS 22. 1. 13. 1.
+BT_PROGSEC:  BUTTON "Program Sectors" 
+            (
+              GOSUB Program
+              CONTinue
+            )
+            
+            POS 22. 5 13. 1.
+            BUTTON "Select All" "GOSUB ProgramSelectAll"
+            
+            POS 22. 7. 13. 1.
+            BUTTON "Select None" "GOSUB ProgramSelectNone"
+
+            CLOSE "CONTinue"
+)
+  GOSUB ProgramUpdateWindow
+  
+  STOP
+  
+ProgramDialogClose:
+  DIALOG.END
+
+  ; Reenable the dialog buttons.
+  DIALOG.Enable BT_PROG
+  DIALOG.Enable BT_ERASE
+  DIALOG.Enable BT_LOAD
+  DIALOG.Enable BT_LOAD_B0
+  DIALOG.Enable BT_LOAD_B1
+  DIALOG.Enable BT_SAVE
+  DIALOG.Enable BT_UPDATE
+  DIALOG.Enable BT_VIEW
+  DIALOG.Enable COMB.SEL
+  
+  GOSUB SecureCheck
+
+  RETURN
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Lock GUI Elements, if device is secured
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+SecureCheck:
+  &status=Data.Byte(DBG:0x600004)
+  
+  IF (&status&0x40)==0
+  (
+    ; Device is unsecured
+    DIALOG.Enable EDIT_UC
+    
+    &configuration=Data.Quad(DBG:0x520000)
+    
+    IF (&configuration&0x8000000000000000)!=0x0
+    (
+      DIALOG.Disable CHK_OTP
+      DIALOG.Disable EDIT_OTP00
+      DIALOG.Disable EDIT_OTP01
+      DIALOG.Disable EDIT_OTP02
+      DIALOG.Disable EDIT_OTP03
+      DIALOG.Disable EDIT_OTP04
+      DIALOG.Disable EDIT_OTP05
+      DIALOG.Disable EDIT_OTP06
+      DIALOG.Disable EDIT_OTP07
+      DIALOG.Disable EDIT_OTP08
+      DIALOG.Disable EDIT_OTP09
+      DIALOG.Disable EDIT_OTP0A
+      DIALOG.Disable EDIT_OTP0B
+      DIALOG.Disable EDIT_OTP0C
+      DIALOG.Disable EDIT_OTP0D
+      DIALOG.Disable EDIT_OTP0E
+      DIALOG.Disable EDIT_OTP0F
+      DIALOG.Disable EDIT_OTP10
+      DIALOG.Disable EDIT_OTP11
+      DIALOG.Disable EDIT_OTP12
+      DIALOG.Disable EDIT_OTP13
+      DIALOG.Disable EDIT_OTP14
+      DIALOG.Disable EDIT_OTP15
+      DIALOG.Disable EDIT_OTP16
+      DIALOG.Disable EDIT_OTP17
+      DIALOG.Disable EDIT_OTP18
+      DIALOG.Disable EDIT_OTP19
+      DIALOG.Disable EDIT_OTP1A
+      DIALOG.Disable EDIT_OTP1B
+      DIALOG.Disable EDIT_OTP1C
+      DIALOG.Disable EDIT_OTP1D
+      DIALOG.Disable EDIT_OTP1E
+      DIALOG.Disable EDIT_OTP1F
+    )
+    ELSE
+    (
+      ;DIALOG.ENABLE CHK_OTP
+      DIALOG.Disable CHK_OTP
+      DIALOG.Enable EDIT_OTP00
+      DIALOG.Enable EDIT_OTP01
+      DIALOG.Enable EDIT_OTP02
+      DIALOG.Enable EDIT_OTP03
+      DIALOG.Enable EDIT_OTP04
+      DIALOG.Enable EDIT_OTP05
+      DIALOG.Enable EDIT_OTP06
+      DIALOG.Enable EDIT_OTP07
+      DIALOG.Enable EDIT_OTP08
+      DIALOG.Enable EDIT_OTP09
+      DIALOG.Enable EDIT_OTP0A
+      DIALOG.Enable EDIT_OTP0B
+      DIALOG.Enable EDIT_OTP0C
+      DIALOG.Enable EDIT_OTP0D
+      DIALOG.Enable EDIT_OTP0E
+      DIALOG.Enable EDIT_OTP0F
+      DIALOG.Enable EDIT_OTP10
+      DIALOG.Enable EDIT_OTP11
+      DIALOG.Enable EDIT_OTP12
+      DIALOG.Enable EDIT_OTP13
+      DIALOG.Enable EDIT_OTP14
+      DIALOG.Enable EDIT_OTP15
+      DIALOG.Enable EDIT_OTP16
+      DIALOG.Enable EDIT_OTP17
+      DIALOG.Enable EDIT_OTP18
+      DIALOG.Enable EDIT_OTP19
+      DIALOG.Enable EDIT_OTP1A
+      DIALOG.Enable EDIT_OTP1B
+      DIALOG.Enable EDIT_OTP1C
+      DIALOG.Enable EDIT_OTP1D
+      DIALOG.Enable EDIT_OTP1E
+      DIALOG.Enable EDIT_OTP1F
+    )
+    
+    DIALOG.Enable CHK_LVDWS
+    DIALOG.Enable CHK_LVDRS
+    DIALOG.Enable CHK_LVDTH
+    DIALOG.Enable CHK_B1SP0
+    DIALOG.Enable CHK_B1SP1
+    DIALOG.Enable CHK_B1SP2
+    DIALOG.Enable CHK_B1SP3
+    DIALOG.Enable CHK_B0SP0
+    DIALOG.Enable CHK_B0SP1
+    DIALOG.Enable CHK_B0SP2
+    DIALOG.Enable CHK_B0SP3
+    
+    IF &flashtype>=4
+    (
+      DIALOG.Enable CHK_B0SP4
+      DIALOG.Enable CHK_B0SP5
+      DIALOG.Enable CHK_B0SP6
+      DIALOG.Enable CHK_B0SP7
+    )
+    IF &flashtype>=6
+    (
+      DIALOG.Enable CHK_B0SP8
+      DIALOG.Enable CHK_B0SP9
+      DIALOG.Enable CHK_B0SP10
+      DIALOG.Enable CHK_B0SP11
+      DIALOG.Enable CHK_B0SP12
+      DIALOG.Enable CHK_B0SP13
+      DIALOG.Enable CHK_B0SP14
+      DIALOG.Enable CHK_B0SP15
+      
+      DIALOG.Enable CHK_B1SP4
+      DIALOG.Enable CHK_B1SP5
+      DIALOG.Enable CHK_B1SP6
+      DIALOG.Enable CHK_B1SP7
+    )
+    IF &flashtype>=7
+    (
+      DIALOG.Enable CHK_B0SP16
+      DIALOG.Enable CHK_B0SP17
+      DIALOG.Enable CHK_B0SP18
+      DIALOG.Enable CHK_B0SP19
+      DIALOG.Enable CHK_B0SP20
+      DIALOG.Enable CHK_B0SP21
+      DIALOG.Enable CHK_B0SP22
+      DIALOG.Enable CHK_B0SP23
+      DIALOG.Enable CHK_B0SP24
+      DIALOG.Enable CHK_B0SP25
+      DIALOG.Enable CHK_B0SP26
+      DIALOG.Enable CHK_B0SP27
+      DIALOG.Enable CHK_B0SP28
+      DIALOG.Enable CHK_B0SP29
+      DIALOG.Enable CHK_B0SP30
+      DIALOG.Enable CHK_B0SP31
+    )
+    
+    DIALOG.Enable CHSB.B0
+    DIALOG.Enable CHSB.B1
+    DIALOG.Enable CHK_SEC
+    DIALOG.Enable BT_PROG
+    DIALOG.Enable BT_UPDATE
+  )
+  ELSE
+  (
+    ; Device is securred
+    DIALOG.Disable EDIT_UC
+    DIALOG.Disable CHK_OTP
+    DIALOG.Disable CHK_LVDWS
+    DIALOG.Disable CHK_LVDRS
+    DIALOG.Disable CHK_LVDTH
+    DIALOG.Disable CHK_B1SP0
+    DIALOG.Disable CHK_B1SP1
+    DIALOG.Disable CHK_B1SP2
+    DIALOG.Disable CHK_B1SP3
+    DIALOG.Disable CHK_B1SP4
+    DIALOG.Disable CHK_B1SP5
+    DIALOG.Disable CHK_B1SP6
+    DIALOG.Disable CHK_B1SP7
+    DIALOG.Disable CHK_B0SP0
+    DIALOG.Disable CHK_B0SP1
+    DIALOG.Disable CHK_B0SP2
+    DIALOG.Disable CHK_B0SP3
+    DIALOG.Disable CHK_B0SP4
+    DIALOG.Disable CHK_B0SP5
+    DIALOG.Disable CHK_B0SP6
+    DIALOG.Disable CHK_B0SP7
+    DIALOG.Disable CHK_B0SP8
+    DIALOG.Disable CHK_B0SP9
+    DIALOG.Disable CHK_B0SP10
+    DIALOG.Disable CHK_B0SP11
+    DIALOG.Disable CHK_B0SP12
+    DIALOG.Disable CHK_B0SP13
+    DIALOG.Disable CHK_B0SP14
+    DIALOG.Disable CHK_B0SP15
+    DIALOG.Disable CHK_B0SP16
+    DIALOG.Disable CHK_B0SP17
+    DIALOG.Disable CHK_B0SP18
+    DIALOG.Disable CHK_B0SP19
+    DIALOG.Disable CHK_B0SP20
+    DIALOG.Disable CHK_B0SP21
+    DIALOG.Disable CHK_B0SP22
+    DIALOG.Disable CHK_B0SP23
+    DIALOG.Disable CHK_B0SP24
+    DIALOG.Disable CHK_B0SP25
+    DIALOG.Disable CHK_B0SP26
+    DIALOG.Disable CHK_B0SP27
+    DIALOG.Disable CHK_B0SP28
+    DIALOG.Disable CHK_B0SP29
+    DIALOG.Disable CHK_B0SP30
+    DIALOG.Disable CHK_B0SP31
+    DIALOG.Disable CHSB.B0
+    DIALOG.Disable CHSB.B1
+    
+    DIALOG.Disable EDIT_OTP00
+    DIALOG.Disable EDIT_OTP01
+    DIALOG.Disable EDIT_OTP02
+    DIALOG.Disable EDIT_OTP03
+    DIALOG.Disable EDIT_OTP04
+    DIALOG.Disable EDIT_OTP05
+    DIALOG.Disable EDIT_OTP06
+    DIALOG.Disable EDIT_OTP07
+    DIALOG.Disable EDIT_OTP08
+    DIALOG.Disable EDIT_OTP09
+    DIALOG.Disable EDIT_OTP0A
+    DIALOG.Disable EDIT_OTP0B
+    DIALOG.Disable EDIT_OTP0C
+    DIALOG.Disable EDIT_OTP0D
+    DIALOG.Disable EDIT_OTP0E
+    DIALOG.Disable EDIT_OTP0F
+    DIALOG.Disable EDIT_OTP10
+    DIALOG.Disable EDIT_OTP11
+    DIALOG.Disable EDIT_OTP12
+    DIALOG.Disable EDIT_OTP13
+    DIALOG.Disable EDIT_OTP14
+    DIALOG.Disable EDIT_OTP15
+    DIALOG.Disable EDIT_OTP16
+    DIALOG.Disable EDIT_OTP17
+    DIALOG.Disable EDIT_OTP18
+    DIALOG.Disable EDIT_OTP19
+    DIALOG.Disable EDIT_OTP1A
+    DIALOG.Disable EDIT_OTP1B
+    DIALOG.Disable EDIT_OTP1C
+    DIALOG.Disable EDIT_OTP1D
+    DIALOG.Disable EDIT_OTP1E
+    DIALOG.Disable EDIT_OTP1F
+    DIALOG.Disable CHK_SEC
+    DIALOG.Disable BT_PROG
+    DIALOG.Disable BT_UPDATE
+    
+    DIALOG.OK "Device Locked!"
+  )
+  
+  RETURN
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Routines, called from the GUI to update the VM from the GUI data
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+CheckFlashType:
+  IF DIALOG.STRing(COMB.SEL)=="STR91xFAxx2"
+  (
+    DIALOG.Disable CHK_B0SP4
+    DIALOG.Disable CHK_B0SP5
+    DIALOG.Disable CHK_B0SP6
+    DIALOG.Disable CHK_B0SP7
+    DIALOG.Disable CHK_B0SP8
+    DIALOG.Disable CHK_B0SP9
+    DIALOG.Disable CHK_B0SP10
+    DIALOG.Disable CHK_B0SP11
+    DIALOG.Disable CHK_B0SP12
+    DIALOG.Disable CHK_B0SP13
+    DIALOG.Disable CHK_B0SP14
+    DIALOG.Disable CHK_B0SP15
+    DIALOG.Disable CHK_B0SP16
+    DIALOG.Disable CHK_B0SP17
+    DIALOG.Disable CHK_B0SP18
+    DIALOG.Disable CHK_B0SP19
+    DIALOG.Disable CHK_B0SP20
+    DIALOG.Disable CHK_B0SP21
+    DIALOG.Disable CHK_B0SP22
+    DIALOG.Disable CHK_B0SP23
+    DIALOG.Disable CHK_B0SP24
+    DIALOG.Disable CHK_B0SP25
+    DIALOG.Disable CHK_B0SP26
+    DIALOG.Disable CHK_B0SP27
+    DIALOG.Disable CHK_B0SP28
+    DIALOG.Disable CHK_B0SP29
+    DIALOG.Disable CHK_B0SP30
+    DIALOG.Disable CHK_B0SP31
+    
+    DIALOG.Disable CHK_B1SP4
+    DIALOG.Disable CHK_B1SP5
+    DIALOG.Disable CHK_B1SP6
+    DIALOG.Disable CHK_B1SP7
+    
+    &flashtype=2
+  )
+  ELSE IF DIALOG.STRing(COMB.SEL)=="STR91xFAxx4"
+  (
+    DIALOG.Enable  CHK_B0SP4
+    DIALOG.Enable  CHK_B0SP5
+    DIALOG.Enable  CHK_B0SP6
+    DIALOG.Enable  CHK_B0SP7
+    DIALOG.Disable CHK_B0SP8
+    DIALOG.Disable CHK_B0SP9
+    DIALOG.Disable CHK_B0SP10
+    DIALOG.Disable CHK_B0SP11
+    DIALOG.Disable CHK_B0SP12
+    DIALOG.Disable CHK_B0SP13
+    DIALOG.Disable CHK_B0SP14
+    DIALOG.Disable CHK_B0SP15
+    DIALOG.Disable CHK_B0SP16
+    DIALOG.Disable CHK_B0SP17
+    DIALOG.Disable CHK_B0SP18
+    DIALOG.Disable CHK_B0SP19
+    DIALOG.Disable CHK_B0SP20
+    DIALOG.Disable CHK_B0SP21
+    DIALOG.Disable CHK_B0SP22
+    DIALOG.Disable CHK_B0SP23
+    DIALOG.Disable CHK_B0SP24
+    DIALOG.Disable CHK_B0SP25
+    DIALOG.Disable CHK_B0SP26
+    DIALOG.Disable CHK_B0SP27
+    DIALOG.Disable CHK_B0SP28
+    DIALOG.Disable CHK_B0SP29
+    DIALOG.Disable CHK_B0SP30
+    DIALOG.Disable CHK_B0SP31
+    
+    DIALOG.Disable CHK_B1SP4
+    DIALOG.Disable CHK_B1SP5
+    DIALOG.Disable CHK_B1SP6
+    DIALOG.Disable CHK_B1SP7
+    
+    &flashtype=4
+  )
+  ELSE IF DIALOG.STRing(COMB.SEL)=="STR91xFAxx6"
+  (
+    DIALOG.Enable  CHK_B0SP4
+    DIALOG.Enable  CHK_B0SP5
+    DIALOG.Enable  CHK_B0SP6
+    DIALOG.Enable  CHK_B0SP7
+    DIALOG.Enable  CHK_B0SP8
+    DIALOG.Enable  CHK_B0SP9
+    DIALOG.Enable  CHK_B0SP10
+    DIALOG.Enable  CHK_B0SP11
+    DIALOG.Enable  CHK_B0SP12
+    DIALOG.Enable  CHK_B0SP13
+    DIALOG.Enable  CHK_B0SP14
+    DIALOG.Enable  CHK_B0SP15
+    DIALOG.Disable CHK_B0SP16
+    DIALOG.Disable CHK_B0SP17
+    DIALOG.Disable CHK_B0SP18
+    DIALOG.Disable CHK_B0SP19
+    DIALOG.Disable CHK_B0SP20
+    DIALOG.Disable CHK_B0SP21
+    DIALOG.Disable CHK_B0SP22
+    DIALOG.Disable CHK_B0SP23
+    DIALOG.Disable CHK_B0SP24
+    DIALOG.Disable CHK_B0SP25
+    DIALOG.Disable CHK_B0SP26
+    DIALOG.Disable CHK_B0SP27
+    DIALOG.Disable CHK_B0SP28
+    DIALOG.Disable CHK_B0SP29
+    DIALOG.Disable CHK_B0SP30
+    DIALOG.Disable CHK_B0SP31
+    
+    DIALOG.Enable CHK_B1SP4
+    DIALOG.Enable CHK_B1SP5
+    DIALOG.Enable CHK_B1SP6
+    DIALOG.Enable CHK_B1SP7
+    
+    &flashtype=6
+  )
+  ELSE IF DIALOG.STRing(COMB.SEL)=="STR91xFAxx7"
+  (
+    DIALOG.Enable  CHK_B0SP4
+    DIALOG.Enable  CHK_B0SP5
+    DIALOG.Enable  CHK_B0SP6
+    DIALOG.Enable  CHK_B0SP7
+    DIALOG.Enable  CHK_B0SP8
+    DIALOG.Enable  CHK_B0SP9
+    DIALOG.Enable  CHK_B0SP10
+    DIALOG.Enable  CHK_B0SP11
+    DIALOG.Enable  CHK_B0SP12
+    DIALOG.Enable  CHK_B0SP13
+    DIALOG.Enable  CHK_B0SP14
+    DIALOG.Enable  CHK_B0SP15
+    DIALOG.Enable CHK_B0SP16
+    DIALOG.Enable CHK_B0SP17
+    DIALOG.Enable CHK_B0SP18
+    DIALOG.Enable CHK_B0SP19
+    DIALOG.Enable CHK_B0SP20
+    DIALOG.Enable CHK_B0SP21
+    DIALOG.Enable CHK_B0SP22
+    DIALOG.Enable CHK_B0SP23
+    DIALOG.Enable CHK_B0SP24
+    DIALOG.Enable CHK_B0SP25
+    DIALOG.Enable CHK_B0SP26
+    DIALOG.Enable CHK_B0SP27
+    DIALOG.Enable CHK_B0SP28
+    DIALOG.Enable CHK_B0SP29
+    DIALOG.Enable CHK_B0SP30
+    DIALOG.Enable CHK_B0SP31
+    
+    DIALOG.Enable CHK_B1SP4
+    DIALOG.Enable CHK_B1SP5
+    DIALOG.Enable CHK_B1SP6
+    DIALOG.Enable CHK_B1SP7
+    
+    &flashtype=7
+  )
+  
+  RETURN
+
+
+UpdateUC:
+  &temp=DIALOG.STRing(EDIT_UC)
+  
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "User code value must be an hex value with a maximum of 4 bytes!"
+    DIALOG.Set EDIT_UC "0xFFFFFFFF"
+    Data.Set VM:0x510000 %Long 0xFFFFFFFF
+  )
+  ELSE IF &temp>0xFFFFFFFF
+  (
+    DIALOG.OK "User code value must be an hex value with a maximum of 4 bytes!"
+    DIALOG.Set EDIT_UC "0xFFFFFFFF"
+    Data.Set VM:0x510000 %Long 0xFFFFFFFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x510000 %Long &temp
+    DIALOG.Set EDIT_UC "0x"+FORMAT.HEX(8.,Data.LONG(VM:0x510000))
+  )
+  
+  RETURN
+
+UpdateSec:
+  IF DIALOG.BOOLEAN(CHK_SEC)
+    Data.Set VM:0x520008 %Byte 0x01
+  ELSE
+    Data.Set VM:0x520008 %Byte 0x00
+
+  RETURN
+  
+UpdateConfig:
+  IF DIALOG.BOOLEAN(CHK_OTP)
+    Data.Set VM:520007 %Byte 0x80
+  ELSE
+    Data.Set VM:520007 %Byte 0x00
+    
+  IF DIALOG.BOOLEAN(CHK_LVDWS)
+    Data.Set VM:520006 %Byte Data.Byte(VM:520006)|0x08
+  ELSE
+    Data.Set VM:520006 %Byte Data.Byte(VM:520006)&0xF7
+    
+  IF DIALOG.BOOLEAN(CHK_LVDRS)
+    Data.Set VM:520006 %Byte Data.Byte(VM:520006)|0x04
+  ELSE
+    Data.Set VM:520006 %Byte Data.Byte(VM:520006)&0xFB
+    
+  IF DIALOG.BOOLEAN(CHK_LVDTH)
+    Data.Set VM:520006 %Byte Data.Byte(VM:520006)|0x02
+  ELSE
+    Data.Set VM:520006 %Byte Data.Byte(VM:520006)&0xFD
+    
+  IF DIALOG.BOOLEAN(CHSB.B1)
+    Data.Set VM:520006 %Byte Data.Byte(VM:520006)|0x01
+  ELSE
+    Data.Set VM:520006 %Byte Data.Byte(VM:520006)&0xFE
+    
+  IF DIALOG.BOOLEAN(CHK_B1SP7)
+    Data.Set VM:520004 %Byte Data.Byte(VM:520004)|0x80
+  ELSE
+    Data.Set VM:520004 %Byte Data.Byte(VM:520004)&0x7F
+    
+  IF DIALOG.BOOLEAN(CHK_B1SP6)
+    Data.Set VM:520004 %Byte Data.Byte(VM:520004)|0x40
+  ELSE
+    Data.Set VM:520004 %Byte Data.Byte(VM:520004)&0xBF
+    
+  IF DIALOG.BOOLEAN(CHK_B1SP5)
+    Data.Set VM:520004 %Byte Data.Byte(VM:520004)|0x20
+  ELSE
+    Data.Set VM:520004 %Byte Data.Byte(VM:520004)&0xDF
+    
+  IF DIALOG.BOOLEAN(CHK_B1SP4)
+    Data.Set VM:520004 %Byte Data.Byte(VM:520004)|0x10
+  ELSE
+    Data.Set VM:520004 %Byte Data.Byte(VM:520004)&0xEF
+  
+  IF DIALOG.BOOLEAN(CHK_B1SP3)
+    Data.Set VM:520004 %Byte Data.Byte(VM:520004)|0x08
+  ELSE
+    Data.Set VM:520004 %Byte Data.Byte(VM:520004)&0xF7
+    
+  IF DIALOG.BOOLEAN(CHK_B1SP2)
+    Data.Set VM:520004 %Byte Data.Byte(VM:520004)|0x04
+  ELSE
+    Data.Set VM:520004 %Byte Data.Byte(VM:520004)&0xFB
+    
+  IF DIALOG.BOOLEAN(CHK_B1SP1)
+    Data.Set VM:520004 %Byte Data.Byte(VM:520004)|0x02
+  ELSE
+    Data.Set VM:520004 %Byte Data.Byte(VM:520004)&0xFD
+    
+  IF DIALOG.BOOLEAN(CHK_B1SP0)
+    Data.Set VM:520004 %Byte Data.Byte(VM:520004)|0x01
+  ELSE
+    Data.Set VM:520004 %Byte Data.Byte(VM:520004)&0xFE
+    
+  
+  IF DIALOG.BOOLEAN(CHK_B0SP31)
+    Data.Set VM:520003 %Byte Data.Byte(VM:520003)|0x80
+  ELSE
+    Data.Set VM:520003 %Byte Data.Byte(VM:520003)&0x7F
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP30)
+    Data.Set VM:520003 %Byte Data.Byte(VM:520003)|0x40
+  ELSE
+    Data.Set VM:520003 %Byte Data.Byte(VM:520003)&0xBF
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP29)
+    Data.Set VM:520003 %Byte Data.Byte(VM:520003)|0x20
+  ELSE
+    Data.Set VM:520003 %Byte Data.Byte(VM:520003)&0xDF
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP28)
+    Data.Set VM:520003 %Byte Data.Byte(VM:520003)|0x10
+  ELSE
+    Data.Set VM:520003 %Byte Data.Byte(VM:520003)&0xEF
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP27)
+    Data.Set VM:520003 %Byte Data.Byte(VM:520003)|0x08
+  ELSE
+    Data.Set VM:520003 %Byte Data.Byte(VM:520003)&0xF7
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP26)
+    Data.Set VM:520003 %Byte Data.Byte(VM:520003)|0x04
+  ELSE
+    Data.Set VM:520003 %Byte Data.Byte(VM:520003)&0xFB
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP25)
+    Data.Set VM:520003 %Byte Data.Byte(VM:520003)|0x02
+  ELSE
+    Data.Set VM:520003 %Byte Data.Byte(VM:520003)&0xFD
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP24)
+    Data.Set VM:520003 %Byte Data.Byte(VM:520003)|0x01
+  ELSE
+    Data.Set VM:520003 %Byte Data.Byte(VM:520003)&0xFE
+  
+  IF DIALOG.BOOLEAN(CHK_B0SP23)
+    Data.Set VM:520002 %Byte Data.Byte(VM:520002)|0x80
+  ELSE
+    Data.Set VM:520002 %Byte Data.Byte(VM:520002)&0x7F
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP22)
+    Data.Set VM:520002 %Byte Data.Byte(VM:520002)|0x40
+  ELSE
+    Data.Set VM:520002 %Byte Data.Byte(VM:520002)&0xBF
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP21)
+    Data.Set VM:520002 %Byte Data.Byte(VM:520002)|0x20
+  ELSE
+    Data.Set VM:520002 %Byte Data.Byte(VM:520002)&0xDF
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP20)
+    Data.Set VM:520002 %Byte Data.Byte(VM:520002)|0x10
+  ELSE
+    Data.Set VM:520002 %Byte Data.Byte(VM:520002)&0xEF
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP19)
+    Data.Set VM:520002 %Byte Data.Byte(VM:520002)|0x08
+  ELSE
+    Data.Set VM:520002 %Byte Data.Byte(VM:520002)&0xF7
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP18)
+    Data.Set VM:520002 %Byte Data.Byte(VM:520002)|0x04
+  ELSE
+    Data.Set VM:520002 %Byte Data.Byte(VM:520002)&0xFB
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP17)
+    Data.Set VM:520002 %Byte Data.Byte(VM:520002)|0x02
+  ELSE
+    Data.Set VM:520002 %Byte Data.Byte(VM:520002)&0xFD
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP16)
+    Data.Set VM:520002 %Byte Data.Byte(VM:520002)|0x01
+  ELSE
+    Data.Set VM:520002 %Byte Data.Byte(VM:520002)&0xFE
+  
+  IF DIALOG.BOOLEAN(CHK_B0SP15)
+    Data.Set VM:520001 %Byte Data.Byte(VM:520001)|0x80
+  ELSE
+    Data.Set VM:520001 %Byte Data.Byte(VM:520001)&0x7F
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP14)
+    Data.Set VM:520001 %Byte Data.Byte(VM:520001)|0x40
+  ELSE
+    Data.Set VM:520001 %Byte Data.Byte(VM:520001)&0xBF
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP13)
+    Data.Set VM:520001 %Byte Data.Byte(VM:520001)|0x20
+  ELSE
+    Data.Set VM:520001 %Byte Data.Byte(VM:520001)&0xDF
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP12)
+    Data.Set VM:520001 %Byte Data.Byte(VM:520001)|0x10
+  ELSE
+    Data.Set VM:520001 %Byte Data.Byte(VM:520001)&0xEF
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP11)
+    Data.Set VM:520001 %Byte Data.Byte(VM:520001)|0x08
+  ELSE
+    Data.Set VM:520001 %Byte Data.Byte(VM:520001)&0xF7
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP10)
+    Data.Set VM:520001 %Byte Data.Byte(VM:520001)|0x04
+  ELSE
+    Data.Set VM:520001 %Byte Data.Byte(VM:520001)&0xFB
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP9)
+    Data.Set VM:520001 %Byte Data.Byte(VM:520001)|0x02
+  ELSE
+    Data.Set VM:520001 %Byte Data.Byte(VM:520001)&0xFD
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP8)
+    Data.Set VM:520001 %Byte Data.Byte(VM:520001)|0x01
+  ELSE
+    Data.Set VM:520001 %Byte Data.Byte(VM:520001)&0xFE
+  
+  IF DIALOG.BOOLEAN(CHK_B0SP7)
+    Data.Set VM:520000 %Byte Data.Byte(VM:520000)|0x80
+  ELSE
+    Data.Set VM:520000 %Byte Data.Byte(VM:520000)&0x7F
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP6)
+    Data.Set VM:520000 %Byte Data.Byte(VM:520000)|0x40
+  ELSE
+    Data.Set VM:520000 %Byte Data.Byte(VM:520000)&0xBF
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP5)
+    Data.Set VM:520000 %Byte Data.Byte(VM:520000)|0x20
+  ELSE
+    Data.Set VM:520000 %Byte Data.Byte(VM:520000)&0xDF
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP4)
+    Data.Set VM:520000 %Byte Data.Byte(VM:520000)|0x10
+  ELSE
+    Data.Set VM:520000 %Byte Data.Byte(VM:520000)&0xEF
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP3)
+    Data.Set VM:520000 %Byte Data.Byte(VM:520000)|0x08
+  ELSE
+    Data.Set VM:520000 %Byte Data.Byte(VM:520000)&0xF7
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP2)
+    Data.Set VM:520000 %Byte Data.Byte(VM:520000)|0x04
+  ELSE
+    Data.Set VM:520000 %Byte Data.Byte(VM:520000)&0xFB
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP1)
+    Data.Set VM:520000 %Byte Data.Byte(VM:520000)|0x02
+  ELSE
+    Data.Set VM:520000 %Byte Data.Byte(VM:520000)&0xFD
+    
+  IF DIALOG.BOOLEAN(CHK_B0SP0)
+    Data.Set VM:520000 %Byte Data.Byte(VM:520000)|0x01
+  ELSE
+    Data.Set VM:520000 %Byte Data.Byte(VM:520000)&0xFE
+
+  RETURN
+
+UpdateOTP:
+  &temp=DIALOG.STRing(EDIT_OTP00)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP00 "0xFF"
+    Data.Set VM:0x500000 %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP00 "0xFF"
+    Data.Set VM:0x500000 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500000 %Byte &temp
+    DIALOG.Set EDIT_OTP00 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500000))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP01)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP01 "0xFF"
+    Data.Set VM:0x500001 %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP01 "0xFF"
+    Data.Set VM:0x500001 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500001 %Byte &temp
+    DIALOG.Set EDIT_OTP01 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500001))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP02)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP02 "0xFF"
+    Data.Set VM:0x500002 %Long 0xFF
+    DIALOG.Set EDIT_OTP02 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500002))
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP02 "0xFF"
+    Data.Set VM:0x500002 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500002 %Byte &temp
+    DIALOG.Set EDIT_OTP02 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500002))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP03)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP03 "0xFF"
+    Data.Set VM:0x500003 %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP03 "0xFF"
+    Data.Set VM:0x500003 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500003 %Byte &temp
+    DIALOG.Set EDIT_OTP03 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500003))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP04)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP04 "0xFF"
+    Data.Set VM:0x500004 %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP04 "0xFF"
+    Data.Set VM:0x500004 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500004 %Byte &temp
+    DIALOG.Set EDIT_OTP04 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500004))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP05)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP05 "0xFF"
+    Data.Set VM:0x500005 %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP05 "0xFF"
+    Data.Set VM:0x500005 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500005 %Byte &temp
+    DIALOG.Set EDIT_OTP05 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500005))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP06)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP06 "0xFF"
+    Data.Set VM:0x500006 %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP06 "0xFF"
+    Data.Set VM:0x500006 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500006 %Byte &temp
+    DIALOG.Set EDIT_OTP06 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500006))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP07)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP07 "0xFF"
+    Data.Set VM:0x500007 %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP07 "0xFF"
+    Data.Set VM:0x500007 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500007 %Byte &temp
+    DIALOG.Set EDIT_OTP07 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500007))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP08)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP08 "0xFF"
+    Data.Set VM:0x500008 %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP08 "0xFF"
+    Data.Set VM:0x500008 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500008 %Byte &temp
+    DIALOG.Set EDIT_OTP08 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500008))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP09)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP09 "0xFF"
+    Data.Set VM:0x500009 %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP09 "0xFF"
+    Data.Set VM:0x500009 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500009 %Byte &temp
+    DIALOG.Set EDIT_OTP09 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500009))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP0A)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP0A "0xFF"
+    Data.Set VM:0x50000A %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP0A "0xFF"
+    Data.Set VM:0x50000A %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x50000A %Byte &temp
+    DIALOG.Set EDIT_OTP0A "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50000A))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP0B)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP0B "0xFF"
+    Data.Set VM:0x50000B %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP0B "0xFF"
+    Data.Set VM:0x50000B %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x50000B %Byte &temp
+    DIALOG.Set EDIT_OTP0B "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50000B))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP0C)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP0C "0xFF"
+    Data.Set VM:0x50000C %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP0C "0xFF"
+    Data.Set VM:0x50000C %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x50000C %Byte &temp
+    DIALOG.Set EDIT_OTP0C "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50000C))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP0D)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP0D "0xFF"
+    Data.Set VM:0x50000D %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP0D "0xFF"
+    Data.Set VM:0x50000D %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x50000D %Byte &temp
+    DIALOG.Set EDIT_OTP0D "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50000D))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP0E)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP0E "0xFF"
+    Data.Set VM:0x50000E %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP0E "0xFF"
+    Data.Set VM:0x50000E %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x50000E %Byte &temp
+    DIALOG.Set EDIT_OTP0E "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50000E))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP0F)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP0F "0xFF"
+    Data.Set VM:0x50000F %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP0F "0xFF"
+    Data.Set VM:0x50000F %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x50000F %Byte &temp
+    DIALOG.Set EDIT_OTP0F "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50000F))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP10)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP10 "0xFF"
+    Data.Set VM:0x500010 %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP10 "0xFF"
+    Data.Set VM:0x500010 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500010 %Byte &temp
+    DIALOG.Set EDIT_OTP10 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500010))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP11)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP11 "0xFF"
+    Data.Set VM:0x500011 %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP11 "0xFF"
+    Data.Set VM:0x500011 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500011 %Byte &temp
+    DIALOG.Set EDIT_OTP11 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500011))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP12)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP12 "0xFF"
+    Data.Set VM:0x500012 %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP12 "0xFF"
+    Data.Set VM:0x500012 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500012 %Byte &temp
+    DIALOG.Set EDIT_OTP12 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500012))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP13)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP13 "0xFF"
+    Data.Set VM:0x500013 %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP13 "0xFF"
+    Data.Set VM:0x500013 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500013 %Byte &temp
+    DIALOG.Set EDIT_OTP13 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500013))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP14)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP14 "0xFF"
+    Data.Set VM:0x500014 %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP14 "0xFF"
+    Data.Set VM:0x500014 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500014 %Byte &temp
+    DIALOG.Set EDIT_OTP14 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500014))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP15)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP15 "0xFF"
+    Data.Set VM:0x500015 %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP15 "0xFF"
+    Data.Set VM:0x500015 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500015 %Byte &temp
+    DIALOG.Set EDIT_OTP15 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500015))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP16)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP16 "0xFF"
+    Data.Set VM:0x500016 %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP16 "0xFF"
+    Data.Set VM:0x500016 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500016 %Byte &temp
+    DIALOG.Set EDIT_OTP16 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500016))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP17)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP17 "0xFF"
+    Data.Set VM:0x500017 %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP17 "0xFF"
+    Data.Set VM:0x500017 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500017 %Byte &temp
+    DIALOG.Set EDIT_OTP17 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500017))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP18)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP18 "0xFF"
+    Data.Set VM:0x500018 %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP18 "0xFF"
+    Data.Set VM:0x500018 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500018 %Byte &temp
+    DIALOG.Set EDIT_OTP18 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500018))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP19)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP19 "0xFF"
+    Data.Set VM:0x500019 %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP19 "0xFF"
+    Data.Set VM:0x500019 %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x500019 %Byte &temp
+    DIALOG.Set EDIT_OTP19 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500019))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP1A)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP1A "0xFF"
+    Data.Set VM:0x50001A %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP1A "0xFF"
+    Data.Set VM:0x50001A %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x50001A %Byte &temp
+    DIALOG.Set EDIT_OTP1A "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50001A))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP1B)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP1B "0xFF"
+    Data.Set VM:0x50001B %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP1B "0xFF"
+    Data.Set VM:0x50001B %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x50001B %Byte &temp
+    DIALOG.Set EDIT_OTP1B "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50001B))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP1C)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP1C "0xFF"
+    Data.Set VM:0x50001C %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP1C "0xFF"
+    Data.Set VM:0x50001C %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x50001C %Byte &temp
+    DIALOG.Set EDIT_OTP1C "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50001C))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP1D)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP1D "0xFF"
+    Data.Set VM:0x50001D %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP1D "0xFF"
+    Data.Set VM:0x50001D %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x50001D %Byte &temp
+    DIALOG.Set EDIT_OTP1D "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50001D))
+  )
+  
+  &temp=DIALOG.STRing(EDIT_OTP1E)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP1E "0xFF"
+    Data.Set VM:0x50001E %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP1E "0xFF"
+    Data.Set VM:0x50001E %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x50001E %Byte &temp
+    DIALOG.Set EDIT_OTP1E "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50001E))
+  )
+  
+  
+  &temp=DIALOG.STRing(EDIT_OTP1F)
+  Eval &temp
+  IF EVAL.TYPE()!=0x0004
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP1F "0xFF"
+    Data.Set VM:0x50001F %Long 0xFF
+  )
+  ELSE IF &temp>0xFF
+  (
+    DIALOG.OK "OTP value must be an hex value of one byte!"
+    DIALOG.Set EDIT_OTP1F "0xFF"
+    Data.Set VM:0x50001F %Long 0xFF
+  )
+  ELSE
+  (
+    Data.Set VM:0x50001F %Byte &temp
+    DIALOG.Set EDIT_OTP1F "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50001F))
+  )
+
+  RETURN
+  
+LockOTP:
+  IF DIALOG.BOOLEAN(CHK_OTP)
+  (
+    DIALOG.YESNO "DO YOU REALLY WANT TO LOCK THE OTP CONTENT? Any change will be impossible after programming!"
+    ENTRY &result
+    
+    IF !&result
+    (
+      DIALOG.Set CHK_OTP " "
+    )
+  )
+  
+  GOSUB UpdateConfig
+  
+  RETURN
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Routines, called from the GUI to update the window data from VM
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+UpdateFromVM:
+  DIALOG.Set EDIT_OTP00 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500000))
+  DIALOG.Set EDIT_OTP01 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500001))
+  DIALOG.Set EDIT_OTP02 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500002))
+  DIALOG.Set EDIT_OTP03 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500003))
+  DIALOG.Set EDIT_OTP04 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500004))
+  DIALOG.Set EDIT_OTP05 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500005))
+  DIALOG.Set EDIT_OTP06 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500006))
+  DIALOG.Set EDIT_OTP07 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500007))
+  DIALOG.Set EDIT_OTP08 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500008))
+  DIALOG.Set EDIT_OTP09 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500009))
+  DIALOG.Set EDIT_OTP0A "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50000A))
+  DIALOG.Set EDIT_OTP0B "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50000B))
+  DIALOG.Set EDIT_OTP0C "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50000C))
+  DIALOG.Set EDIT_OTP0D "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50000D))
+  DIALOG.Set EDIT_OTP0E "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50000E))
+  DIALOG.Set EDIT_OTP0F "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50000F))
+  DIALOG.Set EDIT_OTP10 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500010))
+  DIALOG.Set EDIT_OTP11 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500011))
+  DIALOG.Set EDIT_OTP12 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500012))
+  DIALOG.Set EDIT_OTP13 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500013))
+  DIALOG.Set EDIT_OTP14 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500014))
+  DIALOG.Set EDIT_OTP15 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500015))
+  DIALOG.Set EDIT_OTP16 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500016))
+  DIALOG.Set EDIT_OTP17 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500017))
+  DIALOG.Set EDIT_OTP18 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500018))
+  DIALOG.Set EDIT_OTP19 "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x500019))
+  DIALOG.Set EDIT_OTP1A "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50001A))
+  DIALOG.Set EDIT_OTP1B "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50001B))
+  DIALOG.Set EDIT_OTP1C "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50001C))
+  DIALOG.Set EDIT_OTP1D "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50001D))
+  DIALOG.Set EDIT_OTP1E "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50001E))
+  DIALOG.Set EDIT_OTP1F "0x"+FORMAT.HEX(2.,Data.Byte(VM:0x50001F))    
+  
+  &temp=Data.Quad(VM:0x00520000)          ; Reading the Configuration
+  
+  ; Parsing the config data
+  IF (&temp&0x8000000000000000)!=0x0
+    DIALOG.Set CHK_OTP    ""                      ; OTP Lock bit is set
+  ELSE
+    DIALOG.Set CHK_OTP    " "
+  
+  IF (&temp&0x0008000000000000)!=0x0
+    DIALOG.Set CHK_LVDWS  ""                      ; LVD Warning Select is set
+  ELSE
+    DIALOG.Set CHK_LVDWS  " "
+  
+  IF (&temp&0x0004000000000000)!=0x0
+    DIALOG.Set CHK_LVDRS  ""                      ; LVD Reset Select is set
+  ELSE
+    DIALOG.Set CHK_LVDRS  " "
+    
+  IF (&temp&0x0002000000000000)!=0x0
+    DIALOG.Set CHK_LVDTH  ""                      ; LVD TH is set
+  ELSE
+    DIALOG.Set CHK_LVDTH  " "
+    
+  IF (&temp&0x0001000000000000)!=0x0
+    DIALOG.Set CHSB.B1     ""                      ; Boot bank is bank 1  
+  ELSE
+    DIALOG.Set CHSB.B0    ""                      ; Boot bank is bank
+    
+  
+  IF (&temp&0x0000008000000000)!=0x0
+    DIALOG.Set CHK_B1SP7  ""                      ; Bank1 Sector7 Protection
+  ELSE
+    DIALOG.Set CHK_B1SP7  " "
+  
+  IF (&temp&0x0000004000000000)!=0x0
+    DIALOG.Set CHK_B1SP6  ""                      ; Bank1 Sector6 Protection
+  ELSE
+    DIALOG.Set CHK_B1SP6  " "
+  
+  IF (&temp&0x0000002000000000)!=0x0
+    DIALOG.Set CHK_B1SP5  ""                      ; Bank1 Sector5 Protection
+  ELSE
+    DIALOG.Set CHK_B1SP5  " "
+    
+  IF (&temp&0x0000001000000000)!=0x0
+    DIALOG.Set CHK_B1SP4  ""                      ; Bank1 Sector4 Protection
+  ELSE
+    DIALOG.Set CHK_B1SP4  " "
+  
+  IF (&temp&0x0000000800000000)!=0x0
+    DIALOG.Set CHK_B1SP3  ""                      ; Bank1 Sector3 Protection
+  ELSE
+    DIALOG.Set CHK_B1SP3  " "
+  
+  IF (&temp&0x0000000400000000)!=0x0
+    DIALOG.Set CHK_B1SP2  ""                      ; Bank1 Sector2 Protection
+  ELSE
+    DIALOG.Set CHK_B1SP2  " "
+  
+  IF (&temp&0x0000000200000000)!=0x0
+    DIALOG.Set CHK_B1SP1  ""                      ; Bank1 Sector1 Protection
+  ELSE
+    DIALOG.Set CHK_B1SP1  " "
+    
+  IF (&temp&0x0000000100000000)!=0x0
+    DIALOG.Set CHK_B1SP0  ""                      ; Bank1 Sector0 Protection
+  ELSE
+    DIALOG.Set CHK_B1SP0  " "
+  
+  IF (&temp&0x0000000080000000)!=0x0
+    DIALOG.Set CHK_B0SP31  ""                      ; Bank0 Sector31 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP31  " "
+    
+  IF (&temp&0x0000000040000000)!=0x0
+    DIALOG.Set CHK_B0SP30  ""                      ; Bank0 Sector30 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP30  " "
+    
+  IF (&temp&0x0000000020000000)!=0x0
+    DIALOG.Set CHK_B0SP29  ""                      ; Bank0 Sector29 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP29  " "
+    
+  IF (&temp&0x0000000010000000)!=0x0
+    DIALOG.Set CHK_B0SP28  ""                      ; Bank0 Sector28 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP28  " "
+  
+  IF (&temp&0x0000000008000000)!=0x0
+    DIALOG.Set CHK_B0SP27  ""                      ; Bank0 Sector27 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP27  " "
+    
+  IF (&temp&0x0000000004000000)!=0x0
+    DIALOG.Set CHK_B0SP26  ""                      ; Bank0 Sector26 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP26  " "
+    
+  IF (&temp&0x0000000002000000)!=0x0
+    DIALOG.Set CHK_B0SP25  ""                      ; Bank0 Sector25 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP25  " "
+    
+  IF (&temp&0x0000000001000000)!=0x0
+    DIALOG.Set CHK_B0SP24  ""                      ; Bank0 Sector24 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP24  " "
+  
+  IF (&temp&0x0000000000800000)!=0x0
+    DIALOG.Set CHK_B0SP23  ""                      ; Bank0 Sector23 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP23  " "
+    
+  IF (&temp&0x0000000000400000)!=0x0
+    DIALOG.Set CHK_B0SP22  ""                      ; Bank0 Sector22 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP22  " "
+    
+  IF (&temp&0x0000000000200000)!=0x0
+    DIALOG.Set CHK_B0SP21  ""                      ; Bank0 Sector21 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP21  " "
+    
+  IF (&temp&0x0000000000100000)!=0x0
+    DIALOG.Set CHK_B0SP20  ""                      ; Bank0 Sector20 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP20  " "
+  
+  IF (&temp&0x0000000000080000)!=0x0
+    DIALOG.Set CHK_B0SP19  ""                      ; Bank0 Sector19 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP19  " "
+    
+  IF (&temp&0x0000000000040000)!=0x0
+    DIALOG.Set CHK_B0SP18  ""                      ; Bank0 Sector18 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP18  " "
+    
+  IF (&temp&0x0000000000020000)!=0x0
+    DIALOG.Set CHK_B0SP17  ""                      ; Bank0 Sector17 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP17  " "
+    
+  IF (&temp&0x0000000000010000)!=0x0
+    DIALOG.Set CHK_B0SP16  ""                      ; Bank0 Sector16 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP16  " "
+  
+  IF (&temp&0x0000000000008000)!=0x0
+    DIALOG.Set CHK_B0SP15  ""                      ; Bank0 Sector15 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP15  " "
+    
+  IF (&temp&0x0000000000004000)!=0x0
+    DIALOG.Set CHK_B0SP14  ""                      ; Bank0 Sector14 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP14  " "
+    
+  IF (&temp&0x0000000000002000)!=0x0
+    DIALOG.Set CHK_B0SP13  ""                      ; Bank0 Sector13 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP13  " "
+    
+  IF (&temp&0x0000000000001000)!=0x0
+    DIALOG.Set CHK_B0SP12  ""                      ; Bank0 Sector12 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP12  " "
+  
+  IF (&temp&0x0000000000000800)!=0x0
+    DIALOG.Set CHK_B0SP11  ""                      ; Bank0 Sector11 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP11  " "
+    
+  IF (&temp&0x0000000000000400)!=0x0
+    DIALOG.Set CHK_B0SP10  ""                      ; Bank0 Sector10 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP10  " "
+    
+  IF (&temp&0x0000000000000200)!=0x0
+    DIALOG.Set CHK_B0SP9  ""                      ; Bank0 Sector9 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP9  " "
+    
+  IF (&temp&0x0000000000000100)!=0x0
+    DIALOG.Set CHK_B0SP8  ""                      ; Bank0 Sector8 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP8  " "
+    
+  IF (&temp&0x0000000000000080)!=0x0
+    DIALOG.Set CHK_B0SP7  ""                      ; Bank0 Sector7 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP7  " "
+    
+  IF (&temp&0x0000000000000040)!=0x0
+    DIALOG.Set CHK_B0SP6  ""                      ; Bank0 Sector6 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP6  " "
+    
+  IF (&temp&0x0000000000000020)!=0x0
+    DIALOG.Set CHK_B0SP5  ""                      ; Bank0 Sector5 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP5  " "
+    
+  IF (&temp&0x0000000000000010)!=0x0
+    DIALOG.Set CHK_B0SP4  ""                      ; Bank0 Sector4 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP4  " "
+    
+  IF (&temp&0x0000000000000008)!=0x0
+    DIALOG.Set CHK_B0SP3  ""                      ; Bank0 Sector3 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP3  " "
+    
+  IF (&temp&0x0000000000000004)!=0x0
+    DIALOG.Set CHK_B0SP2  ""                      ; Bank0 Sector2 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP2  " "
+    
+  IF (&temp&0x0000000000000002)!=0x0
+    DIALOG.Set CHK_B0SP1  ""                      ; Bank0 Sector1 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP1  " "
+  
+  IF (&temp&0x0000000000000001)!=0x0
+    DIALOG.Set CHK_B0SP0  ""                      ; Bank0 Sector0 Protection
+  ELSE
+    DIALOG.Set CHK_B0SP0  " "
+    
+  &temp=Data.Long(VM:0x00510000)                  ; Reading the user code
+  DIALOG.Set EDIT_UC "0x"+FORMAT.HEX(8.,&temp)
+  
+  &temp=Data.Byte(VM:520008)
+  IF (&temp&0x01)==0x01
+    DIALOG.Set CHK_SEC ""
+  ELSE
+    DIALOG.Set CHK_SEC " "
+  
+  RETURN
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Routines, called from the GUI to update the VM from the flash
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+UpdateFromFlash:
+  ; Update Flash TAP content
+  Data.COPY DBG:0x510000++0x03 VM:510000   /Long
+  Data.COPY DBG:0x520000++0x07 VM:520000  /Quad
+  Data.COPY DBG:0x520008++0x00 VM:520008  /Byte
+  
+  ; Update flash memory
+  &status=Data.Byte(DBG:600004)
+  &configuration=Data.Quad(DBG:0x520000)
+  
+  IF (&status&0x40)==0x00
+  (
+    SYStem.Down
+    SYStem.JtagClock &jtagclock
+    SYStem.Option ResBreak OFF
+    SYStem.Up
+  
+    GOSUB FlashSetup
+  
+    ; Copy data blocks to VM
+    IF &flashtype==1
+      Data.COPY SD:0x00000000++0x7FFFF VM:0x00 /Long
+    ELSE IF &flashtype==0.
+      Data.COPY SD:0x00000000++0x3FFFF VM:0x00 /Long
+    
+    Data.COPY SD:0x00080000++0x7FFF VM:0x400000 /Long
+    
+    ; Read OTP
+    Data.Set SD:0x00080000 %Word 0x98
+    Data.COPY SD:0x00080000++0x1F VM:500000   /Long
+    Data.Set SD:0x00080000 %Word 0xFF
+    
+    ; Switch back to PREPARE
+  
+    SYStem.Down
+    SYStem.JtagClock 1MHz
+    SYStem.Mode PREPARE
+  )
+  ELSE
+  (
+    DIALOG.OK "Device Secured!"
+  )
+  
+  GOSUB UpdateFromVM
+  
+  RETURN
+  
+UpdateConfigFromFlash:
+  ; Update Flash TAP content
+  Data.COPY DBG:0x510000++0x03 VM:510000   /Long
+  Data.COPY DBG:0x520000++0x07 VM:520000  /Quad
+  Data.COPY DBG:0x520008++0x00 VM:520008  /Byte
+  
+  ; Update flash memory
+  &status=Data.Byte(DBG:600004)
+  &configuration=Data.Quad(DBG:0x520000)
+  
+  IF (&status&0x40)==0x00
+  (
+    SYStem.Down
+    SYStem.JtagClock &jtagclock
+    SYStem.Option ResBreak OFF
+    SYStem.Up
+  
+    GOSUB FlashSetup
+  
+    ; Read OTP
+    Data.Set SD:0x00080000 %Word 0x98
+    Data.COPY SD:0x00080000++0x1F VM:500000   /Long
+    Data.Set SD:0x00080000 %Word 0xFF
+    
+    ; Switch back to PREPARE
+    SYStem.Down
+    SYStem.JtagClock 1MHz
+    SYStem.Mode PREPARE
+  )
+  
+  GOSUB UpdateFromVM
+  
+  RETURN
+
+  
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Routines, to load OBJ and HEX files
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+LoadOBJ:
+  DIALOG.File *.OBJ 
+  ENTRY &file
+  
+  IF "&file"!=""
+  (
+    Data.LOAD.IntelHex &file /VM
+      
+    GOSUB UpdateFromVM
+  )
+    
+  RETURN
+  
+LoadMainFlash:
+  DIALOG.File *.HEX 
+  ENTRY &file
+  
+  IF "&file"!=""
+  (
+    Data.LOAD.IntelHex &file 0x00 /VM
+      
+    GOSUB UpdateFromVM
+  )
+
+  RETURN
+
+LoadSecondaryFlash:
+  DIALOG.File *.HEX 
+  ENTRY &file
+  
+  IF "&file"!=""
+  (
+    Data.LOAD.IntelHex &file 0x400000 /VM
+      
+    GOSUB UpdateFromVM
+  )
+
+  RETURN
+  
+SaveOBJ:
+  Data.SAVE.IntelHex *.OBJ VM:0x000000++520008 /TYPE4
+  
+  RETURN
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Routines, called from the GUI to progam the flash sectors
+; The content of the windows and VM is not commpared to the programmed memory
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; Programming the flash banks, OTP, Configuration and UserCode from the Virtual memory. The sectors are erased before.
+; Cannot be used in full chip secure mode. This Sub is called from the Program dialog.
+Program:
+  DIALOG.YESNO "The flash memory will be programmed. Continue?"
+  ENTRY &result
+  
+  IF &result
+  (
+    IF (DIALOG.BOOLEAN(CHK_PB0)&&DIALOG.BOOLEAN(CHK_PB1))
+      GOSUB ProgramFlashMemory
+    ELSE IF DIALOG.BOOLEAN(CHK_PB0)
+      GOSUB ProgramFlashBank0
+    ELSE IF DIALOG.BOOLEAN(CHK_PB1)
+      GOSUB ProgramFlashBank1
+      
+    IF DIALOG.BOOLEAN(CHK_POTP)
+    (
+      Data.Set DBG:0x600010 %Quad 0x0008000000000000  ; Erase sector
+      GOSUB ProgramOTP
+    )
+    
+    IF DIALOG.BOOLEAN(CHK_PUC)
+    (
+      Data.Set DBG:0x600010 %Quad 0x0004000000000000  ; Erase sector
+      GOSUB ProgramUserCode
+    )
+      
+    IF DIALOG.BOOLEAN(CHK_PCONF)
+    (
+      Data.Set DBG:0x600010 %Quad 0x0002000000000000  ; Erase sector
+      GOSUB ProgramConfig
+      GOSUB ProgramSecurity
+    )
+  )
+  
+  RETURN
+
+; Enable progam button only, if at least on check box is set.
+ProgramUpdateWindow:
+  DIALOG.Disable BT_PROGSEC
+  
+  IF DIALOG.BOOLEAN(CHK_PCONF)
+    DIALOG.Enable BT_PROGSEC
+  IF DIALOG.BOOLEAN(CHK_PUC)
+    DIALOG.Enable BT_PROGSEC
+  IF DIALOG.BOOLEAN(CHK_POTP)
+    DIALOG.Enable BT_PROGSEC
+  IF DIALOG.BOOLEAN(CHK_PB0)
+    DIALOG.Enable BT_PROGSEC
+  IF DIALOG.BOOLEAN(CHK_PB1)
+    DIALOG.Enable BT_PROGSEC
+
+  RETURN
+  
+; Select All sectors for flash erasing
+ProgramSelectAll:
+  DIALOG.Set CHK_PCONF   ""
+  DIALOG.Set CHK_PUC     ""
+  DIALOG.Set CHK_POTP    ""
+  DIALOG.Set CHK_PB0     ""
+  DIALOG.Set CHK_PB1     ""
+  
+  GOSUB ProgramUpdateWindow
+  
+  RETURN
+
+; Deselect All sectors for flash erasing
+ProgramSelectNone:
+  DIALOG.Set CHK_PCONF   " "
+  DIALOG.Set CHK_PUC     " "
+  DIALOG.Set CHK_POTP    " "
+  DIALOG.Set CHK_PB0     " "
+  DIALOG.Set CHK_PB1     " "
+  
+  GOSUB ProgramUpdateWindow
+
+  RETURN
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Helper sub routines for flash programming.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; Program flash bank 0 and 1 from virtual memory
+ProgramFlashMemory:
+  ; Program Flash sectors
+  SYStem.Down
+  SYStem.JtagClock &jtagclock
+  SYStem.Up
+  
+  GOSUB FlashSetup
+  
+  ; Bank 0
+  IF &flashtype==7
+    FLASH.Create 1. 0x00000000++0x001FFFFF 0x10000 TARGET Word
+  ELSE IF &flashtype==6
+    FLASH.Create 1. 0x00000000++0x000FFFFF 0x10000 TARGET Word
+  ELSE IF &flashtype==4
+    FLASH.Create 1. 0x00000000++0x0007FFFF 0x10000 TARGET Word
+  ELSE IF &flashtype==2
+    FLASH.Create 1. 0x00000000++0x0003FFFF 0x10000 TARGET Word
+    
+  ; Bank 1
+  IF &flashtype>4
+    FLASH.Create 2. 0x00200000++0x1FFFF  0x2000 TARGET Word
+  ELSE
+    FLASH.Create 2. 0x00200000++0x7FFF  0x2000 TARGET Word
+  FLASH.TARGET 0x40000000 0x40001000 0x1000 ~~/demo/arm/flash/word/str9.bin
+  
+  FLASH.UNLOCK ALL
+   FLASH.Erase ALL
+  FLASH.Program ALL
+  
+  IF &flashtype==7
+    Data.COPY VM:0x00000000++0x001FFFFF SD:0x00000000
+  ELSE IF &flashtype==6
+    Data.COPY VM:0x00000000++0x000FFFFF SD:0x00000000
+  ELSE IF &flashtype==4
+    Data.COPY VM:0x00000000++0x0007FFFF SD:0x00000000
+  ELSE IF &flashtype==2
+    Data.COPY VM:0x00000000++0x0003FFFF SD:0x00000000
+  
+  IF &flashtype>4
+    Data.COPY VM:0x00400000++0x0001FFFF SD:0x00200000
+  ELSE
+    Data.COPY VM:0x00400000++0x00007FFF SD:0x00200000
+  
+  FLASH.Program off
+  
+  SYStem.Down
+  SYStem.JtagClock 1MHz
+  SYStem.Mode Prepare
+  
+  RETURN
+  
+; Program flash bank 0 from virtual memory
+ProgramFlashBank0:
+  ; Program Flash sectors
+  SYStem.Down
+  SYStem.JtagClock &jtagclock
+  SYStem.Up
+  
+  GOSUB FlashSetup
+  
+  ; Bank 0
+  IF &flashtype==7
+    FLASH.Create 1. 0x00000000++0x001FFFFF 0x10000 TARGET Word
+  ELSE IF &flashtype==6
+    FLASH.Create 1. 0x00000000++0x000FFFFF 0x10000 TARGET Word
+  ELSE IF &flashtype==4
+    FLASH.Create 1. 0x00000000++0x0007FFFF 0x10000 TARGET Word
+  ELSE IF &flashtype==2
+    FLASH.Create 1. 0x00000000++0x0003FFFF 0x10000 TARGET Word
+    
+  FLASH.TARGET 0x40000000 0x40001000 0x1000 ~~/demo/arm/flash/word/str9.bin
+  
+  FLASH.UNLOCK ALL
+  FLASH.Erase ALL
+  FLASH.Program ALL
+  
+  IF &flashtype==7
+    Data.COPY VM:0x00000000++0x001FFFFF SD:0x00000000
+  ELSE IF &flashtype==6
+    Data.COPY VM:0x00000000++0x000FFFFF SD:0x00000000
+  ELSE IF &flashtype==4
+    Data.COPY VM:0x00000000++0x0007FFFF SD:0x00000000
+  ELSE IF &flashtype==2
+    Data.COPY VM:0x00000000++0x0003FFFF SD:0x00000000
+    
+  FLASH.Program off
+  
+  SYStem.Down
+  SYStem.JtagClock 1MHz
+  SYStem.Mode Prepare
+  
+  RETURN
+  
+; Program flash bank 1 from virtual memory
+ProgramFlashBank1:
+  ; Program Flash sectors
+  SYStem.Down
+  SYStem.JtagClock &jtagclock
+  SYStem.Up
+  
+  GOSUB FlashSetup
+  
+  ; Bank 1
+  IF &flashtype>4
+    FLASH.Create 2. 0x00200000++0x1FFFF  0x2000 TARGET Word
+  ELSE
+    FLASH.Create 2. 0x00200000++0x7FFF  0x2000 TARGET Word
+  FLASH.TARGET 0x40000000 0x40001000 0x1000 ~~/demo/arm/flash/word/str9.bin
+  
+  FLASH.UNLOCK ALL
+  FLASH.Erase ALL
+  FLASH.Program ALL
+  
+  IF &flashtype>4
+    Data.COPY VM:0x00400000++0x0001FFFF SD:0x00200000
+  ELSE
+    Data.COPY VM:0x00400000++0x00007FFF SD:0x00200000
+  
+  FLASH.Program off
+  
+  SYStem.Down
+  SYStem.JtagClock 1MHz
+  SYStem.Mode Prepare
+  
+  RETURN
+
+; Program OTP from VM
+ProgramOTP:
+  ; Program OTP
+  SYStem.Down
+  SYStem.JtagClock &jtagclock
+  SYStem.Up
+  
+  GOSUB FlashSetup
+  
+  LOCAL &OTP_BASE
+  
+  &OTP_BASE=0x80000
+  
+  Data.Set SD:&OTP_BASE %Word 0xC0
+  
+  Data.Set SD:&OTP_BASE %Word Data.Word(VM:0x500000)
+  WAIT 50ms
+  Data.Set SD:&OTP_BASE %Word Data.Word(VM:0x500002)
+  WAIT 50ms
+  Data.Set SD:&OTP_BASE %Word Data.Word(VM:0x500004)
+  WAIT 50ms
+  Data.Set SD:&OTP_BASE %Word Data.Word(VM:0x500006)
+  WAIT 50ms
+  Data.Set SD:&OTP_BASE %Word Data.Word(VM:0x500008)
+  WAIT 50ms
+  Data.Set SD:&OTP_BASE %Word Data.Word(VM:0x50000A)
+  WAIT 50ms
+  Data.Set SD:&OTP_BASE %Word Data.Word(VM:0x50000C)
+  WAIT 50ms
+  Data.Set SD:&OTP_BASE %Word Data.Word(VM:0x50000E)
+  WAIT 50ms
+  Data.Set SD:&OTP_BASE %Word Data.Word(VM:0x500010)
+  WAIT 50ms
+  Data.Set SD:&OTP_BASE %Word Data.Word(VM:0x500012)
+  WAIT 50ms
+  Data.Set SD:&OTP_BASE %Word Data.Word(VM:0x500014)
+  WAIT 50ms
+  Data.Set SD:&OTP_BASE %Word Data.Word(VM:0x500016)
+  WAIT 50ms
+  Data.Set SD:&OTP_BASE %Word Data.Word(VM:0x500018)
+  WAIT 50ms
+  Data.Set SD:&OTP_BASE %Word Data.Word(VM:0x50001A)
+  WAIT 50ms
+  Data.Set SD:&OTP_BASE %Word Data.Word(VM:0x50001C)
+  WAIT 50ms
+  Data.Set SD:&OTP_BASE %Word Data.Word(VM:0x50001E)
+  WAIT 50ms
+  
+  Data.Set SD:&OTP_BASE %Word 0xFF
+  
+  Data.Set SD:&OTP_BASE %Word 0x70
+  &temp=Data.Byte(SD:&OTP_BASE)
+  Data.Set SD:&OTP_BASE %Word 0xFF
+
+  Data.Set SD:&OTP_BASE %Word 0x50
+
+  Data.Set SD:&OTP_BASE %Word 0x70
+  &temp=Data.Byte(SD:&OTP_BASE)
+  Data.Set SD:&OTP_BASE %Word 0xFF
+  
+  SYStem.Down
+  SYStem.JtagClock 1MHz
+  SYStem.Mode Prepare
+  
+  RETURN
+
+; Program Config from VM  
+ProgramConfig:
+  Data.Set DBG:0x520000 %Quad Data.Quad(VM:0x520000)
+  
+  RETURN
+
+; Set Security bit from VM
+ProgramSecurity:
+  Data.Set DBG:0x520008 %Byte Data.Byte(VM:0x520008)
+  
+  RETURN
+
+; Program UserCode
+ProgramUserCode:
+  Data.Set DBG:0x510000 %Long Data.Long(VM:0x510000)
+  
+  RETURN
+  
+; Setup the flash memory
+FlashSetup:
+
+  IF (&configuration&0x0001000000000000)!=0x0
+  (
+    IF &flashtype==2.
+    (
+      Data.Set SD:0x54000004 %Long 0x05          ; FMI_NBBSR = 256 kByte
+    )
+    ELSE IF &flashtype==4.
+    (
+      Data.Set SD:0x54000004 %Long 0x06          ; FMI_NBBSR = 512 kByte
+    )
+    IF &flashtype==6.
+    (
+      Data.Set SD:0x54000004 %Long 0x07          ; FMI_NBBSR = 1024 kByte
+    )
+    ELSE IF &flashtype==7.
+    (
+      Data.Set SD:0x54000004 %Long 0x08          ; FMI_NBBSR = 2048 kByte
+    )
+    
+    IF &flashtype<=4
+      Data.Set SD:0x54000000 %Long 0x00          ; FMI_BBSR = 32 kByte
+    ELSE
+      Data.Set SD:0x54000000 %Long 0x10          ; FMI_BBSR = 128 kByte
+      
+    Data.Set SD:0x5400000C %Long 0x00100000        ; FMI_BBADR
+    Data.Set SD:0x54000010 %Long 0x00000000        ; FMI_NBBADR
+  )
+  ELSE
+  (
+    IF &flashtype==2.
+    (
+      Data.Set SD:0x54000000 %Long 0x03              ; FMI_BBSR = 256 kByte
+    )
+    ELSE IF &flashtype==4.
+    (
+      Data.Set SD:0x54000000 %Long 0x04              ; FMI_BBSR = 512 kByte
+    )
+    IF &flashtype==6.
+    (
+      Data.Set SD:0x54000000 %Long 0x05              ; FMI_BBSR = 1024 kByte
+    )
+    ELSE IF &flashtype==7.
+    (
+      Data.Set SD:0x54000000 %Long 0x06              ; FMI_BBSR = 2048 kByte
+    )
+    
+    IF &flashtype<=4
+      Data.Set SD:0x54000004 %Long 0x02              ; FMI_NBBSR = 32 kByte
+    ELSE  
+      Data.Set SD:0x54000004 %Long 0x04              ; FMI_NBBSR = 128 kByte
+    
+    Data.Set SD:0x5400000c %Long 0x00000000            ; FMI_BBADR
+    Data.Set SD:0x54000010 %Long 0x00200000            ; FMI_NBBADR
+  )
+  
+  Data.Set SD:0x54000018 %Long Data.Long(SD:0x54000018)|0x18    ; FMI_CR enable Bank1
+
+  Data.Set SD:0x5C002034 %Long Data.Long(SD:0x5C002034)&0xfffffffe  ; Disable PFQBC
+
+  Data.Set SD:0x5c002000 %Long Data.Long(SD:0x5c002000)&0xfffeffff  ; Clock Control Register FMISEL=RCLK
+  
+  RETURN
+
+  
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Sub routines for erasing the flash
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; Enable the Erase biuutton only if a check box is selected
+EraseUpdateWindow:
+  DIALOG.Disable BT_ERASESEC
+  
+  IF DIALOG.BOOLEAN(CHK_EOTP)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EUC)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_ECONF)
+    DIALOG.Enable BT_ERASESEC
+  
+  IF DIALOG.BOOLEAN(CHK_EB1SP7)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB1SP6)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB1SP5)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB1SP4)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB1SP3)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB1SP2)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB1SP1)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB1SP0)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP31)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP30)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP29)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP28)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP27)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP26)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP25)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP24)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP23)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP22)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP21)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP20)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP19)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP18)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP17)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP16)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP15)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP14)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP13)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP12)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP11)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP10)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP9)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP8)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP7)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP6)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP5)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP4)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP3)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP2)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP1)
+    DIALOG.Enable BT_ERASESEC
+  IF DIALOG.BOOLEAN(CHK_EB0SP0)
+    DIALOG.Enable BT_ERASESEC
+
+  RETURN
+
+; Select All sectors for flash erasing
+EraseSelectAll:
+  DIALOG.Set CHK_ECONF   ""
+  DIALOG.Set CHK_EUC     ""
+  DIALOG.Set CHK_EOTP    ""
+  DIALOG.Set CHK_EB1SP0 ""
+  DIALOG.Set CHK_EB1SP1 ""
+  DIALOG.Set CHK_EB1SP2 ""
+  DIALOG.Set CHK_EB1SP3 ""
+  DIALOG.Set CHK_EB0SP0 ""
+  DIALOG.Set CHK_EB0SP1 ""
+  DIALOG.Set CHK_EB0SP2 ""
+  DIALOG.Set CHK_EB0SP3 ""
+  IF &flashtype>=4
+  (
+    DIALOG.Set CHK_EB0SP4 ""
+    DIALOG.Set CHK_EB0SP5 ""
+    DIALOG.Set CHK_EB0SP6 ""
+    DIALOG.Set CHK_EB0SP7 ""
+  )
+  IF &flashtype>=6
+  (
+    DIALOG.Set CHK_EB0SP8 ""
+    DIALOG.Set CHK_EB0SP9 ""
+    DIALOG.Set CHK_EB0SP10 ""
+    DIALOG.Set CHK_EB0SP11 ""
+    DIALOG.Set CHK_EB0SP12 ""
+    DIALOG.Set CHK_EB0SP13 ""
+    DIALOG.Set CHK_EB0SP14 ""
+    DIALOG.Set CHK_EB0SP15 ""
+    DIALOG.Set CHK_EB1SP4 ""
+    DIALOG.Set CHK_EB1SP5 ""
+    DIALOG.Set CHK_EB1SP6 ""
+    DIALOG.Set CHK_EB1SP7 ""
+  )
+  IF &flashtype>=7
+  (
+    DIALOG.Set CHK_EB0SP16 ""
+    DIALOG.Set CHK_EB0SP17 ""
+    DIALOG.Set CHK_EB0SP18 ""
+    DIALOG.Set CHK_EB0SP19 ""
+    DIALOG.Set CHK_EB0SP20 ""
+    DIALOG.Set CHK_EB0SP21 ""
+    DIALOG.Set CHK_EB0SP22 ""
+    DIALOG.Set CHK_EB0SP23 ""
+    DIALOG.Set CHK_EB0SP24 ""
+    DIALOG.Set CHK_EB0SP25 ""
+    DIALOG.Set CHK_EB0SP26 ""
+    DIALOG.Set CHK_EB0SP27 ""
+    DIALOG.Set CHK_EB0SP28 ""
+    DIALOG.Set CHK_EB0SP29 ""
+    DIALOG.Set CHK_EB0SP30 ""
+    DIALOG.Set CHK_EB0SP31 ""
+  )
+  
+  GOSUB EraseUpdateWindow
+  
+  RETURN
+
+; Deselect All sectors for flash erasing
+EraseSelectNone:
+  DIALOG.Set CHK_ECONF    " "
+  DIALOG.Set CHK_EUC      " "
+  DIALOG.Set CHK_EOTP     " "
+  DIALOG.Set CHK_EB1SP0  " "
+  DIALOG.Set CHK_EB1SP1  " "
+  DIALOG.Set CHK_EB1SP2  " "
+  DIALOG.Set CHK_EB1SP3  " "
+  DIALOG.Set CHK_EB1SP4  " "
+  DIALOG.Set CHK_EB1SP5  " "
+  DIALOG.Set CHK_EB1SP6  " "
+  DIALOG.Set CHK_EB1SP7  " "
+  DIALOG.Set CHK_EB0SP0  " "
+  DIALOG.Set CHK_EB0SP1  " "
+  DIALOG.Set CHK_EB0SP2  " "
+  DIALOG.Set CHK_EB0SP3  " "
+  DIALOG.Set CHK_EB0SP4  " "
+  DIALOG.Set CHK_EB0SP5  " "
+  DIALOG.Set CHK_EB0SP6  " "
+  DIALOG.Set CHK_EB0SP7  " "
+  DIALOG.Set CHK_EB0SP8  " "
+  DIALOG.Set CHK_EB0SP9  " "
+  DIALOG.Set CHK_EB0SP10 " "
+  DIALOG.Set CHK_EB0SP11 " "
+  DIALOG.Set CHK_EB0SP12 " "
+  DIALOG.Set CHK_EB0SP13 " "
+  DIALOG.Set CHK_EB0SP14 " "
+  DIALOG.Set CHK_EB0SP15 " "
+  DIALOG.Set CHK_EB0SP16 " "
+  DIALOG.Set CHK_EB0SP17 " "
+  DIALOG.Set CHK_EB0SP18 " "
+  DIALOG.Set CHK_EB0SP19 " "
+  DIALOG.Set CHK_EB0SP20 " "
+  DIALOG.Set CHK_EB0SP21 " "
+  DIALOG.Set CHK_EB0SP22 " "
+  DIALOG.Set CHK_EB0SP23 " "
+  DIALOG.Set CHK_EB0SP24 " "
+  DIALOG.Set CHK_EB0SP25 " "
+  DIALOG.Set CHK_EB0SP26 " "
+  DIALOG.Set CHK_EB0SP27 " "
+  DIALOG.Set CHK_EB0SP28 " "
+  DIALOG.Set CHK_EB0SP29 " "
+  DIALOG.Set CHK_EB0SP30 " "
+  DIALOG.Set CHK_EB0SP31 " "
+  
+  GOSUB EraseUpdateWindow
+
+  RETURN
+
+; Full Chip Erase
+FullChipErase:
+  DIALOG.YESNO "Do you really want to erase the flash?"
+  ENTRY &result
+  
+  IF &result
+    Data.Set DBG:0x600008 %Byte 0xA5
+  
+  RETURN
+  
+; Erase selected sectors
+SectorErase:
+  DIALOG.YESNO "Do you really want to erase the selected sectors?"
+  ENTRY &result
+  
+  IF &result
+  (
+    &sectormask=0x0000000000000000
+    
+    IF DIALOG.BOOLEAN(CHK_EOTP)
+      &sectormask=&sectormask+0x0008000000000000
+    IF DIALOG.BOOLEAN(CHK_EUC)
+      &sectormask=&sectormask+0x0004000000000000
+    IF DIALOG.BOOLEAN(CHK_ECONF)
+      &sectormask=&sectormask+0x0002000000000000
+    IF DIALOG.BOOLEAN(CHK_EB1SP7)
+      &sectormask=&sectormask+0x0000008000000000
+    IF DIALOG.BOOLEAN(CHK_EB1SP6)
+      &sectormask=&sectormask+0x0000004000000000
+    IF DIALOG.BOOLEAN(CHK_EB1SP5)
+      &sectormask=&sectormask+0x0000002000000000
+    IF DIALOG.BOOLEAN(CHK_EB1SP4)
+      &sectormask=&sectormask+0x0000001000000000
+    IF DIALOG.BOOLEAN(CHK_EB1SP3)
+      &sectormask=&sectormask+0x0000000800000000
+    IF DIALOG.BOOLEAN(CHK_EB1SP2)
+      &sectormask=&sectormask+0x0000000400000000
+    IF DIALOG.BOOLEAN(CHK_EB1SP1)
+      &sectormask=&sectormask+0x0000000200000000
+    IF DIALOG.BOOLEAN(CHK_EB1SP0)
+      &sectormask=&sectormask+0x0000000100000000
+    IF DIALOG.BOOLEAN(CHK_EB0SP31)
+      &sectormask=&sectormask+0x0000000080000000
+    IF DIALOG.BOOLEAN(CHK_EB0SP30)
+      &sectormask=&sectormask+0x0000000040000000
+    IF DIALOG.BOOLEAN(CHK_EB0SP29)
+      &sectormask=&sectormask+0x0000000020000000
+    IF DIALOG.BOOLEAN(CHK_EB0SP28)
+      &sectormask=&sectormask+0x0000000010000000
+    IF DIALOG.BOOLEAN(CHK_EB0SP27)
+      &sectormask=&sectormask+0x0000000008000000
+    IF DIALOG.BOOLEAN(CHK_EB0SP26)
+      &sectormask=&sectormask+0x0000000004000000
+    IF DIALOG.BOOLEAN(CHK_EB0SP25)
+      &sectormask=&sectormask+0x0000000002000000
+    IF DIALOG.BOOLEAN(CHK_EB0SP24)
+      &sectormask=&sectormask+0x0000000001000000
+    IF DIALOG.BOOLEAN(CHK_EB0SP23)
+      &sectormask=&sectormask+0x0000000000800000
+    IF DIALOG.BOOLEAN(CHK_EB0SP22)
+      &sectormask=&sectormask+0x0000000000400000
+    IF DIALOG.BOOLEAN(CHK_EB0SP21)
+      &sectormask=&sectormask+0x0000000000200000
+    IF DIALOG.BOOLEAN(CHK_EB0SP20)
+      &sectormask=&sectormask+0x0000000000100000
+    IF DIALOG.BOOLEAN(CHK_EB0SP19)
+      &sectormask=&sectormask+0x0000000000080000
+    IF DIALOG.BOOLEAN(CHK_EB0SP18)
+      &sectormask=&sectormask+0x0000000000040000
+    IF DIALOG.BOOLEAN(CHK_EB0SP17)
+      &sectormask=&sectormask+0x0000000000020000
+    IF DIALOG.BOOLEAN(CHK_EB0SP16)
+      &sectormask=&sectormask+0x0000000000010000
+    IF DIALOG.BOOLEAN(CHK_EB0SP15)
+      &sectormask=&sectormask+0x0000000000008000
+    IF DIALOG.BOOLEAN(CHK_EB0SP14)
+      &sectormask=&sectormask+0x0000000000004000
+    IF DIALOG.BOOLEAN(CHK_EB0SP13)
+      &sectormask=&sectormask+0x0000000000002000
+    IF DIALOG.BOOLEAN(CHK_EB0SP12)
+      &sectormask=&sectormask+0x0000000000001000
+    IF DIALOG.BOOLEAN(CHK_EB0SP11)
+      &sectormask=&sectormask+0x0000000000000800
+    IF DIALOG.BOOLEAN(CHK_EB0SP10)
+      &sectormask=&sectormask+0x0000000000000400
+    IF DIALOG.BOOLEAN(CHK_EB0SP9)
+      &sectormask=&sectormask+0x0000000000000200
+    IF DIALOG.BOOLEAN(CHK_EB0SP8)
+      &sectormask=&sectormask+0x0000000000000100
+    IF DIALOG.BOOLEAN(CHK_EB0SP7)
+      &sectormask=&sectormask+0x0000000000000080
+    IF DIALOG.BOOLEAN(CHK_EB0SP6)
+      &sectormask=&sectormask+0x0000000000000040
+    IF DIALOG.BOOLEAN(CHK_EB0SP5)
+      &sectormask=&sectormask+0x0000000000000020
+    IF DIALOG.BOOLEAN(CHK_EB0SP4)
+      &sectormask=&sectormask+0x0000000000000010
+    IF DIALOG.BOOLEAN(CHK_EB0SP3)
+      &sectormask=&sectormask+0x0000000000000008
+    IF DIALOG.BOOLEAN(CHK_EB0SP2)
+      &sectormask=&sectormask+0x0000000000000004
+    IF DIALOG.BOOLEAN(CHK_EB0SP1)
+      &sectormask=&sectormask+0x0000000000000002
+    IF DIALOG.BOOLEAN(CHK_EB0SP0)
+      &sectormask=&sectormask+0x0000000000000001
+    
+    Data.Set DBG:0x600010 %Quad &sectormask
+  )
+
+  RETURN
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Open additional windows
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; View the virtual memory
+ViewOBJ:
+  Data.dump VM:0x00000000--0x00520008 /Byte /SpotLight
+  
+  RETURN
+
+; View the PER file
+ViewRegister:
+  PER.view ~~/perstr9flash.per
+  RETURN
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Helper sub to mark unimplemented functions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+MissingImpl:
+  DIALOG.OK "Implementation Missing!"
+  RETURN
+  
+  ENDDO 
+ 

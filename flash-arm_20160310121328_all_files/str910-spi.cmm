@@ -1,0 +1,87 @@
+; --------------------------------------------------------------------------------
+; @Title: STR91x Serial FLASH Programming Script
+; @Description:
+; Serial FLASH(ST, 25P64) is connected the SPI(Serial Peripheral Interface)
+; 
+; SRAM: 0x4000000
+; Serial FLASH Controller Addr: 0x5C007000
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: STR910*
+; @Keywords: ST 25P64 SPI
+; --------------------------------------------------------------------------------
+; $Id: str910-spi.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  SYStem.RESet
+  SYStem.CPU STR910
+  SYStem.Option ResBreak OFF
+  SYStem.JtagClock RTCK
+  SYStem.Up
+
+GOSUB enable_SPI
+
+Break.RESet
+
+FLASHFILE.RESet
+
+//The FLASH CS connected to GPIO5.7 the GPIO5 group register is 0x5800b3FC for the STR9
+//FLASFILE.CONFIG <Tx Reg>   <Rx Reg>   <CS Reg>     <Port Num>
+FLASHFILE.CONFIG 0x5C007008 0x5C007008  0x5800B3FC      0x07
+
+//FLASHFILE.TARGET <Code Range> <Data Range> <Algorithm File>
+FLASHFILE.TARGET 0x4000000++0x1FFF 0x4002000++0x1FFF ~~/demo/arm/flash/byte/spi64_stm.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Dump window for Serial FLASH
+  ;FLASHFILE.DUMP 0x0
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+  //Erase Serial FLASH 
+    FLASHFILE.Erase 0x0--0x7FFFFF  
+
+  //Write Serial FLASH
+    FLASHFILE.LOAD.binary  * 0x0 
+  
+  //Save Serial FLASH 
+    ;FLASHFILE.SAVE dump.bin 0x0--0x7FFFFF
+  )
+
+ENDDO
+
+enable_SPI:
+
+//SCU_PCGR1 SSP0 Enable 
+PER.Set.simple ASD:0x5C002018 %Long 0x80300
+
+//GPIO5 & SSP0 DeInit()   
+PER.Set.simple ASD:0x5C002020 %Long 0x80300
+PER.Set.simple ASD:0x5C002028 %Long 0x80300
+
+//GPIO5 In & Output   
+PER.Set.simple ASD:0x5800B400 0xb0
+
+//GPIO5 to SSP OUTPUT  
+PER.Set.simple ASD:0x5C002058 %Long 0x4a00
+
+//GPIO5 type push pull    
+PER.Set.simple ASD:0x5C002098 %Long 0x0
+
+//GPIO5.6 SSP0_MISO   
+PER.Set.simple ASD:0x5C002078 %Long 0x40
+
+//SSP0_CR0  , Define SSP 
+PER.Set.simple ASD:0x5C007000 %Long 0x5c7
+
+//SSP_PR 
+PER.Set.simple ASD:0x5C007010 %Long 0x2
+
+//SSP0 Enable   
+PER.Set.simple ASD:0x5C007004 %Long 0x2
+
+RETURN

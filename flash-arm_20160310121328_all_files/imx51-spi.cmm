@@ -1,0 +1,96 @@
+; --------------------------------------------------------------------------------
+; @Title: i.MX51 SPI FLASH Programming Script
+; @Description:
+; SPI FLASH(SPANSION, FL064P) is connected eCSPI1
+; 
+; S(D)RAM: 0x20000000
+; eCSPI1 Tx Register : 0x70010004   
+; eCSPI1 Rx Register : 0x70010000   
+; eCSPI1 CS Register : 0x70010008
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: IMX515
+; @Keywords: SPANSION FL064P Flash SPI 
+; --------------------------------------------------------------------------------
+; $Id: imx51-spi.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  AREA.RESet
+  AREA.view
+  
+//SYStem configuration
+
+  SYStem.CPU IMX515
+  SYStem.Option ResBreak ON    
+  SYStem.Option EnReset OFF    
+  SYStem.JtagClock 20MHz       
+
+  SYStem.Up
+
+  PER.Set.simple C15:0x1 %Long  (Data.Long(C15:0x1)&~(0x5))  ; disable interrupt and mmu
+
+//IOMUX CSPI1 -> eCSPI1
+  PER.Set.simple AD:0x73FA8210 %Long 0x0   ;CSPI1_MOSI
+  PER.Set.simple AD:0x73FA8600 %Long 0x105 ;CSPI1_MISO
+
+  PER.Set.simple AD:0x73FA8214 %Long 0x0   ;CSPI1_MISO
+  PER.Set.simple AD:0x73FA8604 %Long 0x105 ;CSPI1_MISO
+
+  PER.Set.simple AD:0x73FA8218 %Long 0x3   ;CSPI1_SS0
+  PER.Set.simple AD:0x73FA8608 %Long 0x85  ;CSPI1_SS0
+
+  PER.Set.simple AD:0x73FA821C %Long 0x0   ;CSPI1_SS1
+  PER.Set.simple AD:0x73FA860C %Long 0x185 ;CSPI1_SS1
+
+  PER.Set.simple AD:0x73FA8220 %Long 0x0   ;CSPI1_RDY
+  PER.Set.simple AD:0x73FA8610 %Long 0x180 ;CSPI1_RDY
+
+  PER.Set.simple AD:0x73FA8224 %Long 0x0  ;CSPI1_SCLK
+  PER.Set.simple AD:0x73FA8614 %Long 0x105 ;CSPI1_SCLK
+
+  PER.Set.simple AD:0x73FD401C %Long 0xA5A2A020  ; CSCMR1, Clock for eSPI
+  PER.Set.simple AD:0x73FD4038 %Long 0x02090241  ; CSCDR2, Clock for eSPI
+  PER.Set.simple AD:0x70010008 %Long 0x01F4F021  ; eSPI1 control register
+
+  Break.RESet
+
+  FLASHFILE.RESet
+//FLASHFILE.CONFIG  <tx_reg>         <rx_reg>      <cs_reg>  
+  FLASHFILE.CONFIG  0x70010004      0x70010000     0x70010008 
+
+// FLASHFILE.TARGET <<code range>> <<data range>> <<algorithm file>>
+  FLASHFILE.TARGET 0x20000000++0x1fff 0x20002000++0x3fff ~~/demo/arm/flash/byte/spi64_ecspi.bin /KEEP
+  
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Dump window for Serial FLASH
+  FLASHFILE.DUMP 0x0
+
+//Unlock Serial FLASH
+;  FLASHFILE.UNLOCK 0x0--0xFFFFF 
+
+//Erase Serial FLASH
+; FLASHFILE.ERASE 0x0--0xFFFFF
+
+//Write Serial FLASH
+;  FLASHFILE.LOAD  * 0x0
+  
+ENDDO
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

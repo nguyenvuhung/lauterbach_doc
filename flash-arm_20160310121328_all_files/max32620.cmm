@@ -1,0 +1,106 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Maxim Integrated MAX32620 internal flash.
+; 
+; @Description: 
+; Script arguments:
+;
+;   DO max32600 [PREPAREONLY] [CPU=<cpu>] [DUALPORT=0|1]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;
+;     DUALPORT default value is 0 (disabled). If DualPort mode is enabled
+;             flash algorithm stays running until flash programming is
+;             finished. Data is tranferred via dual port memory access. 
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/max32600 PREPAREONLY DUALPORT=1 CPU=MAX32600P85A
+;
+; List of MAX32600 derivatives and their configuration:
+;
+;   CPU-Type        Flash size   SRAM size
+;                     [Byte]       [Byte]
+; --------------------------------------------------------------------------------
+;   MAX32620         0x200000      0x40000
+;
+;   The internal flash is located at 0x00000000
+;   The internal SRAM is located at  0x20000000
+;
+; @Author: FLC
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 3284 $
+; $Id: max32620.cmm 3284 2015-05-08 09:37:32Z fcaron $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly &param_dualport &param_cpu
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+  &param_dualport=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"DUALPORT=","0")
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+   
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(MAX3262*)
+      SYStem.CPU MAX3262*
+      
+    SYStem.CONFIG.DEBUGPORTTYPE SWD
+    
+    SYStem.Up
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration &param_dualport
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &DualPort
+  ENTRY &DualPort
+
+  LOCAL &FlashSize
+
+  ; Program Flash
+  FLASH.Create 1. 0x00000000--0x001FFFFF 0x2000 TARGET Long
+  
+  FLASH.CLocK.AUTO
+  IF &DualPort==0
+    FLASH.TARGET 0x20000000 0x20001000 0x2000 ~~/demo/arm/flash/long/max32620.bin
+  ELSE
+    FLASH.TARGET 0x20000000 EAHB:0x20001000 0x2000 ~~/demo/arm/flash/long/max32620.bin /DualPort
+
+  RETURN

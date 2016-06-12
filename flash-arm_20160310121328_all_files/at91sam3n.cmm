@@ -1,0 +1,171 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Atmel AT91SAM3N internal flash. 
+; 
+; @Description: 
+; Script arguments:
+;
+;   DO atsam3n [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; List of AT91SAM3N derivatives and their configuration:
+;
+;   CPU-Type        Flash size   Page size    SRAM size 
+;                    (Byte)       (Byte)       (Byte)   
+; --------------------------------------------------------------------------------
+;   AT91SAM3N00A       0x4000      0x100        0x400 
+;   AT91SAM3N00B       0x4000      0x100        0x400 
+;   AT91SAM3N0A        0x8000      0x100        0x800 
+;   AT91SAM3N0B        0x8000      0x100        0x800 
+;   AT91SAM3N0C        0x8000      0x100        0x800 
+;   AT91SAM3N1A       0x10000      0x100       0x4000   
+;   AT91SAM3N1B       0x10000      0x100       0x4000   
+;   AT91SAM3N1C       0x10000      0x100       0x4000   
+;   AT91SAM3N2A       0x20000      0x100       0x8000   
+;   AT91SAM3N2B       0x20000      0x100       0x8000   
+;   AT91SAM3N2C       0x20000      0x100       0x8000   
+;   AT91SAM3N4A       0x40000      0x100       0xc000   
+;   AT91SAM3N4B       0x40000      0x100       0xc000   
+;   AT91SAM3N4C       0x40000      0x100       0xc000   
+;
+; The flash is divided into pages of 256 Byte. 
+;
+; The internal flash is located at 0x00400000
+; The internal SRAM is located at  0x20000000
+; The internal ROM is located at   0x00800000.
+;
+; The system always boot at address 0x0. If GPNVM bit 1 is set the 
+; internal flash is mirrored to address 0x0 before remap command. 
+; Otherwise ROM is mapped to address 0x0. After remap command 
+; internal SRAM is mirrored to address 0x0.
+;
+; HINTS:
+;
+;   Locked pages can be unlocked with FLASH.UNLOCK command and can be 
+;   locked again with FLASH.LOCK command.
+;
+;   Watchdog is critical for flash programming. The flash algorithm is 
+;   serving the watchdog if the watchdog is not used in window mode.
+;
+;   If the watchdog is setup to window mode by a running application 
+;   the watchdog should be either disabled after first power-up or the 
+;   board should be power-up before every flash programming. If the 
+;   watchdog is disabled after power-up it cannot be enabled again by 
+;   the application because WDT_MR register is write once. Please see 
+;   below the command to disable the watchdog.
+;
+;   GPNVM bit values can be changed via at91sam3-nvm.cmm script.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: AT91SAM3N*
+; --------------------------------------------------------------------------------
+; $Rev: 3491 $
+; $Id: at91sam3n.cmm 3491 2015-11-12 10:10:14Z fcaron $
+
+  LOCAL &parameters &param_prepareonly  &param_cpu
+  ENTRY %LINE &parameters
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  LOCAL &flashsize
+  
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    ; Example for AT91SAM3N4A
+    SYStem.RESet
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(AT91SAM3N*)
+      SYStem.CPU AT91SAM3N*
+    SYStem.JtagClock RTCK
+    SYStem.Option.ResBreak OFF
+    SYStem.Up
+  )
+
+  ; Disable watchdog for flash programming if watchdog may be used in 
+  ; window mode.
+  ;DATA.SET 0x400E1254 %LONG DATA.LONG(ASD:0x400E1254)|0x00008000
+
+  ; ------------------------------------------------------------------------------
+  ; Setup flash configuration depending on selected CPU.
+  
+ IF CPUIS("AT91SAM3N00?")
+  (
+    &flashsize=0x4000
+  )
+ ELSE IF CPUIS("AT91SAM3N0?")
+  (
+    &flashsize=0x8000
+  )
+  ELSE IF CPUIS("AT91SAM3N1?")
+  (
+    &flashsize=0x10000
+  )
+  ELSE IF CPUIS("AT91SAM3N2?")
+  (
+    &flashsize=0x20000
+  )
+  ELSE IF CPUIS("AT91SAM3N4?")
+  (
+    &flashsize=0x40000
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  ; Setup EEFC wait states in EEFC_FMR register, FWS = 6
+  Data.Set ASD:0x400E0A00 %Long (Data.Long(ASD:0x400E0A00)&0xFFFFF0FF)|0x00000600
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  FLASH.Create 1. 0x00400000++(&flashsize-1) 0x100 TARGET Long
+  FLASH.TARGET 0x20000000 0x20000800 0x400 ~~/demo/arm/flash/long/eefcsam3s.bin
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash NVM bit programming example
+
+  DIALOG.YESNO "Program flash NVM bits"
+  LOCAL &prognvm
+  ENTRY &prognvm
+  IF &prognvm 
+  (
+    DO ~~~~/at91sam3-nvm
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    ; Unlock locked pages if necessary
+    ;FLASH.UNLOCK ALL
+
+    ; Because of small sector size and very fast chip erase feature 
+    ; FLASH.Erase and FLASH.Program is used instead of FLASH.ReProgram.
+    FLASH.Erase.ALL
+    FLASH.Program.ALL
+    Data.LOAD.auto * /Long
+    FLASH.Program.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO

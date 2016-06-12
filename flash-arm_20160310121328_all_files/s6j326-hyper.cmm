@@ -1,0 +1,218 @@
+; --------------------------------------------------------------------------------
+; @Title: S6J326 (Traveo) Serial FLASH Programming Script
+; @Description:
+;
+; SRAM: 0x02000000
+; Hyper flash memory mapped address: 0x90000000
+; 
+; @Author: fcaron
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Keywords: S6J326CLSA Hyper flash
+; --------------------------------------------------------------------------------
+; $Id: s6j326-hyper.cmm 3535 2015-12-15 16:27:01Z fcaron $
+
+  RESet
+  SYStem.CPU S6J326CLSA
+  SYStem.Option.ResBreak OFF
+  SYStem.Mode Up
+ 
+  ; Mask Watchdog-RESET
+  LOCAL &scscu_content
+  &scscu_content=Data.Long(APB:0x000C01B4)|0x00010100
+  Data.Set APB:0x000C01A4 %Long 0x5ECACCE5     ; Unlock register write access
+  Data.Set APB:0x000C01B4 %Long &scscu_content ; Make user configuration (SCSCU_CNTL_JTAGCON bit and SCSCU_CNTL_WDGRSTMASK)
+  Data.Set APB:0x000C01A4 %Long 0xA135331A     ; Lock register write access again 
+  
+  Data.Set 0x02000000++0x3FFF %Long 0x0
+  
+  GOSUB Define_Globals
+  GOSUB Enable_PLL
+  GOSUB Init_HyperBus
+
+  Break.RESet
+
+  FLASH.RESet
+  FLASH.CFI &HYPERBUS_BASE_ADDRESS Word /TARGET 0x02000000 AHB:0x02001000 0x1000 /DualPort
+  
+ENDDO
+
+
+; --------------------------------------------------------------------------------
+
+Enable_PLL:
+  
+  Data.Set &SYSC0_PROTKEYR %Long &KEY_SYSC_UNLOCK
+  Data.Set &SYSC0_PLL0CGCNTR %Long 0x00000000
+  Data.Set &SYSC1_PROTKEYR %Long &KEY_SYSC_UNLOCK
+  Data.Set &SYSC1_RUNCKSELR0 %Long &VALUE_SYSC1_RUNCKSELR0
+  Data.Set &SYSC1_PROTKEYR %Long &KEY_SYSC_UNLOCK
+  Data.Set &SYSC1_RUNCKSELR1 %Long &VALUE_SYSC1_RUNCKSELR1
+  Data.Set &SYSC1_PROTKEYR %Long &KEY_SYSC_UNLOCK
+  Data.Set &SYSC1_RUNENR %Byte &VALUE_SYSC1_RUNENR
+  Data.Set &SYSC0_PROTKEYR %Long &KEY_SYSC_UNLOCK
+  Data.Set &SYSC0_RUNCKSRER %Long &VALUE_SYSC0_RUNCKSRER
+  Data.Set &SYSC0_PROTKEYR %Long &KEY_SYSC_UNLOCK
+  Data.Set &SYSC0_RUNCKSELR %Long &VALUE_SYSC0_RUNCKSELR
+  Data.Set &SYSC0_PROTKEYR %Long &KEY_SYSC_UNLOCK
+  Data.Set &SYSC0_RUNPLL0CNTR %Long &VALUE_SYSC0_RUNPLL0CNTR
+
+  Data.Set &SYSC0_PROTKEYR %Long &KEY_SYSC_UNLOCK
+  Data.Set &SYSC0_TRGRUNCNTR %Long &VALUE_SYSC0_TRGRUNCNTR
+
+  LOCAL &attempts &sysc0_sysstsr_value
+  &attempts=10.
+  WHILE &attempts>0.
+  (
+      &attempts=&attempts-1.
+      &sysc0_sysstsr_value=Data.Long(APB:&SYSC0_SYSSTSR)
+      IF (&sysc0_sysstsr_value&0x10)!=0
+      (
+        &attempts=0.
+      )
+  )
+  
+  RETURN
+
+; --------------------------------------------------------------------------------
+
+Init_HyperBus:
+  
+  GOSUB WriteGpioPpc &GPIO_PORTEN &GPIO_KEYCDR 0x4 0x00000001 
+  GOSUB WriteGpioPpc &GPIO_PODR2 &GPIO_KEYCDR 0x4 0x00400000
+  GOSUB WriteGpioPpc &GPIO_DDR2 &GPIO_KEYCDR 0x4 0x00400000
+  GOSUB WriteGpioPpc &PPC_PCFGR222 &PPC_KEYCDR 0x2 0x10c0
+  wait 10.ms
+  GOSUB Init_PPC_HyperBus
+  GOSUB Clear_IO_Reset
+  Data.Set &HYPERBUSI0_MBR0 %Long &HYPERBUS_BASE_ADDRESS
+  Data.Set &HYPERBUSI0_GPOR %Long 0x00
+  
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+
+Init_PPC_HyperBus:
+
+  LOCAL &valueHyperbusPins
+  
+  &valueHyperbusPins=0x10c3
+  
+  GOSUB WriteGpioPpc (&PPC_PCFGR_BASE+0x3c) &PPC_KEYCDR 0x2 &valueHyperbusPins 
+  GOSUB WriteGpioPpc (&PPC_PCFGR_BASE+0x40) &PPC_KEYCDR 0x2 &valueHyperbusPins 
+  GOSUB WriteGpioPpc (&PPC_PCFGR_BASE+0x42) &PPC_KEYCDR 0x2 &valueHyperbusPins 
+  GOSUB WriteGpioPpc (&PPC_PCFGR_BASE+0x44) &PPC_KEYCDR 0x2 &valueHyperbusPins 
+  GOSUB WriteGpioPpc (&PPC_PCFGR_BASE+0x46) &PPC_KEYCDR 0x2 &valueHyperbusPins 
+  GOSUB WriteGpioPpc (&PPC_PCFGR_BASE+0x48) &PPC_KEYCDR 0x2 &valueHyperbusPins 
+  GOSUB WriteGpioPpc (&PPC_PCFGR_BASE+0x4a) &PPC_KEYCDR 0x2 &valueHyperbusPins 
+  GOSUB WriteGpioPpc (&PPC_PCFGR_BASE+0x4c) &PPC_KEYCDR 0x2 &valueHyperbusPins 
+  GOSUB WriteGpioPpc (&PPC_PCFGR_BASE+0x4e) &PPC_KEYCDR 0x2 &valueHyperbusPins 
+  GOSUB WriteGpioPpc (&PPC_PCFGR_BASE+0x50) &PPC_KEYCDR 0x2 &valueHyperbusPins 
+  GOSUB WriteGpioPpc (&PPC_PCFGR_BASE+0x52) &PPC_KEYCDR 0x2 &valueHyperbusPins 
+  
+  RETURN
+  
+; --------------------------------------------------------------------------------
+
+Clear_IO_Reset:
+  Data.Set &SYSC0_PROTKEYR %Long &KEY_SYSC_UNLOCK
+  Data.Set &SYSC0_SPECFGR %Long (Data.Long(A:&SYSC0_SPECFGR)&~(0x00600000))
+
+  RETURN
+
+; --------------------------------------------------------------------------------
+
+WriteGpioPpc: ;(address, accesssize, value)
+  LOCAL &addr &keycdr &size &value &tmp
+  ENTRY &addr &keycdr &size &value 
+  IF &size==4
+    &tmp=0x20000000
+  ELSE IF &size==2
+    &tmp=0x10000000
+  ELSE
+    &tmp=0x00000000
+
+  Data.Set A:(&keycdr) %LONG &tmp|0x00000000|(&addr&0x7fff)
+  Data.Set A:(&keycdr) %LONG &tmp|0x40000000|(&addr&0x7fff)
+  Data.Set A:(&keycdr) %LONG &tmp|0x80000000|(&addr&0x7fff)
+  Data.Set A:(&keycdr) %LONG &tmp|0xc0000000|(&addr&0x7fff)
+
+  IF &size==4
+    &tmp="%Long"
+  ELSE IF &size==2
+    &tmp="%Word"
+  ELSE
+    &tmp="%Byte"
+  Data.Set A:(&addr) &tmp &value
+  RETURN
+  
+  
+ ; --------------------------------------------------------------------------------
+ 
+Define_Globals: 
+  GLOBAL &GPIO_PORTEN
+  GLOBAL &GPIO_KEYCDR
+  GLOBAL &GPIO_PODR2
+  GLOBAL &GPIO_DDR2
+  GLOBAL &GPIO_KEYCDR
+  GLOBAL &PPC_PCFGR222
+  GLOBAL &PPC_KEYCDR
+  GLOBAL &PPC_PCFGR_BASE
+  GLOBAL &SYSC0_PROTKEYR
+  GLOBAL &SYSC1_PROTKEYR
+  GLOBAL &KEY_SYSC_UNLOCK
+  GLOBAL &SYSC0_SPECFGR
+  GLOBAL &HYPERBUSI0_MBR0
+  GLOBAL &HYPERBUSI0_GPOR
+  GLOBAL &HYPERBUS_BASE_ADDRESS
+  GLOBAL &SYSC0_PLL0CGCNTR
+  GLOBAL &SYSC0_RUNCKSRER
+  GLOBAL &SYSC0_RUNCKSELR
+  GLOBAL &SYSC0_RUNPLL0CNTR
+  GLOBAL &SYSC0_TRGRUNCNTR
+  GLOBAL &SYSC0_SYSSTSR
+  GLOBAL &SYSC1_RUNCKSELR0
+  GLOBAL &SYSC1_RUNCKSELR1
+  GLOBAL &VALUE_SYSC0_RUNCKSRER 
+  GLOBAL &VALUE_SYSC0_RUNCKSELR
+  GLOBAL &VALUE_SYSC0_RUNPLL0CNTR
+  GLOBAL &VALUE_SYSC0_TRGRUNCNTR 
+  GLOBAL &VALUE_SYSC1_RUNCKSELR0 
+  GLOBAL &VALUE_SYSC1_RUNCKSELR1
+  GLOBAL &SYSC1_RUNENR 
+  GLOBAL &VALUE_SYSC1_RUNENR   
+  &SYSC1_RUNENR=0xb03000fc
+  &VALUE_SYSC1_RUNENR=0x000000ab
+  &VALUE_SYSC1_RUNCKSELR0=0x00000004
+  &VALUE_SYSC1_RUNCKSELR1=0x04040404
+  &VALUE_SYSC0_RUNCKSRER=0x00000107
+  &VALUE_SYSC0_RUNCKSELR=0x00000004
+  &VALUE_SYSC0_RUNPLL0CNTR=0x00ff0600
+  &VALUE_SYSC0_TRGRUNCNTR=0x000000ab
+  &SYSC0_RUNPLL0CNTR=0xb0600094
+  &SYSC0_RUNCKSRER=0xb0600084
+  &SYSC0_RUNCKSELR=0xb0600088
+  &SYSC0_TRGRUNCNTR=0xb06000fc
+  &SYSC0_SYSSTSR=0xb0600288
+  &SYSC1_RUNCKSELR1=0xb0300084
+  &SYSC1_RUNCKSELR0=0xb0300080
+  &SYSC0_PLL0CGCNTR=0xb0600610
+  &HYPERBUS_BASE_ADDRESS=0x90000000
+  &HYPERBUSI0_GPOR=0xb8028440
+  &HYPERBUSI0_MBR0=0xb8028410
+  &SYSC0_SPECFGR=0xb0600680
+  &KEY_SYSC_UNLOCK=0x5cacce55
+  &SYSC0_PROTKEYR=0xb0600000
+  &SYSC1_PROTKEYR=0xb0300000
+  &PPC_PCFGR_BASE=0xb4740000
+  &PPC_KEYCDR=0xb4740400
+  &PPC_PCFGR222=0xb47400ac
+  &GPIO_DDR2=0xb4738214
+  &GPIO_PODR2=0xb4738210
+  &GPIO_KEYCDR=0xb4738404
+  &GPIO_PORTEN=0xb4738400
+  
+  RETURN
+    
+  
+

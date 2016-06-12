@@ -1,0 +1,236 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of NXP LPC17xx internal flash.
+;
+; @Description: 
+; Script arguments:
+;
+;  DO lpc17xx [PREPAREONLY] [CPU=<cpu>]
+;
+;    PREPAREONLY only declares flash but does not execute flash programming
+;    example
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/lpc17xx CPU=LPC1788 PREPAREONLY
+;
+; List of LPC17xx derivatives and their configuration:
+;
+;   CPU-Type  FlashSize  RamSize
+;                [kB]     [kB]
+;   --------------------------------
+;   LPC1751       32.       8.
+;   LPC1752       64.      16.
+;   LPC1754      128.      32.
+;   LPC1756      256.      32.
+;   LPC1758      512.      64.
+;   LPC1759      512.      64.
+;   LPC1763      256.      32.
+;   LPC1764      128.      32.
+;   LPC1765      256.      64.
+;   LPC1766      256.      64.
+;   LPC1767      512.      64.
+;   LPC1768      512.      64.
+;   LPC1769      512.      64.
+;   LPC1772       64.      16.
+;   LPC1774      128.      32.
+;   LPC1776      256.      64.
+;   LPC1777      512.      64.
+;   LPC1778      512.      64.
+;   LPC1785      256.      64.
+;   LPC1786      256.      64.
+;   LPC1787      512.      64.
+;   LPC1788      512.      64.
+;
+; Code Read Protection (CRP):
+;
+;   CRP is invoked by programming a specific pattern in flash location 
+;   at 0x000002FC.
+;
+;  Name     Pattern      Description
+;  --------------------------------
+;  CRP1     0x12345678   Access to chip via the JTAG pins is disabled. This 
+;                        mode allows partial flash update using the following
+;                        ISP commands and restrictions:
+;                        • Write to RAM command can not access RAM below 
+;                          0x10000200.
+;                          This is due to use of the RAM by the ISP code.
+;                        • Read Memory command: disabled.
+;                        • Copy RAM to Flash command: cannot write to Sector 0.
+;                        • Go command: disabled.
+;                        • Erase sector(s) command: can erase any individual  
+;                          sector except sector 0 only, or can erase all 
+;                          sectors at once.
+;                        • Compare command: disabled
+;                        This mode is useful when CRP is required and flash 
+;                        field updates are needed but all sectors can not be 
+;                        erased. The compare command is disabled, so in the
+;                        case of partial flash updates the secondary loader
+;                        should implement a checksum mechanism to verify the 
+;                        integrity of the flash.
+;  CRP2     0x87654321   This is similar to CRP1 with the following additions:
+;                        • Write to RAM command: disabled.
+;                        • Copy RAM to Flash: disabled.
+;                        • Erase command: only allows erase of all sectors.
+;  CRP3     0x43218765   This is similar to CRP2, but ISP entry by pulling 
+;                        P2.10 LOW is disabled if a valid user code is present 
+;                        in flash sector 0. This mode effectively disables ISP 
+;                        override using the P2.10 pin. It is up to the user’s 
+;                        application to provide for flash updates by using IAP 
+;                        calls or by invoking ISP with UART0.
+;                        Caution: If CRP3 is selected, no future factory 
+;                        testing can be performed on the device.
+;
+; HINTS:
+;
+;   Flash clock has to match System Clock Frequency (CCLK). 
+;   FLASH.CLocK.AUTO can be used for automatic flash clock measurement.
+;
+;   Boot flash cannot be programmed or erased with builtin flash 
+;   algorithm. 
+;
+;   Data has to be loaded to flash alignment to page boundaries.
+;
+;   Vector table checksum generation is done by script, so that it 
+;   can be used or switched off, as needed.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: LPC17*
+; --------------------------------------------------------------------------------
+; $Rev: 3504 $
+; $Id: lpc17xx.cmm 3504 2015-11-24 16:14:50Z fcaron $
+
+  LOCAL &parameters &param_prepareonly
+  ENTRY %LINE &parameters
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &param_cpu
+  IF VERSION.BUILD()>=29755.
+    &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+  ELSE
+    PRINT "Argument CPU= ignored because Trace32 software is too old"
+
+  ; --------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(LPC17*)
+    (
+      IF VERSION.BUILD()>=37389.
+        SYStem.CPU LPC17*
+      ELSE
+        SYStem.CPU LPC1768
+    )
+
+    SYStem.Option.EnReset OFF
+
+    SYStem.Up
+  )
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  FLASH.CLocK.AUTO
+  GOSUB FlashDeclaration
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash
+  (
+    ; Switch memory mapping to user mode, so that on-chip flash is mapped to 
+    ; address 0x0--0xff. Memory Mapping Control register MEMMAP:0 = 1
+    Data.Set 0x400FC040 %Long Data.Long(SD:0x400FC040)|0x01
+
+    ; Example for download 
+    FLASH.ReProgram.ALL /Erase
+    ; 1. Download file
+    Data.LOAD.auto *
+    ; 2. Checksum generation
+    Data.SUM 0x0--0x1B /Long         ;Calculate checksum of all (other) vectors
+    Data.Set 0x1C %Long -Data.SUM()  ;Write the 2's complement in reserved vector's spot
+    ; 3. Flash programming
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on configuration 
+
+FlashDeclaration:
+  LOCAL &FlashSize
+  LOCAL &cpu
+
+  ; Setup flash configuration depending on selected CPU.
+  &cpu=CPU()
+  IF (("&cpu"=="LPC1758")||("&cpu"=="LPC1759")||("&cpu"=="LPC1767")||("&cpu"=="LPC1768")||("&cpu"=="LPC1769")||("&cpu"=="LPC1777")||("&cpu"=="LPC1778")||("&cpu"=="LPC1787")||("&cpu"=="LPC1788"))
+  (
+    &FlashSize=0x80000
+  )
+  ELSE IF (("&cpu"=="LPC1756")||("&cpu"=="LPC1763")||("&cpu"=="LPC1765")||("&cpu"=="LPC1766")||("&cpu"=="LPC1776")||("&cpu"=="LPC1780")||("&cpu"=="LPC1781")||("&cpu"=="LPC1785")||("&cpu"=="LPC1786"))
+  (
+    &FlashSize=0x40000
+  )
+  ELSE IF (("&cpu"=="LPC1754")||("&cpu"=="LPC1764")||("&cpu"=="LPC1774"))
+  (
+    &FlashSize=0x20000
+  )
+  ELSE IF (("&cpu"=="LPC1752")||("&cpu"=="LPC1770")||("&cpu"=="LPC1772"))
+  (
+    &FlashSize=0x10000
+  )
+  ELSE IF (("&cpu"=="LPC1751"))
+  (
+    &FlashSize=0x8000
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  IF &FlashSize>=0x8000
+  (
+    FLASH.Create 1. 0x000000--0x007FFF 0x1000 TARGET Long
+  )
+  IF &FlashSize>=0x10000
+  (
+    FLASH.Create 1. 0x008000--0x00FFFF 0x1000 TARGET Long
+  )
+  IF &FlashSize>=0x20000
+  (
+    FLASH.Create 1. 0x010000--0x01FFFF 0x8000 TARGET Long
+  )
+  IF &FlashSize>=0x40000
+  (
+    FLASH.Create 1. 0x020000--0x03FFFF 0x8000 TARGET Long
+  )
+  IF &FlashSize>=0x80000
+  (
+    FLASH.Create 1. 0x040000--0x07FFFF 0x8000 TARGET Long
+  )
+
+  FLASH.TARGET 0x10000400 0x10000800 0x1000 ~~/demo/arm/flash/long/lpc1700.bin
+
+  RETURN

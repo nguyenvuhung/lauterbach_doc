@@ -1,0 +1,141 @@
+; --------------------------------------------------------------------------------
+; @Title: TMS470 internal flash of TMS470R1VF336/346 
+;
+; @Description: 
+;
+; TMS470 internal flash programming script of TMS470R1VF336/346 
+; (Venus-F05 rev G & H, Rhea-F05 rev 0,A,B)
+; Script arguments:
+;
+;   DO tms470r1vf336a [CPU=<cpu>|<cpu>] [PREPAREONLY]
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;     <cpu>     selects CPU derivative <cpu> (obsolete syntax)
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/tms470r1vf336a CPU=TMS470R1VF336A PREPAREONLY
+;
+; internal flash is mapped to 0x00000000
+; internal RAM is mapped to 0x01000000
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: TMS470R1VF336 TMS470R1VF346
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: tms470r1vf336a.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+LOCAL &parameters
+ENTRY %LINE &parameters
+
+LOCAL &cpu &param_prepareonly
+&param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+IF STRing.SCAN(STRing.UPpeR("&parameters"),"TMS470R1VF336",0)!=-1
+  &cpu="TMS470R1VF336"
+ELSE IF STRing.SCAN(STRing.UPpeR("&parameters"),"TMS470R1VF346A",0)!=-1
+  &cpu="TMS470R1VF346A"
+ELSE IF STRing.SCAN(STRing.UPpeR("&parameters"),"TMS470R1VF346E",0)!=-1
+  &cpu="TMS470R1VF346E"
+ELSE
+  &cpu="TMS470R1VF336A"
+
+
+; --------------------------------------------------------------------------------
+; Init script variables
+
+DO ~~~~/tms470-func Init
+
+; --------------------------------------------------------------------------------
+; Setup CPU
+
+ON ERROR NOTHING
+IF SYStem.MODE()<5
+(
+  SYStem.RESet
+  SYStem.CPU &cpu
+  SYStem.Option.BigEndian ON
+  SYStem.Option NOIRCHECK ON
+  SYStem.Up
+)
+
+; --------------------------------------------------------------------------------
+; Flash configuration and declaration generated out of flash.cfg file
+;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Config for TMS470R1VF336/346 (Venus-F05 rev G & H, Rhea-F05 rev 0,A,B)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;Device_ID=0x83F               ;TMS470R1VF336/346
+;  ProgVersion: 0.27 ; Library version
+LOCAL &ProgRoutines
+&ProgRoutines="f05a"
+
+;&Frequency="20.0MHz" ;Range: 10.0 - 24.0
+;  Minor Revisions: 5
+;    1 "TMS470R1VF336 rev G"
+;    2 "TMS470R1VF336A/346A rev 0"
+;    4 "TMS470R1VF336 rev H"
+;    5 "TMS470R1VF336A/346A rev A"
+;    9 "TMS470R1VF336A/346A rev B"
+;  Ram Config: 0x01000000 0x00002000 0x00000600
+LOCAL &RamStart &RamSize
+&RamStart=0x01000000
+&RamSize=0x00002000
+
+;  Initialization: 4
+Data.Set 0xFFFFFE00 %Long 0x00000000 0x00000080 0x00000000 0x00000000 0x00000100 0x00000040 0x00000000 0x00000000
+Data.Set 0xFFFFFE20 %Long 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+Data.Set 0xFFFFFE40 %Long 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+Data.Set 0xFFFFFE00 %Long 0x00000000 0x00000180 ; Enable memory map
+
+Data.Set 0xFFFFFFDC %Long 0x00000007 ; configure PLL
+LOCAL &FlashClock_Frequency
+&FlashClock_Frequency="20MHz"      ; Setup flash clock frequency to PLL frequency
+
+;  Engr ID: 0xffe88000 0x00000000
+;  Protection Keys:
+DO ~~~~/tms470-func FlashProtection 0xffe88000 0x00001FF0 0xffffffff 0xffffffff 0xffffffff 0xffffffff
+
+;  Number of Blocks: 11
+FLASH.RESet
+DO ~~~~/tms470-func DeclareSector Type: OTP    Start: 0x00000000   Length: 0x00000800   Control: 0xffe88000   Core: 0x00   Sector: 0x00
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00000000   Length: 0x00002000   Control: 0xffe88000   Core: 0x00   Sector: 0x00
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00002000   Length: 0x00002000   Control: 0xffe88000   Core: 0x00   Sector: 0x01
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00004000   Length: 0x00004000   Control: 0xffe88000   Core: 0x00   Sector: 0x02
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00008000   Length: 0x00004000   Control: 0xffe88000   Core: 0x00   Sector: 0x03
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x0000c000   Length: 0x00004000   Control: 0xffe88000   Core: 0x00   Sector: 0x04
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00010000   Length: 0x00004000   Control: 0xffe88000   Core: 0x00   Sector: 0x05
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00014000   Length: 0x00004000   Control: 0xffe88000   Core: 0x00   Sector: 0x06
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00018000   Length: 0x00004000   Control: 0xffe88000   Core: 0x00   Sector: 0x07
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x0001C000   Length: 0x00002000   Control: 0xffe88000   Core: 0x00   Sector: 0x08
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x0001E000   Length: 0x00002000   Control: 0xffe88000   Core: 0x00   Sector: 0x09
+
+DO ~~~~/tms470-func DeclareFlashAlgortihm &ProgRoutines &RamStart &RamSize &FlashClock_Frequency
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; End of flash.cfg
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; Flash script ends here if called with parameter PREPAREONLY
+IF &param_prepareonly
+  ENDDO PREPAREDONE
+; --------------------------------------------------------------------------------
+; Flash programming example
+
+FLASH.List
+
+DIALOG.YESNO "Program flash memory?"
+ENTRY &progflash
+
+IF &progflash 
+(  
+  FLASH.Erase ALL
+  FLASH.Program ALL
+  Data.LOAD.auto * /Long
+  FLASH.Program off
+)
+
+ENDDO

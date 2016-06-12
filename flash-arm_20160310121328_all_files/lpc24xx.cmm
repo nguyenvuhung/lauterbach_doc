@@ -1,0 +1,161 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of NXP LPC24xx internal flash.
+;
+; @Description: 
+; Script arguments:
+;
+;   DO lpc24xx [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/lpc24xx PREPAREONLY
+;
+; List of LPC24xx derivatives and their configuration:
+;
+;   CPU-Type  FlashSize  FlashType  UserFlash  RamSize
+;                (KB)                 (KB)      (KB)
+; --------------------------------------------------------------------------------
+;   LPC2420        -        0.          -        64.
+;   LPC2458      512.       2.        504.       64.
+;   LPC2460        -        0.          -        64.
+;   LPC2468      512.       2.        504.       64.
+;   LPC2470        -        0.          -        64.
+;   LPC2478      512.       2.        504.       64.
+;
+; Supported flash types:
+;
+;   FlashType  SmallBlock  MainBlock  BootFlash  Alignment 
+; --------------------------------------------------------------------------------
+;       0.        no processor internal flash
+;       2.        4 kB       32 kB      8 kB      256 B    
+;
+; HINTS:
+;
+;   With Trace32 software version build 17761 or higher and most recent
+;   flash support package FLASH.CLocK.AUTO can be used for automatic 
+;   flash clock measurement. With older Trace32 software flash module 
+;   input clock has to be set with FLASH.CLocK <freq> command. Flash 
+;   clock has to match System Clock Frequency (CCLK). 
+;
+;   Boot flash cannot be programmed or erased with builtin flash 
+;   algorithm. 
+;
+;   Data has to be loaded to flash alignment to 256 Byte boundaries.
+;
+;   Vector table checksum generation is done by script, so that it 
+;   can be used or switched off, as needed.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: LPC24*
+; --------------------------------------------------------------------------------
+; $Rev: 2903 $
+; $Id: lpc24xx.cmm 2903 2014-07-16 11:19:46Z kjmal $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+  
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  ; ------------------------------------------------------------------------------
+  ; Set configuration values out of the CPU table above. If your CPU 
+  ; derivate is not listed please check the data sheet for matching 
+  ; flash configuration.
+
+  LOCAL &CpuType
+  LOCAL &FlashSize
+  LOCAL &FlashType
+  LOCAL &RAMSize
+
+  ; Example for LPC2458
+  &CpuType="LPC2458"
+  &FlashSize=512.
+  &FlashType=2.
+  &RAMSize=64.
+
+  ; ------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU &CpuType
+    SYStem.JtagClock RTCK
+    IF VERSION.BUILD()<20711.
+    (
+      SYStem.Option ResBreak OFF
+      SYStem.Option NOIRCHECK ON
+      SYStem.Option BUGFIXV4 ON
+    )
+    SYStem.Up
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  FLASH.CLocK.AUTO
+  GOSUB FlashDeclaration &FlashSize &FlashType &RAMSize
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE 
+  
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  IF &FlashType!=0.
+  (
+    DIALOG.YESNO "Program flash memory?"
+    LOCAL &progflash
+    ENTRY &progflash
+    IF &progflash 
+    (
+      ; Switch memory mapping to user flash mode, so that on-chip flash is 
+      ; mapped to interrupt vectors. Memory Mapping Control Register 
+      ; MEMMAP[1:0] = 01b
+      Data.Set 0xe01fc040 %Byte 0x01
+
+      ; Example for download 
+      FLASH.ReProgram.ALL /Erase
+      ; 1. Download file
+      Data.LOAD.auto *
+      ; 2. Checksum generation
+      Data.Set 0x14 %Long 0x0          ;Zero the reserved vector's spot
+      Data.SUM 0x0--0x1f /Long         ;Calculate checksum of all (other) vectors
+      Data.Set 0x14 %Long -Data.SUM()  ;Write back the 2's complement in reserved vector's spot
+      ; 3. Flash programming
+      FLASH.ReProgram.off
+    )
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on configuration 
+
+FlashDeclaration:
+  ENTRY  &FlashSize  &FlashType &RAMSize
+  
+  IF &FlashType==2.
+  (
+    IF &FlashSize==512.
+    (
+      FLASH.Create 1. 0x00000--0x07fff 0x1000 TARGET Long
+      FLASH.Create 1. 0x08000--0x77fff 0x8000 TARGET Long 0x8000
+      FLASH.Create 1. 0x78000--0x7dfff 0x1000 TARGET Long
+    )
+    ELSE
+    (
+      PRINT %ERROR "FLASH configuration is not supported by the script"
+      ENDDO
+    )
+
+    FLASH.TARGET 0x40000000 0x40000800 0x1000 ~~/demo/arm/flash/long/lpc2130.bin
+  )
+  
+  RETURN

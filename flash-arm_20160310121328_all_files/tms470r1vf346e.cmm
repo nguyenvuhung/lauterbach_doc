@@ -1,0 +1,26 @@
+; --------------------------------------------------------------------------------
+; @Title: TMS470 internal flash of TMS470R1VF346E
+;
+; @Description:
+; Script arguments:
+;
+;   DO tms470r1vf346e [PREPAREONLY] 
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/tms470r1vf346e PREPAREONLY
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 3152 $
+; $Id: tms470r1vf346e.cmm 3152 2015-02-06 16:35:19Z kjmal $
+
+LOCAL &parameters
+ENTRY %LINE &parameters
+
+DO ~~~~/tms470r1vf336a TMS470R1VF346E &parameters
+
+ENDDO

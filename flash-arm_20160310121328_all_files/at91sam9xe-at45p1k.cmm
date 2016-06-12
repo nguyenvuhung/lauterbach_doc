@@ -1,0 +1,129 @@
+; --------------------------------------------------------------------------------
+; @Title: AT91SAM9XE Serial FLASH Programming Script
+; @Description: 
+; Serial FLASH (ST, 25P64) is connected the SPI0 (Serial Peripheral Interface)
+; or Serial Data FLASH (ATMEL, AT45DB642D) is connected the SPI0 
+; (Serial Peripheral Interface)
+;
+; Internal SRAM    : 0x300000
+; Serial FLASH Controller Addr: 0xFFFC8000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: AT91SAM9XE*
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: at91sam9xe-at45p1k.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+//SYStem Configuration 
+ SYStem.RESet
+ SYStem.CPU AT91SAM9XE512
+ SYStem.JtagClock RTCK
+ SYStem.Option IMASKASM ON
+ SYStem.Option IMASKHLL ON
+ SYStem.Option RESBREAK OFF
+ SYStem.Option ENRESET ON
+ SYStem.Mode Up
+
+ Register.RESet
+
+//CPU initialization
+GOSUB cpu_Init
+GOSUB spi_Init
+
+Break.RESet
+
+FLASHFILE.RESet
+
+//The AT91SAM9XE doesn't have a common the SPI controller specially the CS is controlled by the SPI register 0xFFFC8000 not the specified GPIO ports.
+//FLASFILE.CONFIG <Tx Reg>   <Rx Reg>     <CS>         <port>
+FLASHFILE.CONFIG 0xFFFC800C  0xFFFC8008   0xFFFC8000 
+
+//For the Serial Data Flash (ATMEL, AT45DB642D)
+FLASHFILE.TARGET 0x300000++0x1FFF 0x302000++0x1FFF ~~/demo/arm/flash/byte/at45p1k_at91sam.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Dump window for Serial FLASH
+  ;FLASHFILE.DUMP 0x0
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+  //Erase Serial FLASH 
+    FLASHFILE.Erase 0x0--0x7FFFFF  
+
+  //Write Serial FLASH
+    FLASHFILE.LOAD.binary  * 0x0 
+  
+  //Save Serial FLASH 
+    ;FLASHFILE.SAVE dump.bin 0x0--0x7FFFFF
+  )
+
+ENDDO
+
+cpu_Init:
+//Setup PLL to 100MHz
+Data.Set ASD:0xFFFFFC20 %Long 0x00004001
+WAIT 10ms
+Data.Set ASD:0xFFFFFC30 %Long 0x00000102
+WAIT 10ms
+Data.Set ASD:0xFFFFFC28 %Long 0x206dbf12
+WAIT 10ms
+
+WAIT 10ms
+// It is necessary to write to memory after setting it up
+Data.Set 0x20000000 %Long 0x1
+
+// Reset ECC
+PER.Set.simple ASD:0xFFFFE000 %Long 1
+
+// Setup ITCM and DTCM
+PER.Set.simple ASD:0xFFFFED14 %Long 0xB66
+
+// Remap SRAM to 0x0
+Data.Set SD:0xFFFFED00 %LE %Long 0x3
+
+// Disable Watchdog
+PER.Set.simple ASD:0xFFFFFD44 %Long 8000
+
+RETURN
+
+spi_Init:
+// SPI FLash: configure PIOs in periph mode
+PER.Set.simple ASD:0xFFFFF874 %Long 0x800 ;PIOC.11 define the NPCS0 Function
+
+//Clock Enable for SPI
+PER.Set.simple ASD:0xFFFFFC10 %Long 0x00003000
+
+//AIC Interrupt Enable for SPI
+PER.Set.simple ASD:0xFFFFF120 %Long 0x3000
+
+PER.Set.simple ASD:0xFFFFF444 %Long 0x07
+PER.Set.simple ASD:0xFFFFF464 %Long 0x01 ;pull-up enable
+PER.Set.simple ASD:0xFFFFF460 %Long 0x06 ;pull-up disable
+PER.Set.simple ASD:0xFFFFF470 %Long 0x7 
+PER.Set.simple ASD:0xFFFFF404 %Long 0x7 
+
+
+PER.Set.simple ASD:0xFFFFF844 %Long 0x0800
+PER.Set.simple ASD:0xFFFFF860 %Long 0x0800 ;pull-up disable
+PER.Set.simple ASD:0xFFFFF874 %Long 0x0800 
+PER.Set.simple ASD:0xFFFFF804 %Long 0x0800 
+
+
+PER.Set.simple ASD:0xFFFC8000 %Word 0x80
+PER.Set.simple ASD:0xFFFC8000 %Word 0x80
+
+PER.Set.simple ASD:0xFFFC8004 %Long 0x10011
+
+;PER.S ASD:0xFFFC8034 %LONG 01196302
+PER.Set.simple ASD:0xFFFC8034 %Long 01196309  ; this is important to recieved data buffer
+;PER.S ASD:0xFFFC8034 %LONG FFFFFF09
+
+//Disable PDC
+PER.Set.simple ASD:0xFFFC8120 %Long 0x202
+
+RETURN

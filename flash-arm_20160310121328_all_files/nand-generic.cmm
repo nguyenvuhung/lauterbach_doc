@@ -1,0 +1,59 @@
+; --------------------------------------------------------------------------------
+; @Title: NAND FLASH Programming Script (Generic)
+; @Description:
+; NAND FLASH(SAMSUNG, K9F2G08) 
+;
+; SDRAM            : 0x50000000
+; Command Register : 0x70200008   
+; Address Register : 0x7020000c 
+; Data Register    : 0x70200010
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Keywords: SAMSUNG K9F2G08 NAND
+; --------------------------------------------------------------------------------
+; $Id: nand-generic.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  AREA.RESet
+  AREA.view
+  
+//JTAG connection
+  ;SYStem.CPU ARM1176JZF
+  ;SYStem.Up
+
+//  Configuration of the NAND Flash Controller and Bus
+//  Data.Set <addr> %LE %LONG <data>
+  ;Data.Set ASD:0x70200000 %long 0xc5
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.Config <cmd_reg> <addr_reg> <data_reg>
+  FLASHFILE.CONFIG 0x70200008 0x7020000c 0x70200010
+
+// FLASHFILE.TARGET <code range> <data range> <Algorithm file>
+  FLASHFILE.TARGET 0x50000000++0x1FFF 0x50002000++0x1FFF ~/demo/arm/flash/byte/nand2g08.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Open the Dump Windows
+  FLASHFILE.DUMP 0x0
+
+//Put a list of bad blocks into area window for 2Gbit (256MB) size
+  ;FLASHFILE.GETBADBLOCK 0x0--0xFFFFFFF
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+  //Erase NAND FLASH Main and Bad block inforamtion
+    FLASHFILE.Erase 0x0--0xFFFFFFF 
+
+	//Program NAND FLASH
+    FLASHFILE.LOAD.binary  * 0x0 
+    FLASHFILE.LOAD.binary  * 0x0 /ComPare
+  )
+
+ENDDO 

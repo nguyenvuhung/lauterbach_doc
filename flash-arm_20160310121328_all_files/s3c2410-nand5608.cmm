@@ -1,0 +1,65 @@
+; --------------------------------------------------------------------------------
+; @Title: S3C2410 NAND FLASH Programming Script 
+; @Description:
+; NAND FLASH(SAMSUNG, K9F5608) is connected to CS0                      
+;
+; SDRAM            : 0x30000000
+; Command Register : 0x4E000004   
+; AddRESets Register : 0x4E000008 
+; Data Register    : 0x4E00000C
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: S3C2410X
+; @Keywords: SAMSUNG K9F5608 NAND
+; --------------------------------------------------------------------------------
+; $Id: s3c2410-nand5608.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+RESet
+SYStem.RESet
+SYStem.CPU s3c2410X
+SYStem.Mode Up
+
+PER.Set.simple C15:0x1 %Long 0x78   ;MMU & Cache disable
+
+GOSUB sdram_init
+
+Data.Set ASD:0x53000000 %Long 0x0					; disable watchdog
+Data.Set ASD:0x4E000000 %Long 0xE030
+
+FLASHFILE.RESet
+
+//FLASHFILE.Config <cmd_reg> <addr_reg> <io_reg>
+FLASHFILE.CONFIG  0x4E000004  0x4E000008  0x4E00000C
+
+// FLASHFILE.TARGET <code range> <data range> <Algorithm file>
+FLASHFILE.TARGET 0x30000000++0x1FFF 0x30002000++0x3FFF ~~\demo\arm\flash\byte\nand5608.bin
+
+//Read FLASH Manufacture and Device ID
+ FLASHFILE.GETID
+
+ FLASHFILE.DUMP 0x0
+
+;FLASHFILE.ERASE 0x0--0x7FFFFFF  /EraseBadBlocks
+
+;FLASHFILE.LOAD  * 0x0  /WriteBadBlocks
+;FLASHFILE.LOAD  * 0x0 /WriteBadBlocks  /ComPare
+
+  ENDDO
+
+sdram_init:
+Data.Set 0x48000000 %Long 0x2222D222
+Data.Set 0x48000004 %Long 0x00000700
+Data.Set 0x48000008 %Long 0x00007ff0
+Data.Set 0x4800000C %Long 0x00000700
+Data.Set 0x48000010 %Long 0x00001F4C
+Data.Set 0x48000014 %Long 0x00000700
+Data.Set 0x48000018 %Long 0x00000700
+Data.Set 0x4800001C %Long 0x00018005
+Data.Set 0x48000020 %Long 0x00018005
+Data.Set 0x48000024 %Long 0x008e0459
+Data.Set 0x48000028 %Long 0x00000032
+Data.Set 0x4800002C %Long 0x00000030
+Data.Set 0x48000030 %Long 0x00000030
+Data.Set 0x53000030 %Long 0x00000000
+RETURN

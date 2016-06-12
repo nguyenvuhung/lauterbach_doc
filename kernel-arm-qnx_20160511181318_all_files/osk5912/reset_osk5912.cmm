@@ -1,0 +1,36 @@
+; --------------------------------------------------------------------------------
+; @Title: Script to reset OSK5912 board
+; @Description: -
+; @Author: DIE
+; @Chip: OMAP5912
+; @Board: OSK5912
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: reset_osk5912.cmm 7022 2014-04-28 15:08:24Z kjmal $
+
+
+; disable MMU
+  Data.Set c15:1 %Long 0x00050078
+
+; soft reset of ARM and DSP core
+  Data.Set 0xfffece10 %Word 0x000c     ; ARM_RSTCT1
+  Data.Set 0xfffece10 %Word 0x0004     ; ARM_RSTCT1
+
+; request the DPLL to enter the lock mode
+  Data.Set 0xfffecf00 %Word 0x0010     ; DPLL1_CTL_REG
+
+; disable ARM watchdog
+  Data.Set 0xfffec808 %Word 0x00f5     ; MPU_WDT_TIMER_MODE
+  Data.Set 0xfffec808 %Word 0x00a0     ; MPU_WDT_TIMER_MODE
+
+; allow access to DSP memory
+  Data.Set 0xfffece08 %Word 0x0040     ; ARM_IDLECT2
+  Data.Set 0xfffec900 %Long 0x0000ff1b ; CTRL_REG
+
+; patch branch to itself for DSP to get a defined behaviour after reset release
+  Data.Set 0xe0010000 %Long 0x4a7e4a7e
+
+; DSP reset release; now the start-up script for the DSP will work; DSP boots from 0x10000 byte address
+  Data.Set 0xfffec918 %Long 0x00000005 ; DSP_Boot_Config
+  Data.Set 0xfffece10 %Word 0x0000     ; ARM_RSTCT1
+  Data.Set 0xfffece10 %Word 0x0006     ; ARM_RSTCT1

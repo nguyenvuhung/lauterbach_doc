@@ -1,0 +1,58 @@
+; --------------------------------------------------------------------------------
+; @Title: i.MX35 NAND FLASH Programming Script
+; @Description:
+; NAND FLASH(SAMSUNG, K9F4G08U08 ) is connected CS0
+;
+; SRAM: 0x10000000
+; NAND FLASH Controller(CPU-specific): 0xBB000000
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: IMX35
+; @Keywords: SAMSUNG K9F4G08U08 Flash NAND
+; --------------------------------------------------------------------------------
+; $Id: imx35-nand2g08.cmm 3137 2015-01-29 10:42:53Z jjeong $
+
+
+  AREA.RESet
+  AREA.view
+  
+  SYStem.RESet
+  SYStem.CPU IMX35
+  SYStem.JtagClock RTCK
+  ;SYStem.JtagClock 10.0MHz
+  SYStem.Option ResBreak OFF     ; hardware dependent (see manual)
+
+// Disable power-down counter to avoid a watchdog trigger after 16s from reset.
+  Data.STARTUP.RESet
+  Data.STARTUP.SEQuence SET ASD:0x53FDC008 %Word 0
+  Data.STARTUP.ON
+
+  SYStem.Up
+
+//Disable MMU & Cache
+  PER.Set.simple C15:0x1 %Long (Data.Long(C15:0x1)&~(0x5))
+
+//NAND FLASH Main Page size (2KB)
+  Data.Set ASD:0x53F80018 %Long Data.Long(ASD:0x53F80018)&~(3<<8)|(1<<8)   
+//NAND FLASH SPare Area Size (SPAS) , 64 bytes
+	Data.Set ASD:0xBB001E10 %Word 0x0020
+//NAND_FLASH_CONFIG1 ( 64 pages per block, Little Endian )
+	Data.Set ASD:0xBB001E1A %Word 0x0A1B   
+
+  FLASHFILE.RESet
+//FLASHFILE.CONFIG <NAND Flash Controller Base Address> , ,
+  FLASHFILE.CONFIG 0xBB000000 , ,
+
+// FLASHFILE.TARGET <code range> <data range> <Algorithm file>
+  FLASHFILE.TARGET  0x10000000++0x1FFF 0x10002000++0x1FFF ~~\demo\arm\flash\byte\NAND2G08_imx25.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+  FLASHFILE.DUMP 0x0                             ; Read NAND 
+ ;FLASHFILE.DUMP /Spare /Track                   ; Read NAND Spare Area
+ ;FLASHFILE.ERASE 0x0--0xFFFFF  /EraseBadBlock   ; Erase NAND
+ ;FLASHFILE.LOAD * 0x0  /WriteBadBlock           ; Write NAND
+
+  ENDDO

@@ -1,0 +1,46 @@
+; --------------------------------------------------------------------------------
+; @Title: LSI AXM5516 Serial FLASH Programming Script
+; @Description:
+; Serial FLASH(SPANSION, 25F64) is connected the SSP_CS0(Synchronous Serial Port)
+; 
+; SDRAM: 0x100000
+; Serial FLASH Controller base addr: 0x90088000
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: AXM5516
+; @Keywords: SPANSION 25F64 FLASH SPI
+; --------------------------------------------------------------------------------
+; $Id: axm5516-spi64.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+&SSP_BASE=0x90088000
+
+PER.Set.simple ZSD:&SSP_BASE      %Long 0x7 
+PER.Set.simple ZSD:&SSP_BASE+0x4  %Long 0x2 
+PER.Set.simple ZSD:&SSP_BASE+0x10 %Long 0x32 
+PER.Set.simple ZSD:&SSP_BASE+0x30 %Long 0x1E  ;Enable SPI_CS
+Data.In ZSD:(&SSP_BASE+0x8) /Long  ; dummy read buffer
+
+Break.RESet
+
+FLASHFILE.RESet
+
+//FLASFILE.CONFIG <Tx Reg>        <Rx Reg>          <CS Reg>           <CS Num>
+FLASHFILE.CONFIG (&SSP_BASE+0x8) (&SSP_BASE+0x8)    (&SSP_BASE+0x30)    0x0
+FLASHFILE.TARGET 0x100000++0x3FFF 0x104000++0x3FFF  ~~/demo/arm/flash/byte/spi64_axx5500.bin  /KEEP
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Dump window for Serial FLASH
+  ;FLASHFILE.DUMP 0x0
+  ;FLASHFILE.UNLOCK 0x0--0xFFFFF
+
+//Erase Serial FLASH  
+ ;FLASHFILE.ERASE 0x0--0xFFFFF
+
+//Write
+ ;FLASHFILE.LOAD   * 0x0
+ ;FLASHFILE.LOAD   * 0x0  /ComPare   ;verify
+
+ENDDO

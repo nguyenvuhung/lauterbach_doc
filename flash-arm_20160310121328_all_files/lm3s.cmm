@@ -1,0 +1,384 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Luminary Micro LM3S internal flash. 
+;
+; @Description:
+; Script arguments:
+;
+;   DO lm3s [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/lm3s PREPAREONLY
+;
+; List of Luminary Micro derivatives and their configuration:
+;
+; --------------------------------------------------------------------------------
+;   Flash    |      8kB |     16kB |     16kB |     32kB |     64kB  
+;   RAM      |      2kB |      2kB |      4kB |      8kB |      8kB  
+;   LM3Sxxx  |  LM3S101 |  LM3S301 |  LM3S300 |  LM3S600 |  LM3S800  
+;            |  LM3S102 |          |  LM3S308 |  LM3S601 |  LM3S801  
+;            |          |          |  LM3S310 |  LM3S608 |  LM3S808
+;            |          |          |  LM3S315 |  LM3S610 |  LM3S811
+;            |          |          |  LM3S316 |  LM3S611 |  LM3S812
+;            |          |          |  LM3S317 |  LM3S612 |  LM3S815
+;            |          |          |  LM3S328 |  LM3S613 |  LM3S817
+;            |          |          |          |  LM3S615 |  LM3S818
+;            |          |          |          |  LM3S617 |  LM3S828
+;            |          |          |          |  LM3S618 |
+;            |          |          |          |  LM3S628 |
+; --------------------------------------------------------------------------------
+;   Flash    |     16kB |    32kB  |     64kB |     96kB |    128kB  |   256kB  
+;   RAM      |      6kB |     8kB  |12/16/24kB|16/32/64kB|20/32/64kB |  32/48/  
+;            |          |          |          |          |           | 64/96kB
+;   LM3S1xxx | LM3S1Z16 |LM3S1W16  | LM3S1110 |  LM3S1332|  LM3S1601 | LM3S1811  
+;            |          |          | LM3S1133 |  LM3S1435|  LM3S1607 | LM3S1816
+;            |          |          | LM3S1138 |  LM3S1439|  LM3S1608 | LM3S1850
+;            |          |          | LM3S1150 |  LM3S1512|  LM3S1620 | LM3S1911
+;            |          |          | LM3S1162 |  LM3S1538|  LM3S1621 | LM3S1918
+;            |          |          | LM3S1165 |          |  LM3S1625 | LM3S1937
+;            |          |          | LM3S1N11 |          |  LM3S1626 | LM3S1958
+;            |          |          | LM3S1N16 |          |  LM3S1627 | LM3S1960
+;            |          |          | LM3S1P51 |          |  LM3S1635 | LM3S1968
+;            |          |          |          |          |  LM3S1637 | LM3S1B21
+;            |          |          |          |          |  LM3S1651 | LM3S1R21
+;            |          |          |          |          |  LM3S1751 | LM3S1R26
+;            |          |          |          |          |  LM3S1776 |
+;            |          |          |          |          |  LM3S1J11 |
+;            |          |          |          |          |  LM3S1J16 |
+; --------------------------------------------------------------------------------
+;   Flash    |     64kB |     96kB |    128kB |    256kB
+;   RAM      |  16/32kB |  32/64kB |16/32/64kB|  64/96kB
+;   LM3S2xxx | LM3S2110 | LM3S2410 | LM3S2601 | LM3S2911
+;            | LM3S2139 | LM3S2412 | LM3S2608 | LM3S2918
+;            | LM3S2276 | LM3S2432 | LM3S2616 | LM3S2939
+;            |          | LM3S2533 | LM3S2620 | LM3S2948
+;            |          |          | LM3S2637 | LM3S2950
+;            |          |          | LM3S2651 | LM3S2965
+;            |          |          | LM3S2671 | LM3S2B93
+;            |          |          | LM3S2678 |
+;            |          |          | LM3S2730 |
+;            |          |          | LM3S2739 |
+;            |          |          | LM3S2776 |
+;            |          |          | LM3S2793 |
+; --------------------------------------------------------------------------------
+;   Flash    |     16kB |     32kB |     64kB      128kB |    256kB
+;   RAM      |      6kB |      8kB |     12kB  20/32/64kB|     32kB
+;   LM3S3xxx | LM3S3Z26 | LM3S3W26 | LM3S3N26   LM3S3634 | LM3S3826
+;            |          |          |            LM3S3651 | 
+;            |          |          |            LM3S3739 |
+;            |          |          |            LM3S3748 |
+;            |          |          |            LM3S3749 |
+;            |          |          |            LM3S3759 |
+;            |          |          |            LM3S3768 |
+;            |          |          |            LM3S3J26 |
+; --------------------------------------------------------------------------------
+;   Flash    |     16kB |    32kB  |    64kB  |    128kB |    256kB
+;   RAM      |      8kB |    12kB  |    24kB  |24/32/64kB|48/64/96kB
+;   LM3S5xxx | LM3S5Y36 |LM3S5T36  |LM3S5P31  | LM3S5632 | LM3S5951
+;            |          |          |LM3S5P36  | LM3S5651 | LM3S5956
+;            |          |          |LM3S5P51  | LM3S5652 | LM3S5B91
+;            |          |          |LM3S5P56  | LM3S5656 | LM3S5R31
+;            |          |          |          | LM3S5662 | LM3S5R36
+;            |          |          |          | LM3S5732 |
+;            |          |          |          | LM3S5737 |
+;            |          |          |          | LM3S5739 |
+;            |          |          |          | LM3S5747 |
+;            |          |          |          | LM3S5749 |
+;            |          |          |          | LM3S5752 |
+;            |          |          |          | LM3S5757 |
+;            |          |          |          | LM3S5762 |
+;            |          |          |          | LM3S5768 |
+;            |          |          |          | LM3S5769 |
+;            |          |          |          | LM3S5791 |
+;            |          |          |          | LM3S5K31 |
+;            |          |          |          | LM3S5K36 |
+; --------------------------------------------------------------------------------
+;   Flash    |     64kB |     96kB |    128kB |    256kB
+;   RAM      |     16kB |  32/64kB |  32/64kB |     64kB
+;   LM3S6xxx | LM3S6100 | LM3S6420 | LM3S6610 | LM3S6911
+;            | LM3S6110 | LM3S6422 | LM3S6611 | LM3S6918
+;            |          | LM3S6432 | LM3S6618 | LM3S6938
+;            |          | LM3S6537 | LM3S6633 | LM3S6950
+;            |          |          | LM3S6637 | LM3S6952
+;            |          |          | LM3S6730 | LM3S6965
+;            |          |          | LM3S6753 |
+; --------------------------------------------------------------------------------
+;   Flash    |     96kB |    128kB |    256kB
+;   RAM      |     64kB |  32/64kB |     64kB
+;   LM3S8xxx | LM3S8530 | LM3S8630 | LM3S8930
+;            | LM3S8538 | LM3S8730 | LM3S8933
+;            |          | LM3S8733 | LM3S8938
+;            |          | LM3S8738 | LM3S8962
+;            |          |          | LM3S8970
+;            |          |          | LM3S8971
+; --------------------------------------------------------------------------------
+;   Flash    |    128kB |    256kB  
+;   RAM      |  48/64kB |  64/96kB
+;   LM3S9xxx | LM3S9781 | LM3S9997
+;            | LM3S9790 | LM3S9B81
+;            | LM3S9792 | LM3S9B90
+;            | LM3S9L97 | LM3S9B92
+;            |          | LM3S9B95
+;            |          | LM3S9B96
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: LM3S*
+; --------------------------------------------------------------------------------
+; $Rev: 3504 $
+; $Id: lm3s.cmm 3504 2015-11-24 16:14:50Z fcaron $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  ; ------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU LM3S9B90
+    SYStem.Option EnReset OFF
+    SYStem.Up
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration
+
+  ; Setup USECRL (uSec reload register)
+  Data.Set 0x400FE140 %Long 0x31
+
+  ; In case of empty flash disable ROMCTL:BA (ROM Control register Boot Alias bit)
+  ; to show flash contents at address 0x0
+  IF (Data.Long(ASD:0x400FE0F0)&0x01)==0x01
+  (
+    Data.Set ASD:0x400FE0F0 %Long 0x01
+  )
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+  
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    ; activate flash driver
+    FLASH.ReProgram ALL /Erase
+    ; download application
+    Data.LOAD.auto *
+    ; reprogram changes to flash memory
+    FLASH.ReProgram OFF
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO
+
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on configuration
+;
+; RAM size greater 8kB is defaulted to 8kB because more RAM is not needed
+; for flash programming.
+
+FlashDeclaration:
+  LOCAL &FlashSize
+  LOCAL &RAMSize
+  LOCAL &cpu
+
+  &FlashSize=0x0
+  &RAMSize=0x2000
+  &cpu=CPU()
+
+  ; LM3Sxxx
+  IF (("&cpu"=="LM3S101")||("&cpu"=="LM3S102"))
+  (
+    &FlashSize=0x2000
+    &RAMSize=0x800
+  )
+  IF (("&cpu"=="LM3S301"))
+  (
+    &FlashSize=0x4000
+    &RAMSize=0x800
+  )
+  IF (("&cpu"=="LM3S300")||("&cpu"=="LM3S308")||("&cpu"=="LM3S310")||("&cpu"=="LM3S315")||("&cpu"=="LM3S316")||("&cpu"=="LM3S317")||("&cpu"=="LM3S328"))
+  (
+    &FlashSize=0x4000
+    &RAMSize=0x1000
+  )
+  IF (("&cpu"=="LM3S600")||("&cpu"=="LM3S601")||("&cpu"=="LM3S608")||("&cpu"=="LM3S610")||("&cpu"=="LM3S611")||("&cpu"=="LM3S612")||("&cpu"=="LM3S613")||("&cpu"=="LM3S615")||("&cpu"=="LM3S617")||("&cpu"=="LM3S618")||("&cpu"=="LM3S628"))
+  (
+    &FlashSize=0x8000
+  )
+  IF (("&cpu"=="LM3S800")||("&cpu"=="LM3S801")||("&cpu"=="LM3S808")||("&cpu"=="LM3S811")||("&cpu"=="LM3S812")||("&cpu"=="LM3S815")||("&cpu"=="LM3S817")||("&cpu"=="LM3S818")||("&cpu"=="LM3S828"))
+  (
+    &FlashSize=0x10000
+  )
+  ; LM3S1xxx
+  IF (("&cpu"=="LM3S1Z16"))
+  (
+    &FlashSize=0x4000
+    &RAMSize=0x1800
+  )
+  IF (("&cpu"=="LM3S1W16"))
+  (
+    &FlashSize=0x8000
+  )
+  IF (("&cpu"=="LM3S1110")||("&cpu"=="LM3S1133")||("&cpu"=="LM3S1138")||("&cpu"=="LM3S1150")||("&cpu"=="LM3S1162")||("&cpu"=="LM3S1165")||("&cpu"=="LM3S1N11")||("&cpu"=="LM3S1N16")||("&cpu"=="LM3S1P51"))
+  (
+    &FlashSize=0x10000
+  )
+  IF (("&cpu"=="LM3S1332")||("&cpu"=="LM3S1435")||("&cpu"=="LM3S1439")||("&cpu"=="LM3S1512")||("&cpu"=="LM3S1538"))
+  (
+    &FlashSize=0x18000
+  )
+  IF (("&cpu"=="LM3S1601")||("&cpu"=="LM3S1607")||("&cpu"=="LM3S1608")||("&cpu"=="LM3S1620")||("&cpu"=="LM3S1621")||("&cpu"=="LM3S1625")||("&cpu"=="LM3S1626")||("&cpu"=="LM3S1627")||("&cpu"=="LM3S1635")||("&cpu"=="LM3S1637")||("&cpu"=="LM3S1651")||("&cpu"=="LM3S1751")||("&cpu"=="LM3S1776")||("&cpu"=="LM3S1J11")||("&cpu"=="LM3S1J16"))
+  (
+    &FlashSize=0x20000
+  )
+  IF (("&cpu"=="LM3S1811")||("&cpu"=="LM3S1816")||("&cpu"=="LM3S1850")||("&cpu"=="LM3S1911")||("&cpu"=="LM3S1918")||("&cpu"=="LM3S1937")||("&cpu"=="LM3S1958")||("&cpu"=="LM3S1960")||("&cpu"=="LM3S1968")||("&cpu"=="LM3S1B21")||("&cpu"=="LM3S1R21")||("&cpu"=="LM3S1R26"))
+  (
+    &FlashSize=0x40000
+  )
+  IF (("&cpu"=="LM3S1D21")||("&cpu"=="LM3S5C31")||("&cpu"=="LM3S9D92"))
+  (
+    &FlashSize=0x80000
+  )
+  ; LM3S2xxx
+  IF (("&cpu"=="LM3S2110")||("&cpu"=="LM3S2139")||("&cpu"=="LM3S2276"))
+  (
+    &FlashSize=0x10000
+  )
+  IF (("&cpu"=="LM3S2410")||("&cpu"=="LM3S2412")||("&cpu"=="LM3S2432")||("&cpu"=="LM3S2533"))
+  (
+    &FlashSize=0x18000
+  )
+  IF (("&cpu"=="LM3S2616")||("&cpu"=="LM3S2601")||("&cpu"=="LM3S2608")||("&cpu"=="LM3S2620")||("&cpu"=="LM3S2637")||("&cpu"=="LM3S2651")||("&cpu"=="LM3S2671")||("&cpu"=="LM3S2678")||("&cpu"=="LM3S2730")||("&cpu"=="LM3S2739")||("&cpu"=="LM3S2776")||("&cpu"=="LM3S2793"))
+  (
+    &FlashSize=0x20000
+  )
+  IF (("&cpu"=="LM3S2911")||("&cpu"=="LM3S2918")||("&cpu"=="LM3S2939")||("&cpu"=="LM3S2948")||("&cpu"=="LM3S2950")||("&cpu"=="LM3S2965")||("&cpu"=="LM3S2B93"))
+  (
+    &FlashSize=0x40000
+  )
+  ; LM3S3xxx
+  IF (("&cpu"=="LM3S3Z26"))
+  (
+    &FlashSize=0x4000
+    &RAMSize=0x1800
+  )
+  IF (("&cpu"=="LM3S3W26"))
+  (
+    &FlashSize=0x8000
+  )
+  IF (("&cpu"=="LM3S3N26"))
+  (
+    &FlashSize=0x10000
+  )
+  IF (("&cpu"=="LM3S3634")||("&cpu"=="LM3S3651")||("&cpu"=="LM3S3739")||("&cpu"=="LM3S3748")||("&cpu"=="LM3S3749")||("&cpu"=="LM3S3759")||("&cpu"=="LM3S3768")||("&cpu"=="LM3S3J26"))
+  (
+    &FlashSize=0x20000
+  )
+  IF (("&cpu"=="LM3S3826"))
+  (
+    &FlashSize=0x40000
+  )
+  ; LM3S5xxx
+  IF (("&cpu"=="LM3S5Y36"))
+  (
+    &FlashSize=0x4000
+    &RAMSize=0x2000
+  )
+  IF (("&cpu"=="LM3S5T36"))
+  (
+    &FlashSize=0x8000
+  )
+  IF (("&cpu"=="LM3S5P31")||("&cpu"=="LM3S5P36")||("&cpu"=="LM3S5P51")||("&cpu"=="LM3S5P56"))
+  (
+    &FlashSize=0x10000
+  )
+  IF (("&cpu"=="LM3S5632")||("&cpu"=="LM3S5651")||("&cpu"=="LM3S5652")||("&cpu"=="LM3S5656")||("&cpu"=="LM3S5662")||("&cpu"=="LM3S5732")||("&cpu"=="LM3S5737")||("&cpu"=="LM3S5739")||("&cpu"=="LM3S5747")||("&cpu"=="LM3S5749")||("&cpu"=="LM3S5752")||("&cpu"=="LM3S5757")||("&cpu"=="LM3S5762")||("&cpu"=="LM3S5767")||("&cpu"=="LM3S5768")||("&cpu"=="LM3S5769")||("&cpu"=="LM3S5791")||("&cpu"=="LM3S5K31")||("&cpu"=="LM3S5K36"))
+  (
+    &FlashSize=0x20000
+  )
+  IF (("&cpu"=="LM3S5951")||("&cpu"=="LM3S5956")||("&cpu"=="LM3S5B91")||("&cpu"=="LM3S5R31")||("&cpu"=="LM3S5R36"))
+  (
+    &FlashSize=0x40000
+  )
+  ; LM3S6xxx
+  IF (("&cpu"=="LM3S6100")||("&cpu"=="LM3S6110"))
+  (
+    &FlashSize=0x10000
+  )
+  IF (("&cpu"=="LM3S6420")||("&cpu"=="LM3S6422")||("&cpu"=="LM3S6432")||("&cpu"=="LM3S6537"))
+  (
+    &FlashSize=0x18000
+  )
+  IF (("&cpu"=="LM3S6610")||("&cpu"=="LM3S6611")||("&cpu"=="LM3S6618")||("&cpu"=="LM3S6633")||("&cpu"=="LM3S6637")||("&cpu"=="LM3S6730")||("&cpu"=="LM3S6753"))
+  (
+    &FlashSize=0x20000
+  )
+  IF (("&cpu"=="LM3S6911")||("&cpu"=="LM3S6918")||("&cpu"=="LM3S6938")||("&cpu"=="LM3S6950")||("&cpu"=="LM3S6952")||("&cpu"=="LM3S6965"))
+  (
+    &FlashSize=0x40000
+  )
+  ; LM3S8xxx
+  IF (("&cpu"=="LM3S8530")||("&cpu"=="LM3S8538"))
+  (
+    &FlashSize=0x18000
+  )
+  IF (("&cpu"=="LM3S8630")||("&cpu"=="LM3S8730")||("&cpu"=="LM3S8733")||("&cpu"=="LM3S8738"))
+  (
+    &FlashSize=0x20000
+  )
+  IF (("&cpu"=="LM3S8930")||("&cpu"=="LM3S8933")||("&cpu"=="LM3S8938")||("&cpu"=="LM3S8962")||("&cpu"=="LM3S8970")||("&cpu"=="LM3S8971"))
+  (
+    &FlashSize=0x40000
+  )
+  ; LM3S9xxx
+  IF (("&cpu"=="LM3S9781")||("&cpu"=="LM3S9790")||("&cpu"=="LM3S9792")||("&cpu"=="LM3S9L97"))
+  (
+    &FlashSize=0x20000
+  )
+  IF (("&cpu"=="LM3S9997")||("&cpu"=="LM3S9B81")||("&cpu"=="LM3S9B90")||("&cpu"=="LM3S9B92")||("&cpu"=="LM3S9B95")||("&cpu"=="LM3S9B96"))
+  (
+    &FlashSize=0x40000
+  )
+
+  IF &FlashSize==0x0
+  (
+     PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  FLASH.Create 1. 0x0++(&FlashSize-1) 0x400 TARGET Long
+  IF &RAMSize>=0x1000
+  (
+    FLASH.TARGET 0x20000000 0x20000800 0x400 ~~/demo/arm/flash/long/lm3s.bin
+  )
+  ELSE IF &RAMSize>=0x800
+  (
+    FLASH.TARGET 0x20000000 0x20000400 0x200 ~~/demo/arm/flash/long/lm3s.bin
+  )
+  ELSE
+  (
+    PRINT %ERROR "RAM size is not supported by the script"
+    ENDDO
+  )
+
+  RETURN

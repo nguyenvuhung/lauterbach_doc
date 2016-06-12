@@ -1,0 +1,73 @@
+; --------------------------------------------------------------------------------
+; @Title: i.MX6 SPI FLASH Programming Script
+; @Description:
+;   FLASH Type: SPI FLASH(SST, 25VF016) connected to eCSPI1_SS1
+; 
+;   S(D)RAM: 0x900000
+;   eCSPI1 Tx Register : 0x2008004
+;   eCSPI1 Rx Register : 0x2008000    
+;   eCSPI1 CS Register : 0x2008008 
+;
+; @Author: jjeong
+; @Chip: IMX6QUAD
+; @Keywords: SST 25VF016
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: imx6quad-spi.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+
+; reset chip, connect to core #0 only
+  RESet 
+  SYStem.CPU iMX6Quad
+  CORE.ASSIGN 1
+  SYStem.Option ResBreak OFF
+  SYStem.Option WaitReset 1.3s 
+  Trace.METHOD Onchip
+  SYStem.Up
+
+  Data.Set C15:0x1 %Long  (Data.Long(C15:0x1)&~(0x5))  ; disable interrupt and mmu
+
+  Data.Set ASD:0x020d8000 %Long 0x01C00521
+
+//Configure corresponding IOMUX for ECSPI external signals
+  Data.Set ASD:0x20E0090 %Long 0x01  ;IOMUXC_SW_MUX_CTL_PAD_EIM_D16
+  Data.Set ASD:0x20E03A4 %Long 0x30  ;IOMUXC_SW_PAD_CTL_PAD_EIM_D16
+
+  Data.Set ASD:0x20E0094 %Long 0x01  ;IOMUXC_SW_MUX_CTL_PAD_EIM_D17
+  Data.Set ASD:0x20E03A8 %Long 0x30  ;IOMUXC_SW_PAD_CTL_PAD_EIM_D17
+
+  Data.Set ASD:0x20E0098 %Long 0x01  ;IOMUXC_SW_MUX_CTL_PAD_EIM_D18
+  Data.Set ASD:0x20E03AC %Long 0x30  ;IOMUXC_SW_PAD_CTL_PAD_EIM_D18
+
+  Data.Set ASD:0x20E009C %Long 0x01  ;IOMUXC_SW_MUX_CTL_PAD_EIM_D19
+  ;Data.Set ASD:0x20E009C %LONG 0x05  ;IOMUXC_SW_MUX_CTL_PAD_EIM_D19
+  Data.Set ASD:0x20E03B0 %Long 0x30  ;IOMUXC_SW_PAD_CTL_PAD_EIM_D19 
+
+  Data.Set ASD:0x20E07F4 %LE %Long 0x0  ;IOMUXC_IOMUXC_ECSPI1_IPP_CSPI_CLK_IN_SELECT_INPUT
+  Data.Set ASD:0x20E07F8 %LE %Long 0x0  ;IOMUXC_IOMUXC_ECSPI1_IPP_IND_MISO_SELECT_INPUT
+  Data.Set ASD:0x20E07FC %LE %Long 0x0  ;IOMUXC_IOMUXC_ECSPI1_IPP_IND_MOSI_SELECT_INPUT
+  Data.Set ASD:0x20E0800 %LE %Long 0x0  ;IOMUXC_IOMUXC_ECSPI1_IPP_IND_SS_B_0_SELECT_INPUT  
+	
+	
+  Data.Set ASD:0x20C406C %Long 0xf0fc0003   ;enable clock for the eCSPI1
+  Data.Set ASD:0x2008008 %Long 0x1F42021    ;enable eCSPI1_SS1 & master mode
+  Data.Set ASD:0x200800C %Long 0x0
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  FLASHFILE.CONFIG  0x2008004   0x2008000    0x2008008 
+
+// FLASHFILE.TARGET <<code range>>    <<data range>>    <<algorithm file>>
+ FLASHFILE.TARGET 0x901000++0x1fff   0x903000++0x1fff   ~~/demo/arm/flash/byte/spi64p0_ecspi.bin /KEEP  ; for SST25VF016 
+; FLASHFILE.TARGET 0x901000++0x1fff   0x903000++0x1fff   ~~/demo/arm/flash/byte/spi64_ecspi.bin /keep    ; for N25Q256 spi flash
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+ ;FLASHFILE.DUMP 0x0               ; Read  
+ ;FLASHFILE.UNLOCK 0x0--0xFFFFF    ; Unlock
+ ;FLASHFILE.ERASE 0x0--0xFFFFF     ; Erase 
+ ;FLASHFILE.LOAD * 0x0             ; Write 
+
+ENDDO
+

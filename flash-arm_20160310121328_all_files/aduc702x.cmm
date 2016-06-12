@@ -1,0 +1,134 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Analog Devices ADuC702x internal flash. 
+; 
+; @Description: 
+; Script arguments:
+;
+;   DO aduc702x [PREPAREONLY] 
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;              
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/aduc702x PREPAREONLY
+;
+; List of ADuC702x derivatives and their configuration:
+;
+;   CPU-Type       FlashSize   RamSize
+;                    (KB)       (KB)
+;   ----------------------------------
+;   ADuC7019BCPZ62    62.        8.
+;   ADuC7020BCPZ62    62.        8.
+;   ADuC7021BCPZ32    32.        4.
+;   ADuC7021BCPZ62    62.        8.
+;   ADuC7022BCPZ32    32.        4.
+;   ADuC7022BCPZ62    62.        8.
+;   ADuC7023BCP6Z62   62.        8.
+;   ADuC7023BCPZ62    62.        8.
+;   ADuC7024BCPZ62    62.        8.
+;   ADuC7024BSTZ62    62.        8.
+;   ADuC7025BCPZ32    32.        4.
+;   ADuC7025BCPZ62    62.        8.
+;   ADuC7025BSTZ62    62.        8.
+;   ADuC7026BSTZ62    62.        8.
+;   ADuC7027BSTZ62    62.        8.
+;   ADuC7028BBCZ62    62.        8.
+;   ADuC7029BBCZ62    62.        8.
+;
+; Flash location:
+;   62kB flash at 0x00000000--0x0000f7ff or 0x00080000--0x0008f7ff
+;   32kB flash at 0x00000000--0x00007fff or 0x00080000--0x00087fff
+;
+; RAM location:
+;   8kB RAM at    0x00010000--0x00011fff or 0x00000000--0x00001fff
+;   4kB RAM at    0x00010000--0x00010fff or 0x00000000--0x00000fff
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ADuC702*
+; @Keywords: Marvell 25P64 ST flash SPI
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: aduc702x.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  ; --------------------------------------------------------------------------------
+  ; Set configuration values out of the CPU table above. If your CPU 
+  ; derivate is not listed please check the data sheet for matching 
+  ; flash configuration.
+
+  
+  LOCAL &FlashBase
+  LOCAL &FlashSize
+  LOCAL &RamBase
+
+  ; Example for ADuC7020BCP62
+  &FlashBase=0x00080000
+  &FlashSize=62.
+  &RamBase=0x00010000
+
+  ; --------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU ADUC7019
+    SYStem.Up
+  )
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration 
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+  
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.Erase.ALL
+
+    FLASH.Program.ALL
+    Data.LOAD.auto * /Word
+    FLASH.Program.off
+  )
+
+  ENDDO
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on configuration 
+
+FlashDeclaration:
+  
+  IF &FlashSize==62.
+  (
+    FLASH.Create 1. &FlashBase++0xf7ff 0x200 TARGET Word
+  )
+  ELSE IF &FlashSize==32.
+  (
+    FLASH.Create 1. &FlashBase++0x7fff 0x200 TARGET Word
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH configuration is not supported by the script"
+    ENDDO
+  )
+  
+  FLASH.TARGET &RamBase &RamBase+0x800 0x200 ~~/demo/arm/flash/word/aduc7020.bin
+  
+  RETURN

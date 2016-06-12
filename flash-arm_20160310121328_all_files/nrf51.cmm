@@ -1,0 +1,106 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Nordic Semiconductor NRF51 internal flash. 
+; 
+; @Description: 
+; Script arguments:
+;
+;   DO nrf51 [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/nrf51 PREPAREONLY
+;
+; List of NRF51 derivatives and their configuration:
+;
+;   CPU-Type        Flash size   Page size   SRAM size
+;                     (kB)         (Byte)       (kB)
+; ------------------------------------------------------------------------------
+;   nRF51422-QFAA     256          1024          16        
+;   nRF51422-CEAA     256          1024          16     
+;   nRF51422-QFAB     128          1024          16     
+;   nRF51422-CDAB     128          1024          16     
+;   nRF51422-QFAC     256          1024          32     
+;   nRF51422-CFAC     256          1024          32  
+;   nRF51822-QFAA     256          1024          16        
+;   nRF51822-CEAA     256          1024          16     
+;   nRF51822-QFAB     128          1024          16     
+;   nRF51822-CDAB     128          1024          16     
+;   nRF51822-QFAC     256          1024          32     
+;   nRF51822-CFAC     256          1024          32     
+;
+; @Author: FLC
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: NRF51*
+; --------------------------------------------------------------------------------
+; $Rev: 3535 $
+; $Id: nrf51.cmm 3535 2015-12-15 16:27:01Z fcaron $
+
+  LOCAL &parameters &param_prepareonly
+  ENTRY %LINE &parameters
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &flashsize
+  
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU NRF51*
+    SYStem.JtagClock 1Mhz
+    SYStem.Up
+  )
+
+
+  ; ------------------------------------------------------------------------------
+  ; Setup flash configuration depending on selected CPU.
+
+  IF CPUIS("NRF51822")||CPUIS("NRF51?22QFAB")||CPUIS("NRF51?22CDAB")
+  (
+    &flashsize=0x20000
+  )
+  ELSE IF CPUIS("NRF51?22QFAA")||CPUIS("NRF51?22CEAA")||CPUIS("NRF51?22QFAC")||CPUIS("NRF51?22CFAC")
+  (
+    &flashsize=0x40000
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  
+  FLASH.Create 1. 0x000000000++(&flashsize-1) 0x400 TARGET Long 
+  
+  FLASH.TARGET 0x20000000 0x20001000 0x800 ~~/demo/arm/flash/long/nrf51.bin;FLASH.TARGET 0x20000000 0x20001000 0x800 ~~/demo/arm/flash/long/nrf51.bin
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.Erase.ALL
+    FLASH.ReProgram.ALL
+    Data.LOAD.auto * /Long
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO

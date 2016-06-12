@@ -1,0 +1,104 @@
+; --------------------------------------------------------------------------------
+; @Title: ARMADA380 NAND FLASH Programming Script
+; @Description:
+; NAND FLASH(MICRON, MT29F8G08ABACAWP) is connected
+; 
+; SRAM: 0x40000000
+; NAND FLASH CONtroller(CPU-specific): 0xD00D0000 
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: 88F6820
+; @Keywords: MICRON MT29F8G08 NAND
+; --------------------------------------------------------------------------------
+; $Id: armada38x-nand8g08.cmm 3079 2014-11-18 10:21:17Z jjeong $
+
+//RESet
+SYStem.RESet
+SYStem.CPU 88F6820
+CORE.ASSIGN 1.
+TrOnchip.Set RESET OFF
+SYStem.Up
+
+Go.direct
+WAIT 100.ms
+
+IF run()
+Break.direct
+
+// mux pin configuration for NAND
+Data.Set SD:0xD0018008 %LE %Long 0x55000000
+Data.Set SD:0xD001800C %LE %Long 0x05050050
+Data.Set SD:0xD0018010 %LE %Long 0x55555555
+Data.Set SD:0xD0018014 %LE %Long 0x5565
+
+Data.Set SD:0xD0018208 %LE %Long 0x03380001  ;SOC Multiplex register
+
+//NAND CONtorller CS0 Timing Register
+  Data.Set SD:0xD00D0004  %Long 0xFC3FcF7F
+
+//NAND CONtorller CS1 Timing Register
+  Data.Set SD:0xD00D000c %Long 0x00FF83FF
+
+//NDCR
+Data.Set SD:0xD00D0000 %LE %Long 0x11875000
+
+GOSUB READ_ID_TEST
+
+Break.RESet
+
+FLASHFILE.RESet
+
+//FLASHFILE.CONFIG <<NAND Flash Controller Basement Address>>  0x0  0x0
+FLASHFILE.CONFIG    0xD00D0000                                 0x0  0x0
+
+//FLASHFILE.TARGET <<code range>>      <<data range>>      <<algorithm file>>
+FLASHFILE.TARGET   0x40000000++0x1fff  0x40002000++0x2fff   ~~/demo/arm/flash/byte/nand8g08xs224_armada.bin   /KEEP   /STACKSIZE 0x400
+
+FLASHFILE.GETID
+
+FLASHFILE.GETONFI
+
+FLASHFILE.DUMP 0x0                              ; Read NAND 
+
+;FLASHFILE.ERASE 0x0--0xFFFFF  /EraseBadBlock   ; Erase NAND
+
+;FLASHFILE.LOAD * 0x0                           ; Write NAND
+
+;FLASHFILE.DUMP 0x0   /spare                    ; Read NAND spare area
+
+ENDDO
+
+
+READ_ID_TEST:
+
+//NAND CONtorller CS0 Timing Register
+Data.Set SD:0xD00D0004  %Long 0xFC3FcF7F
+
+//NAND CONtorller CS1 Timing Register
+Data.Set SD:0xD00D000c %Long 0x00FF83FF
+
+Data.Set D:0xD00D0014 %Long 0xFFFF
+//NDCR
+Data.Set SD:0xD00D0000 %LE %Long 0x1003d000
+
+//NDCB0, In DMA-disabled mode, the core can  write the 12bytes of commands directly to NDCB0
+Data.Set SD:0xD00D0048 %LE %Long 0x00610090  ; cmd   NDCB0
+Data.Set SD:0xD00D0048 %LE %Long 0x0         ; addr  NDCB1
+Data.Set SD:0xD00D0048 %LE %Long 0x0         ;       NDCB2
+
+WAIT 200.ms
+PRINT Data.Long(D:0xD00D0014)
+
+//NDDB
+&data=Data.Long(a:0xD00D0040)
+
+PRINT "1st 0x" (&data&0x0FF) " (Manufacture)"
+PRINT "2nd 0x" ((&data>>8.)&0x0FF)  " (Device ID)"
+PRINT "3rd 0x" ((&data>>16.)&0x0FF)
+PRINT "4th 0x" ((&data>>24.)&0x0FF)
+
+&data=Data.Long(a:0xD00D0040)      ;dummy
+
+RETURN
+

@@ -1,0 +1,64 @@
+; --------------------------------------------------------------------------------
+; @Title: Check_app_code
+; @Description: 
+;   Loads the code of the symbol file into VM:
+;   and compares it against the code on the target
+;   call it with the process name to check
+; @Props: NoWelcome, NoIndex
+; @Author: DIE
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: check_app_code.cmm 6904 2014-04-21 15:16:07Z kjmal $
+
+
+ LOCAL &processname &space &filepath &start &end
+ 
+ ENTRY &processname
+
+ &space=task.proc.space("&processname")
+
+ IF (&space==0)||(&space==0xffffffff)
+ (
+    PRINT "sorry, no process &processname found"
+    ENDDO
+ )
+ 
+; delete symbols if they already exist
+ IF sYmbol.EXIST("\\&processname")
+ (
+   &pnquoted="`\\&processname`"
+   sYmbol.Delete &pnquoted
+ )
+ GROUP.Delete "&processname"
+
+// search file in source search path and open dialog when not there
+ &filepath=sYmbol.SEARCHFILE("&processname")
+ IF !OS.FILE("&filepath")               // not found
+ (
+    &sym_g="&processname"+"_g"          // try _g extension
+    &filepath=sYmbol.SEARCHFILE("&sym_g")
+ )
+ IF !OS.FILE("&filepath")               // not found
+ (
+   LOCAL &file
+   &file=OS.FILE.NAME("&processname")
+   WinPOS ,,,,,, filebox normal "Searching symbols for &processname"
+   DIALOG.File "*\&file*"
+   ENTRY %LINE &filepath
+   IF "&filepath"==""
+     ENDDO
+ )
+
+; load symbol file and code into VM:
+
+ Data.LOAD.Elf "&filepath" &space:0 /VM /NoClear /name &processname
+ GROUP.Create "&processname" &space:0x0--0xffffffff /GREEN
+
+; compare code in vm against code in target
+
+ &start=ADDRESS.OFFSET(sYmbol.SECADDRESS(\\&processname\.text))
+ &end=ADDRESS.OFFSET(sYmbol.SECEND(\\&processname\.text))
+ Data.ComPare P:&space:&start--&space:&end VM:&space:&start
+ 
+ ENDDO
+ 

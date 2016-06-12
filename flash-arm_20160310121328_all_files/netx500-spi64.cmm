@@ -1,0 +1,88 @@
+; --------------------------------------------------------------------------------
+; @Title: NETX500 SPI Flash Programming Script
+; @Description:
+; Board info: NetX NXDB-500-SYS Hilscher evaluation board
+; Flash info: SPI Flash(Spansion, S25FL128)
+; 
+; internal RAM: 0x08000000
+;
+; SPI Flash is connected to the SPI interface CS0
+; SPI Tx/Rx Register : 0x00100c00  
+; SPI CS Register    : 0x00100c08
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: NETX500
+; @Board: NXDB-500-SYS
+; @Keywords: Hilscher Spansion S25FL128 SPI 
+; --------------------------------------------------------------------------------
+; $Id: netx500-spi64.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+
+  SYStem.RESet
+  SYStem.CPU NETX500
+  SYStem.Option ResBreak	OFF
+  SYStem.Option WaitReset		ON
+  SYStem.JtagClock			10Mhz			; RTCK not available
+  SYStem.Up
+
+  PER.Set.simple C15:0x1 %Long 0x50078   ; disable MMU & data cache
+
+  GOSUB RAM_INIT
+
+  Data.Set ASD:0x100C0C %LE %Long 0x01FC0021  ; SPI interrupt control register
+  Data.Set ASD:0x100C08 %LE %Long 0xC0300000  ; SPI_CR, Clear SPI fifo
+  Data.Set ASD:0x100C08 %LE %Long 0xC0000000  ; SPI_CR, enable SPI interdace and master mode
+  &cntl_data=Data.Long(ASD:0x100C08)
+  &cntl_data=&cntl_data|(0xb<<1.)  ; spi clk 10Mhz
+  &cntl_data=&cntl_data|(0x1<<28.) ; falling edge
+  ;&cntl_data=&cntl_data|(0x1<<8.) ; CS0 , active CS0
+  &cntl_data=&cntl_data|(0x3<<6.)  ; read/write data enable
+  Data.Set ASD:0x100C08 %LE %Long  &cntl_data  
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASFILE.CONFIG     <Tx Reg>     <Rx Reg>     <SQI_CTRL1>       <CS#>
+  FLASHFILE.CONFIG    0x00100c00  0x00100c00    0x00100c08          0
+
+//FLASHFILE.TARGET <code range>        <data range>           <Algorithm file>
+  FLASHFILE.TARGET  0x10000++0x1FFF   0x12000++0x1FFF       ~~/demo/arm/flash/byte/spi64_netx500.bin  /KEEP 
+
+  FLASHFILE.GETID
+
+//Dump window for Serial FLASH
+  FLASHFILE.DUMP 0x0
+
+//Unlock Serial FLASH
+ ;FLASHFILE.UNLOCK 0x0--0x3FFFFF
+
+//Write Serial FLASH
+ ;FLASHFILE.ERASE 0x0--0x3FFFFF
+
+//Write Serial FLASH
+ ;FLASHFILE.LOAD  * 0x0
+ ;FLASHFILE.LOAD  * 0x0  /CP
+
+ENDDO
+
+
+RAM_INIT:
+
+; set MiscAsicCtrl to 1
+	; Before changing the controll registers, a read and write access to the 
+	; access key register is necessary. (read value and write back the value).
+	; After it the system rgisters can be changed.
+	Data.Set 0x00100070 %Long Data.Long(SD:0x00100070)		; access key register
+	Data.Set 0x0010002c %Long 1														; MiscAsicCtrl register
+
+; Setup SDRAM timing, Flash and SRAM settings
+	Data.Set 0x100140 %Long 0x0														; MEMDR_CONFIG_CR
+	Data.Set 0x100144 %Long 0x03C23151										; MEMDR_TIMING_CR
+	Data.Set 0x100140 %Long 0x030D0121										; MEMDR_CONFIG_CR
+	Data.Set 0x100100 %Long 0x0203030F	; Flash settings
+	Data.Set 0x100104 %Long 0x0003033F	; SRAM settings
+	Data.Set 0x100108 %Long 0x0003033F	; SRAM settings
+	
+RETURN

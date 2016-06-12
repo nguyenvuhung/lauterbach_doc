@@ -1,0 +1,125 @@
+; --------------------------------------------------------------------------------
+; @Title: AT91SAM9263 NAND FLASH Programming Script
+; @Description:
+; NAND FLASH(Micron, MT29F2G08) is connected CS3
+; 
+; Internal SRAM    : 0x300000
+; Command Register : 0x40400000  
+; Address Register : 0x40200000
+; Data Register    : 0x40000000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: AT91SAM9263
+; @Keywords: Micron MT29F2G08
+; --------------------------------------------------------------------------------
+; $Id: at91sam9263-nand2g08.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+//SYStem Configuration 
+ SYStem.RESet
+ SYStem.CPU AT91SAM9263
+ SYStem.JtagClock RTCK
+ SYStem.Option IMASKASM ON
+ SYStem.Option IMASKHLL ON
+ SYStem.Option RESBREAK OFF
+ SYStem.Option ENRESET ON
+ SYStem.Mode Up
+
+ Register.RESet
+
+//CPU initialization
+  GOSUB cpu_init
+
+//NAND inistialization
+  Data.Set ASD:0xFFFFED20 %Long 0x0001010A
+
+;setup CS3 (NAND Flash) 16-bit
+  Data.Set ASD:0xFFFFE430   %Long    0x03030303     ; SMC_SETUP
+  Data.Set ASD:0xFFFFE434   %Long    0x04040404     ; SMC_PULSE
+  Data.Set ASD:0xFFFFE438   %Long    0x00080008     ; SMC_CYCLE
+  ;Data.Set ASD:0xFFFFE43C  %Long    0x00161003     ; SMC_MODE     ; 16-bit
+  Data.Set ASD:0xFFFFE43C   %Long    0x00160003     ; SMC_MODE      ; 8-bit
+
+; NAND FLash: configure PIOs in periph mode
+  Data.Set ASD:0xFFFFF800 %Long 0x8000
+  Data.Set ASD:0xFFFFF810 %Long 0x8000         ; PIOC->PER <- PD15
+  Data.Set ASD:0xFFFFF830 %Long 0x8000         ; PIOC->SODR, set PD15 to '1'
+
+//for asserting the Nand Flash Chip select
+  Data.Set A:0xFFFFF834 %Long 0x8000
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.CONFIG <Cmd_reg> <Addr_reg> <Data_reg>
+  FLASHFILE.CONFIG 0x40400000 0x40200000	0x40000000
+
+// FLASHFILE.TARGET <code range> <data range> <Algorithm file>
+  FLASHFILE.TARGET 0x300000++0x1fff 0x500000++0x1FFF ~~/demo/arm/flash/byte/nand2g08.bin
+
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Put a list of bad blocks into area window for 2Gbit (256MB) size
+  FLASHFILE.GETBADBLOCK 0x0--0xFFFFFFF
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+  //Erase NAND FLASH Main and Bad block inforamtion
+    FLASHFILE.Erase 0x0--0xFFFFFFF  /EraseBadBlocks
+
+  //Skipped way 
+    FLASHFILE.LOAD.binary  * 0x0 
+    ;FLASHFILE.LOADSPARE * 0x0 
+   
+  //Reserved block area way
+    ;FLASHFILE.LOAD  * 0x0   /WriteBadBlocks
+    ;FLASHFILE.LOADSPARE *  0x0   /WriteBadBlocks  
+  )
+
+//for releasing the Nand Flash Chip select
+  Data.Set A:0xFFFFF830 %Long 0x8000	
+
+ENDDO 
+
+cpu_init:
+
+;Setup PLL to 100MHz
+Data.Set ASD:0xFFFFFC20 %Long 0x00004001
+WAIT 10ms
+Data.Set ASD:0xFFFFFC30 %Long 0x00000102
+WAIT 10ms
+Data.Set ASD:0xFFFFFC28 %Long 0x206dbf12
+WAIT 10ms
+
+; setup ETM/port D
+PER.Set.simple ASD:0xFFFFF804 %Long 0xfffff800
+PER.Set.simple ASD:0xFFFFF810 %Long 0xfffff800
+PER.Set.simple ASD:0xFFFFF874 %Long 0xfffff800
+
+;Setup SDRAM, only 32MB and 16 bit databus available when ETM is used
+PER.Set.simple ASD:0xFFFFED20 %Long 0x10002
+PER.Set.Field ASD:0xFFFFE204 %Long 0xFFF 0x2bb
+PER.Set.simple ASD:0xFFFFE208 %Long 0x852272D9
+
+WAIT 10ms
+; It is necessary to write to memory after setting it up
+Data.Set 0x20000000 %Long 0x1
+
+;Reset ECC
+PER.Set.simple ASD:0xFFFFE000 %Long 1
+
+; Setup ITCM and DTCM
+PER.Set.simple ASD:0xFFFFED14 %Long 0xB66
+
+;Remap SRAM to 0x0
+Data.Set SD:0xFFFFED00 %LE %Long 0x3
+
+;Disable Watchdog
+PER.Set.simple ASD:0xFFFFFD44 %Long 8000
+
+RETURN

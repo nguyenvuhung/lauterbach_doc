@@ -1,0 +1,117 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Analog Devices ADuCM33x internal flash.
+; 
+; @Description: 
+; DO aduc33x [PREPAREONLY] [CPU=<cpu>]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;             example
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/aduc33x CPU=ADuCM331 PREPAREONLY
+;
+; List of ADuCM33x derivatives and their configuration:
+;
+;   CPU-Type       Program flash   Data flash   Ram size
+;                       (KB)          (KB)        (KB)
+; --------------------------------------------------------------------------------
+;   ADuCM330             96.           1.          6.
+;   ADuCM331            128.           1.          6.
+;
+; Memory location:
+;
+;   Program flash starting at 0x00000000
+;   Data flash starting at    0x00400000
+;   SRAM starting at          0x20000000
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ADuCM33*
+; --------------------------------------------------------------------------------
+; $Rev: 2903 $
+; $Id: aducm33x.cmm 2903 2014-07-16 11:19:46Z kjmal $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &param_cpu
+  IF VERSION.BUILD()>=29755.
+    &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  ; ------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(ADUCM33*)
+    (
+      IF VERSION.BUILD()>=37389.
+        SYStem.CPU ADUCM33*
+      ELSE
+        SYStem.CPU ADUCM331
+    )
+
+    SYStem.Option.ResBreak OFF
+    SYStem.CONFIG.DEBUGPORTTYPE SWD
+
+    SYStem.Up
+
+    ; For the case CPU is in kernel mode because of empty flash. Initialize
+    ; SRAM and disable single bit error interrupt.
+    Data.Set 0x4000202C %Word 0yXXXXxxxxXXXXx101
+  )
+
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  IF ((CPU()=="ADUCM330"))
+    &FlashSize=0x18000
+  ELSE IF ((CPU()=="ADUCM331"))
+    &FlashSize=0x20000
+  ELSE
+  (
+    PRINT %ERROR "FLASH declaration for CPU " CPU() " is not supported by the script"
+    ENDDO
+  )
+
+  FLASH.RESet
+  ; Program flash
+  FLASH.Create 1. 0x00000000++(&FlashSize-1) 0x800 TARGET Quad
+  ; Data flash
+  FLASH.Create 2. 0x00400000--0x004003FF 0x80 TARGET Quad
+
+  FLASH.TARGET 0x20000000 0x20000800 0x800 ~~/demo/arm/flash/quad/aducm3.bin
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO

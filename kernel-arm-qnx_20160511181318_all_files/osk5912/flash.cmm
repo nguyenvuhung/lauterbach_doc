@@ -1,0 +1,44 @@
+; --------------------------------------------------------------------------------
+; @Title: Script to program the Flash Memory on the OSK5912 Board
+; @Description: -
+; @Author: DIE
+; @Chip: OMAP5912
+; @Board: OSK5912
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: flash.cmm 7022 2014-04-28 15:08:24Z kjmal $
+
+
+ RESet
+
+; start-up debugger
+
+ SYStem.CPU OMAP5912
+ SYStem.JtagClock RTCK
+ SYStem.Option ResBreak OFF
+ SYStem.Option WaitReset ON
+ SYStem.Up
+  
+; disable MMU
+
+  Data.Set C15:1 50078
+
+; Declare Flash (host based)
+
+ FLASH.Create 1. 0x00000000--0x00FFFFFF 0x20000 i28f200j3 Word
+ FLASH.Create 2. 0x01000000--0x01FFFFFF 0x20000 i28f200j3 Word
+
+; disable watchdog
+
+ Data.Set 0xfffec808 %Word 0x00f5
+ Data.Set 0xfffec808 %Word 0x00a0
+
+; Reprogram Flash with IPL
+  
+ FLASH.Erase 0x0--0xffff            ; 64k enough for IPL
+ FLASH.Program.ALL                  ; enable programming
+ Data.LOAD.Elf ipl-osk              ; load and program
+ FLASH.Program.off                  ; disable programming
+ Data.LOAD.Elf ipl-osk /ComPare     ; check success
+
+ ENDDO

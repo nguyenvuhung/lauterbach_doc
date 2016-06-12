@@ -1,0 +1,152 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Atmel ATSAMV71 internal flash
+; @Description:
+;   Script arguments:
+;
+;    DO atsamd2 [PREPAREONLY] [CPU=<cpu>]
+;
+;      PREPAREONLY only declares flash but does not execute flash programming
+;
+;      CPU=<cpu> selects CPU derivative <cpu>
+;
+;   Example:
+;
+;   DO ~~/demo/arm/flash/atsamv CPU=ATSAMV71Q21 PREPAREONLY
+;
+;   List of ATSAMD2* derivatives and their configuration:
+;
+;     CPU-Type        Flash size   SRAM size
+;                        [Byte]      [Byte]
+;     ATSAMV71J19       0x80000     0x40000
+;     ATSAMV71J20      0x100000     0x60000
+;     ATSAMV71J21      0x200000     0x60000
+;     ATSAMV71N19       0x80000     0x40000
+;     ATSAMV71N20      0x100000     0x60000
+;     ATSAMV71N21      0x200000     0x60000
+;     ATSAMV71Q19       0x80000     0x40000
+;     ATSAMV71Q20      0x100000     0x60000
+;     ATSAMV71Q21      0x200000     0x60000
+;
+; @Author: FLC
+; @Chip: ATSAMV71*
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 3383 $
+; $Id: atsamv.cmm 3383 2015-09-03 12:44:19Z fcaron $
+
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly &param_cpu
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  IF VERSION.BUILD.BASE()<55857.
+  (
+    PRINT %ERROR "TRACE32 software version is too old, please request an update."
+    ENDDO
+  )
+  
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(ATSAMV71*)
+      SYStem.CPU ATSAMV71*
+    SYStem.CONFIG.DEBUGPORTTYPE SWD
+    SYStem.Option.ResBreak OFF
+    SYStem.Up
+    
+    ; Disable Watchdog
+    Data.Set C:0x400E1854 Data.Long(C:0x400E1854)|0x8000
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+ ; -------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+    
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &FlashSize &FlashDriver
+
+  IF CPUIS("ATSAMV71?19*")
+  (
+    &FlashSize=0x80000
+    &FlashDriver="atsamv.bin"
+  )
+  ELSE IF CPUIS("ATSAMV71?20*")
+  (
+    &FlashSize=0x100000
+    &FlashDriver="atsamv.bin"
+  )
+  ELSE IF CPUIS("ATSAMV71?21*")
+  (
+    &FlashSize=0x200000
+    &FlashDriver="atsamv.bin"
+  )
+ ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  IF &FlashSize>=0x80000
+    FLASH.Create  1. 0x00400000--0x00401FFF 0x2000 TARGET Long
+    FLASH.Create  2. 0x00402000--0x00403FFF 0x2000 TARGET Long
+    FLASH.Create  3. 0x00404000--0x0041FFFF 0x2000 TARGET Long
+    FLASH.Create  4. 0x00420000--0x0043FFFF 0x2000 TARGET Long
+    FLASH.Create  5. 0x00440000--0x0045FFFF 0x2000 TARGET Long
+    FLASH.Create  6. 0x00460000--0x0047FFFF 0x2000 TARGET Long
+ IF &FlashSize>=0x100000
+    FLASH.Create  7. 0x00480000--0x0049FFFF 0x2000 TARGET Long
+    FLASH.Create  8. 0x004A0000--0x004BFFFF 0x2000 TARGET Long
+    FLASH.Create  9. 0x004C0000--0x004DFFFF 0x2000 TARGET Long
+    FLASH.Create 10. 0x004E0000--0x004FFFFF 0x2000 TARGET Long
+ IF &FlashSize>=0x200000
+    FLASH.Create 11. 0x00500000--0x0051FFFF 0x2000 TARGET Long
+    FLASH.Create 12. 0x00520000--0x0053FFFF 0x2000 TARGET Long
+    FLASH.Create 13. 0x00540000--0x0055FFFF 0x2000 TARGET Long
+    FLASH.Create 14. 0x00560000--0x0057FFFF 0x2000 TARGET Long
+    FLASH.Create 15. 0x00580000--0x0059FFFF 0x2000 TARGET Long
+    FLASH.Create 16. 0x005A0000--0x005BFFFF 0x2000 TARGET Long
+    FLASH.Create 17. 0x005C0000--0x005DFFFF 0x2000 TARGET Long
+    FLASH.Create 18. 0x005E0000--0x005FFFFF 0x2000 TARGET Long
+   
+  
+  FLASH.TARGET  0x20400000 0x20402000 0x2000 ~~/demo/arm/flash/long/&FlashDriver
+  
+  RETURN

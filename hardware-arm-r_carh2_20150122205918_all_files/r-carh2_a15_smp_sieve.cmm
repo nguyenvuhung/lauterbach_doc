@@ -1,0 +1,112 @@
+; --------------------------------------------------------------------------------
+; @Title: Start-up Script file for R-CARH2 on LAGER board (Cortex-A15)
+; @Description: 
+;   Demonstrates debugging of the four Cortex-A15 of the R-CARH2 using a 
+;   simple sieve demo.
+;   Depending on the Master Boot Mode Selection only the first CA15 or the first
+;   CA7 is active.
+;   => SW8.7=MD6=ON, SW8.8=MD7=ON -> CA15 <= REQUIRED
+;   SW8.7=MD6=OFF, SW8.8=MD7=ON -> CA7
+;   Therefore first connect to this core in order to power and deassert reset of
+;   the other cores.as the boot-code is not thread save we stop all cores at reset
+;   via CTI and load out sieve demo into SRAM.
+;   In this demo we only use the A15 cores!
+;   Prerequisites:
+;     * Connect JTAG to CN1 JTAG
+;     * set SW10[1..4] = 1110 (Coresight JTAG on CN1)
+;     * set SW8[1..8] = 11101111 (Boot on CA15, Coresight JTAG on CN1)
+; @Keywords: Cortex-A15, R-CARH2, RCARH2, Renesas, sieve, SRAM
+; @Author: PEG
+; @Board: LAGER
+; @Chip: R8A7790?
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: r-carh2_a15_smp_sieve.cmm 7841 2014-11-03 13:52:22Z amerkle $
+
+
+; master boot CA15/CA7 CPU0 reset vector break
+  RESet
+  SYStem.CPU RCARH2-CA15 ; use RCARH2-CA7 in case CA7 is active (see boot mode above)
+  CORE.ASSIGN 1
+  SYStem.Option PWRCHECKFIX ON ; use OFF in case of CA7 is active
+  SYStem.Up
+
+; power up power domain of CA15 SCU and CA7 SCU
+  Data.Set ANSD:0xE618018c %Long 0x1 ; PWRONCR5 (CA15 SCU)
+  ;Data.Set ANSD:0xE618010c %Long 0x1 ; PWRONCR3 (CA7 SCU)
+
+; reset control setting for debug mode
+  Data.Set ANSD:0xE6152180 %Long 0x01f80000 ; CA15_PCCU_PWRCTL
+  ;Data.Set ANSD:0xE6151180 %Long 0x01f83330 ; CA7_PCCU_PWRCTL
+
+; control power and isolation of other CPUs
+  Data.Set ANSD:0xe6152010 %Long 0x1 ; CA15_WUPCR (CPU0)
+  Data.Set ANSD:0xe6152010 %Long 0x2 ; CA15_WUPCR (CPU1)
+  Data.Set ANSD:0xe6152010 %Long 0x4 ; CA15_WUPCR (CPU2)
+  Data.Set ANSD:0xe6152010 %Long 0x8 ; CA15_WUPCR (CPU3)
+  ;Data.Set ANSD:0xe6151010 %Long 0x1 ; CA7_WUPCR (CPU0)
+  ;Data.Set ANSD:0xe6151010 %Long 0x2 ; CA7_WUPCR (CPU1)
+  ;Data.Set ANSD:0xe6151010 %Long 0x4 ; CA7_WUPCR (CPU2)
+  ;Data.Set ANSD:0xe6151010 %Long 0x8 ; CA7_WUPCR (CPU3)
+
+
+; set CTI Event on secondary cores -> stop at reset vector
+; use CTI address of secondary cores!
+  ; CPU1
+  PER.Set.Field EDAP:0x800B90A0 %Long 0x4 0x1 ; CTIOUTEN0  -> Enable Ch2
+  PER.Set.Field EDAP:0x800B9000 %Long 0x1 0x1 ; CTICONTROL, GLBEN
+  PER.Set       EDAP:0x800B9014 %Long 0x4     ; CTIAPPSET  -> Ch2=0x4
+  ; CPU2
+  PER.Set.Field EDAP:0x800BA0A0 %Long 0x4 0x1 ; CTIOUTEN0  -> Enable Ch2
+  PER.Set.Field EDAP:0x800BA000 %Long 0x1 0x1 ; CTICONTROL, GLBEN
+  PER.Set       EDAP:0x800BA014 %Long 0x4     ; CTIAPPSET  -> Ch2=0x4
+  ; CPU3
+  PER.Set.Field EDAP:0x800BB0A0 %Long 0x4 0x1 ; CTIOUTEN0  -> Enable Ch2
+  PER.Set.Field EDAP:0x800BB000 %Long 0x1 0x1 ; CTICONTROL, GLBEN
+  PER.Set       EDAP:0x800BB014 %Long 0x4     ; CTIAPPSET  -> Ch2=0x4
+
+; module reset deassert and reset vector break
+  Data.Set ANSD:0xe6160040 %Long 0xa5a50007 ; CA15_RESCNT (CPU0)
+  Data.Set ANSD:0xe6160040 %Long 0xa5a50003 ; CA15_RESCNT (CPU1)
+  Data.Set ANSD:0xe6160040 %Long 0xa5a50001 ; CA15_RESCNT (CPU2)
+  Data.Set ANSD:0xe6160040 %Long 0xa5a50000 ; CA15_RESCNT (CPU3)
+  ;Data.Set ANSD:0xe6160044 %Long 0x5a5a0007 ; CA7_RESCNT (CPU0)
+  ;Data.Set ANSD:0xe6160044 %Long 0x5a5a0003 ; CA7_RESCNT (CPU1)
+  ;Data.Set ANSD:0xe6160044 %Long 0x5a5a0001 ; CA7_RESCNT (CPU2)
+  ;Data.Set ANSD:0xe6160044 %Long 0x5a5a0000 ; CA7_RESCNT (CPU3)
+
+  ; CPU1
+  PER.Set       EDAP:0x800B9018 %Long 0x4     ; CTIAPPCLEAR -> Ch2=0x4
+  PER.Set.Field EDAP:0x800B90A0 %Long 0x4 0x0 ; CTIOUTEN0   -> Disable Ch2
+  ; CPU2
+  PER.Set       EDAP:0x800BA018 %Long 0x4     ; CTIAPPCLEAR -> Ch2=0x4
+  PER.Set.Field EDAP:0x800BA0A0 %Long 0x4 0x0 ; CTIOUTEN0   -> Disable Ch2
+  ; CPU3  
+  PER.Set       EDAP:0x800BB018 %Long 0x4     ; CTIAPPCLEAR -> Ch2=0x4
+  PER.Set.Field EDAP:0x800BB0A0 %Long 0x4 0x0 ; CTIOUTEN0   -> Disable Ch2
+
+  ; reconnect with all cores now
+  SYStem.Down
+  CORE.ASSIGN 1 2 3 4
+  SYStem.Mode Attach
+  IF RUN()
+    Break
+
+  ; load code and set registers 
+  CORE.select 0.
+  Register.RESet
+  Data.LOAD.Elf ~~~~/midi_arm.elf 0xe6320000
+  
+  Register.RESet /CORE 1.
+  Register.Set PC _start_secondary /CORE 1.
+  Register.RESet /CORE 2.
+  Register.Set PC _start_secondary /CORE 2.
+  Register.RESet /CORE 3.
+  Register.Set PC _start_secondary /CORE 3.
+  
+  Mode.Hll
+  List.auto
+
+
+
+  

@@ -1,0 +1,867 @@
+; --------------------------------------------------------------------------------
+; @Title: ST STM32F10x Flash Dialog to program Option Bytes.
+;
+; @Description: 
+; Script arguments:
+;
+;   do stm32f10x-optionbyte [RDP=0|1] [NRST_STDBY=0|1] [NRST_STOP=0|1] 
+;           [WDG_SW=0|1] [WRP=<val>] [DATA0=<val>] [DATA1=<val>] [RESETDEVICE]
+;
+;     RDP=0|1 is programming read protection option byte
+;             0: disables flash read out protection (RDPRT key = 0x00A5).
+;             1: enables flash read out protection 
+;
+;     NRST_STDBY=0|1 is programming nRST_STDBY bit of user option byte 
+;             0: Reset generated when entering Standby mode.
+;             1: No reset generated 
+;
+;     NRST_STOP=0|1 is programming nRST_STOP bit of user option byte
+;             0: Reset generated when entering Stop mode.
+;             1: No reset generated.
+;
+;     WDG_SW=0|1 is programming WDG_SW bit of user option byte
+;             0: Hardware watchdog
+;             1: Software watchdog
+;
+;     WRP=<val> is programming flash memory write protection option bytes
+;             WRP0..WRP3. Bit value 0 activates write protection for dedicated
+;             pages
+;
+;     DATA0=<val> byte value programmed for user data storage
+;
+;     DATA1=<val> byte value programmed for user data storage
+;
+;     RESETDEVICE reset device after option byte programming
+;
+;   Calling the script without argument starts the Option Byte programming
+;   dialog window.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 3535 $
+; $Id: stm32f10x-optionbyte.cmm 3535 2015-12-15 16:27:01Z fcaron $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  ; LOCAL macros used as script global macros
+  LOCAL &FlashRegBase       ; Flash controller base address
+  LOCAL &FlashSize          ; Flash size
+  LOCAL &OptionByteBase     ; Option byte base address
+  LOCAL &WrpBits            ; Number of Write Proteect Bits
+  LOCAL &PageSize           ; Page size
+
+  &FlashRegBase="tbd"
+  &FlashSize=0x0
+  &PageSize=0x0
+  &OptionByteBase="tbd"
+  &WrpBits=0.
+
+  ; Macros for the Option Bytes
+  LOCAL &OptByte_RDP
+  LOCAL &OptByte_USER
+  LOCAL &OptByte_Data0
+  LOCAL &OptByte_Data1
+  LOCAL &OptByte_WRP0
+  LOCAL &OptByte_WRP1
+  LOCAL &OptByte_WRP2
+  LOCAL &OptByte_WRP3
+
+  &OptByte_RDP=0xA5
+  &OptByte_USER=0xFF
+  &OptByte_Data0=0xFF
+  &OptByte_Data1=0xFF
+  &OptByte_WRP0=0xFF
+  &OptByte_WRP1=0xFF
+  &OptByte_WRP2=0xFF
+  &OptByte_WRP3=0xFF
+
+  ; Look for any opened STM32F10x dialog windows and close them
+  WHILE DIALOG.EXIST(CHK_WRP_0x0)
+    DIALOG.END
+
+  ; Checking CPU selection
+  IF !CPUIS(STM32F10*)
+  (
+    SYStem.RESet
+    SYStem.CPU STM32F10*
+  )
+
+  ; Check system mode
+  IF SYStem.MODE()<5
+    SYStem.Up
+
+  ; Setup configuration for CPU derivative
+  IF CPUIS(STM32F10??4)
+  (
+    &FlashSize=0x4000
+    &PageSize=0x400
+  )
+  ELSE IF CPUIS(STM32F10??6)
+  (
+    &FlashSize=0x8000
+    &PageSize=0x400
+  )
+  ELSE IF CPUIS(STM32F10??8)
+  (
+    &FlashSize=0x10000
+    IF CPUIS(STM32F105??)||CPUIS(STM32F107??)
+      &PageSize=0x800
+    ELSE
+      &PageSize=0x400
+  )
+  ELSE IF CPUIS(STM32F10??B)
+  (
+    &FlashSize=0x20000
+    IF CPUIS(STM32F105??)||CPUIS(STM32F107??)
+      &PageSize=0x800
+    ELSE
+      &PageSize=0x400
+  )
+  ELSE IF CPUIS(STM32F10??C)
+  (
+    &FlashSize=0x40000
+    &PageSize=0x800
+  )
+  ELSE IF CPUIS(STM32F10??D)
+  (
+    &FlashSize=0x60000
+    &PageSize=0x800
+  )
+  ELSE IF CPUIS(STM32F10??E)
+  (
+    &FlashSize=0x80000
+    &PageSize=0x800
+  )
+  ELSE IF CPUIS(STM32F10??F)
+  (
+    &FlashSize=0xc0000
+    &PageSize=0x800
+  )
+  ELSE IF CPUIS(STM32F10??G)
+  (
+    &FlashSize=0x100000
+    &PageSize=0x800
+  )
+  ELSE
+  (
+    DIALOG.OK CPU()+" is not supported by the script" "Please request an update"
+    ENDDO
+  )
+
+  ; Calculate number of write protect bits
+  &WrpBits=&FlashSize/0x1000
+  IF &WrpBits>32.
+    &WrpBits=32.
+
+  IF &WrpBits==0.||&FlashSize==0.||&PageSize==0.
+  (
+    DIALOG.OK CPU()+" is not supported by the script"
+    ENDDO
+  )
+  ELSE
+  (
+    &FlashRegBase="D:0x40022000"
+    &OptionByteBase="D:0x1FFFF800"
+  )
+
+  ; Parse script arguments
+  IF "&parameters"==""
+  (
+    GOSUB OptionByteDialog
+  )
+  ELSE
+  (
+    LOCAL &param_RDP &param_nRST_STDBY &param_nRST_STOP &param_WDG_SW
+    LOCAL &param_WRP &param_DATA0 &param_DATA1 &param_resetDevice
+    LOCAL &programFlash
+
+    &param_RDP=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"RDP=","")
+    &param_nRST_STDBY=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"NRST_STDBY=","")
+    &param_nRST_STOP=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"NRST_STOP=","")
+    &param_WDG_SW=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"WDG_SW=","")
+    &param_WRP=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"WRP=","")
+    &param_DATA0=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"DATA0=","")
+    &param_DATA1=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"DATA1=","")
+    &param_resetDevice=(STRing.SCAN(STRing.UPpeR("&parameters"),"RESETDEVICE",0)!=-1)
+    &programFlash=FALSE()
+
+    GOSUB ReadOptionBytes
+
+    IF "&param_RDP"!=""
+    (
+      IF "&param_RDP"=="1"
+        &OptByte_RDP=0x00
+      ELSE IF  "&param_RDP"=="0"
+        &OptByte_RDP=0xA5
+      &programFlash=TRUE()
+    )
+
+    IF "&param_nRST_STDBY"!=""
+    (
+      IF "&param_nRST_STDBY"=="1"
+        &OptByte_USER=&OptByte_USER&0xFB
+      ELSE IF  "&param_nRST_STDBY"=="0"
+        &OptByte_USER=&OptByte_USER|0x04
+      &programFlash=TRUE()
+    )
+
+    IF "&param_nRST_STOP"!=""
+    (
+      IF "&param_nRST_STOP"=="1"
+        &OptByte_USER=&OptByte_USER&0xFD
+      ELSE IF  "&param_nRST_STOP"=="0"
+        &OptByte_USER=&OptByte_USER|0x02
+      &programFlash=TRUE()
+    )
+
+    IF "&param_WDG_SW"!=""
+    (
+      IF "&param_WDG_SW"=="1"
+        &OptByte_USER=&OptByte_USER|0x01
+      ELSE IF  "&param_WDG_SW"=="0"
+        &OptByte_USER=&OptByte_USER&0xFE
+      &programFlash=TRUE()
+    )
+
+    IF "&param_WRP"!=""
+    (
+      &OptByte_WRP0=&param_WRP&0xFF
+      &OptByte_WRP1=(&param_WRP>>8.)&0xFF
+      &OptByte_WRP2=(&param_WRP>>16.)&0xFF
+      &OptByte_WRP3=(&param_WRP>>24.)&0xFF
+      &programFlash=TRUE()
+    )
+
+    IF "&param_DATA0"!=""
+    (
+      &OptByte_Data0=&param_DATA0&0xFF
+      &programFlash=TRUE()
+    )
+
+    IF "&param_DATA1"!=""
+    (
+      &OptByte_Data1=&param_DATA1&0xFF
+      &programFlash=TRUE()
+    )
+
+    ; Program option bytes into flash
+    IF &programFlash
+      GOSUB ProgramOptionBytes
+
+    ; Reset device to activate programmed option bytes
+    IF &param_resetDevice
+      GOSUB ResetDevice
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; NVM bit programming dialog window
+
+OptionByteDialog:
+
+  LOCAL &WRP_0x0_pages &WRP_0x1_pages &WRP_0x2_pages &WRP_0x3_pages
+  LOCAL &WRP_0x4_pages &WRP_0x5_pages &WRP_0x6_pages &WRP_0x7_pages
+  LOCAL &WRP_0x8_pages &WRP_0x9_pages &WRP_0xA_pages &WRP_0xB_pages
+  LOCAL &WRP_0xC_pages &WRP_0xD_pages &WRP_0xE_pages &WRP_0xF_pages
+  LOCAL &WRP_0x10_pages &WRP_0x11_pages &WRP_0x12_pages &WRP_0x13_pages
+  LOCAL &WRP_0x14_pages &WRP_0x15_pages &WRP_0x16_pages &WRP_0x17_pages
+  LOCAL &WRP_0x18_pages &WRP_0x19_pages &WRP_0x1A_pages &WRP_0x1B_pages
+  LOCAL &WRP_0x1C_pages &WRP_0x1D_pages &WRP_0x1E_pages &WRP_0x1F_pages
+
+  IF &PageSize==0x400
+  (
+    &WRP_0x0_pages="0--3"
+    &WRP_0x1_pages="4--7"
+    &WRP_0x2_pages="8--11"
+    &WRP_0x3_pages="12--15"
+    &WRP_0x4_pages="16--19"
+    &WRP_0x5_pages="20--23"
+    &WRP_0x6_pages="24--27"
+    &WRP_0x7_pages="28--31"
+    &WRP_0x8_pages="32--35"
+    &WRP_0x9_pages="36--39"
+    &WRP_0xA_pages="40--43"
+    &WRP_0xB_pages="44--47"
+    &WRP_0xC_pages="48--51"
+    &WRP_0xD_pages="52--55"
+    &WRP_0xE_pages="56--59"
+    &WRP_0xF_pages="60--63"
+    &WRP_0x10_pages="64--67"
+    &WRP_0x11_pages="68--71"
+    &WRP_0x12_pages="72--75"
+    &WRP_0x13_pages="76--79"
+    &WRP_0x14_pages="80--83"
+    &WRP_0x15_pages="84--87"
+    &WRP_0x16_pages="88--91"
+    &WRP_0x17_pages="92--95"
+    &WRP_0x18_pages="96--99"
+    &WRP_0x19_pages="100--103"
+    &WRP_0x1A_pages="104--107"
+    &WRP_0x1B_pages="108--111"
+    &WRP_0x1C_pages="112--115"
+    &WRP_0x1D_pages="116--119"
+    &WRP_0x1E_pages="120--123"
+    &WRP_0x1F_pages="124--127"
+  )
+  ELSE IF &PageSize==0x800
+  (
+    &WRP_0x0_pages="0--2"
+    &WRP_0x1_pages="2--3"
+    &WRP_0x2_pages="4--5"
+    &WRP_0x3_pages="6--7"
+    &WRP_0x4_pages="8--9"
+    &WRP_0x5_pages="10--11"
+    &WRP_0x6_pages="12--13"
+    &WRP_0x7_pages="14--15"
+    &WRP_0x8_pages="16--17"
+    &WRP_0x9_pages="18--19"
+    &WRP_0xA_pages="20--21"
+    &WRP_0xB_pages="22--23"
+    &WRP_0xC_pages="24--25"
+    &WRP_0xD_pages="26--27"
+    &WRP_0xE_pages="28--29"
+    &WRP_0xF_pages="30--31"
+    &WRP_0x10_pages="32--33"
+    &WRP_0x11_pages="34--35"
+    &WRP_0x12_pages="36--37"
+    &WRP_0x13_pages="38--39"
+    &WRP_0x14_pages="40--41"
+    &WRP_0x15_pages="42--43"
+    &WRP_0x16_pages="44--45"
+    &WRP_0x17_pages="46--47"
+    &WRP_0x18_pages="48--49"
+    &WRP_0x19_pages="50--51"
+    &WRP_0x1A_pages="52--53"
+    &WRP_0x1B_pages="54--55"
+    &WRP_0x1C_pages="56--57"
+    &WRP_0x1D_pages="58--59"
+    &WRP_0x1E_pages="60--61"
+    IF &FlashSize==0x100000
+      &WRP_0x1F_pages="62--511"
+    ELSE IF &FlashSize==0xC0000
+      &WRP_0x1F_pages="62--383"
+    ELSE IF &FlashSize==0x80000
+      &WRP_0x1F_pages="62--255"
+    ELSE IF &FlashSize==0x60000
+      &WRP_0x1F_pages="62--191"
+    ELSE IF &FlashSize==0x40000
+      &WRP_0x1F_pages="62--127"
+    ELSE
+      &WRP_0x1F_pages="62--63"
+  )
+  ELSE
+  (
+    PRINT %ERROR "Page size configuration not supported by the script"
+    ENDDO
+  )
+  ; Creating the main dialog. (& afer DIALOG command must be in first column!
+  WinPOS 50. 5. 69. 23.
+  DIALOG.view
+  (&
+                HEADER CPU()+" option bytes"
+
+                POS 1. 0. 67. 9.
+                BOX "Write protected flash pages"
+
+                POS  3. 2. 7. 1.
+CHK_WRP_0x0:    CHECKBOX "&WRP_0x0_pages" ""
+                POS 11. 2. 7. 1.
+CHK_WRP_0x1:    CHECKBOX "&WRP_0x1_pages" ""
+                POS 19. 2. 7. 1.
+CHK_WRP_0x2:    CHECKBOX "&WRP_0x2_pages" ""
+                POS 27. 2. 7. 1.
+CHK_WRP_0x3:    CHECKBOX "&WRP_0x3_pages" ""
+                POS 35. 2. 7. 1.
+CHK_WRP_0x4:    CHECKBOX "&WRP_0x4_pages" ""
+                POS 43. 2. 7. 1.
+CHK_WRP_0x5:    CHECKBOX "&WRP_0x5_pages" ""
+                POS 51. 2. 7. 1.
+CHK_WRP_0x6:    CHECKBOX "&WRP_0x6_pages" ""
+                POS 59. 2. 7. 1.
+CHK_WRP_0x7:    CHECKBOX "&WRP_0x7_pages" ""
+                POS  3. 3. 7. 1.
+CHK_WRP_0x8:    CHECKBOX "&WRP_0x8_pages" ""
+                POS 11. 3. 7. 1.
+CHK_WRP_0x9:    CHECKBOX "&WRP_0x9_pages" ""
+                POS 19. 3. 7. 1.
+CHK_WRP_0xA:    CHECKBOX "&WRP_0xA_pages" ""
+                POS 27. 3. 7. 1.
+CHK_WRP_0xB:    CHECKBOX "&WRP_0xB_pages" ""
+                POS 35. 3. 7. 1.
+CHK_WRP_0xC:    CHECKBOX "&WRP_0xC_pages" ""
+                POS 43. 3. 7. 1.
+CHK_WRP_0xD:    CHECKBOX "&WRP_0xD_pages" ""
+                POS 51. 3. 7. 1.
+CHK_WRP_0xE:    CHECKBOX "&WRP_0xE_pages" ""
+                POS 59. 3. 7. 1.
+CHK_WRP_0xF:    CHECKBOX "&WRP_0xF_pages" ""
+                POS  3. 4. 7. 1.
+CHK_WRP_0x10:   CHECKBOX "&WRP_0x10_pages" ""
+                POS 11. 4. 7. 1.
+CHK_WRP_0x11:   CHECKBOX "&WRP_0x11_pages" ""
+                POS 19. 4. 7. 1.
+CHK_WRP_0x12:   CHECKBOX "&WRP_0x12_pages" ""
+                POS 27. 4. 7. 1.
+CHK_WRP_0x13:   CHECKBOX "&WRP_0x13_pages" ""
+                POS 35. 4. 7. 1.
+CHK_WRP_0x14:   CHECKBOX "&WRP_0x14_pages" ""
+                POS 43. 4. 7. 1.
+CHK_WRP_0x15:   CHECKBOX "&WRP_0x15_pages" ""
+                POS 51. 4. 7. 1.
+CHK_WRP_0x16:   CHECKBOX "&WRP_0x16_pages" ""
+                POS 59. 4. 7. 1.
+CHK_WRP_0x17:   CHECKBOX "&WRP_0x17_pages" ""
+                POS  3. 5. 7. 1.
+CHK_WRP_0x18:   CHECKBOX "&WRP_0x18_pages" ""
+                POS 11. 5. 7. 1.
+CHK_WRP_0x19:   CHECKBOX "&WRP_0x19_pages" ""
+                POS 19. 5. 7. 1.
+CHK_WRP_0x1A:   CHECKBOX "&WRP_0x1A_pages" ""
+                POS 27. 5. 7. 1.
+CHK_WRP_0x1B:   CHECKBOX "&WRP_0x1B_pages" ""
+                POS 35. 5. 7. 1.
+CHK_WRP_0x1C:   CHECKBOX "&WRP_0x1C_pages" ""
+                POS 43. 5. 7. 1.
+CHK_WRP_0x1D:   CHECKBOX "&WRP_0x1D_pages" ""
+                POS 51. 5. 7. 1.
+CHK_WRP_0x1E:   CHECKBOX "&WRP_0x1E_pages" ""
+                POS 59. 5. 7. 1.
+CHK_WRP_0x1F:   CHECKBOX "&WRP_0x1F_pages" ""
+
+                POS  3. 7. 9. 1.
+                BUTTON "Select All" "GOSUB WRPSelectAll"
+
+                POS 13. 7. 9. 1.
+                BUTTON "Deselect All" "GOSUB WRPDeselectAll"
+
+
+                POS  1.  9. 67. 4.
+                BOX "Read protection option byte"
+
+                POS  3. 11. 30. 1.
+CHK_RDP:        CHECKBOX "Flash read out protection" ""
+
+
+                POS  1. 13. 67. 5.
+                BOX "User option byte"
+
+                POS  3. 15. 30. 1.
+CHK_RST_STDBY:  CHECKBOX "Reset generated when entering Standby mode" ""
+                POS  3. 16. 30. 1.
+CHK_RST_STOP:   CHECKBOX "Reset generated when entering Stop mode" ""
+                POS 43. 15. 16. 1.
+CHSB_WDG.HW:    CHOOSEBOX "Hardware watchdog"   ""
+CHSB_WDG.SW:    CHOOSEBOX "Software watchdog" ""
+
+
+                POS  1. 18. 67. 4.
+                BOX "User data bytes"
+
+
+                POS  3. 20.  7. 1.
+                TEXT "Data0"
+                POS 10. 20.  6. 1.
+EDIT_DATA0:     EDIT "" "GOSUB CheckDatax 0"
+                POS 27. 20.  7. 1.
+                TEXT "Data1"
+                POS 34. 20.  6. 1.
+EDIT_DATA1:     EDIT "" "GOSUB CheckDatax 1"
+
+                POS 1. 22. 10. 1.
+                BUTTON "Program flash" "GOSUB ProgramFlashSettings"
+
+                POS 20. 22. 10. 1.
+                BUTTON "Reset device" "GOSUB ActivateFlashSettings"
+
+                POS 39. 22. 10. 1.
+                BUTTON "Refresh" "GOSUB UpdateWindowFromFlashContents"
+
+                POS 58. 22. 10. 1.
+                BUTTON "Exit" "CONTinue"
+
+                CLOSE "CONTinue"
+  )
+
+  ; Disable/Enable the check boxes
+  GOSUB UpdateWindowFromFlashType
+  GOSUB UpdateWindowFromFlashContents
+  STOP
+
+  DIALOG.END
+
+  ENDDO
+
+; --------------------------------------------------------------------------------
+; Lock not available write protection bit fields
+
+UpdateWindowFromFlashType:
+
+  LOCAL &bitnum
+
+  &bitnum=31.,
+  WHILE &bitnum>=&WrpBits
+  (
+    LOCAL &fieldname
+    &fieldname="CHK_WRP_0x"+FORMAT.HEX(1.,&bitnum)
+    DIALOG.Disable &fieldname
+    &bitnum=&bitnum-1.
+  )
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Read out option bytes and set dialog entries
+
+UpdateWindowFromFlashContents:
+
+  GOSUB ReadOptionBytes
+
+  ; Get protection option bits
+  LOCAL &bitnum &bytenum &bitindex
+  &bitnum=0.
+  &bytenum=0.
+  &bitindex=0.
+  WHILE &bitnum<&WrpBits
+  (
+    LOCAL &fieldname
+    LOCAL &regname &regval
+
+    &fieldname="CHK_WRP_0x"+FORMAT.HEX(1.,&bitnum)
+    &regname="&"+"OptByte_WRP"+FORMAT.Decimal(1.,&bytenum)
+    &&regval=&regname
+    IF ((&regval)&(1.<<&bitindex))!=0
+      DIALOG.Set &fieldname " "
+    ELSE
+      DIALOG.Set &fieldname ""
+
+    &bitnum=&bitnum+1.
+    &bitindex=&bitindex+1.
+    IF &bitindex>=8.
+    (
+      &bytenum=&bytenum+1.
+      &bitindex=0.
+    )
+  )
+
+  ; Get read protection
+  IF &OptByte_RDP==0xA5
+    DIALOG.Set CHK_RDP " "
+  ELSE
+    DIALOG.Set CHK_RDP ""
+
+  ; Get user option byte
+  IF (&OptByte_USER&0x01)!=0
+    DIALOG.Set CHSB_WDG.SW ""
+  ELSE
+    DIALOG.Set CHSB_WDG.HW ""
+
+  IF (&OptByte_USER&0x02)!=0
+    DIALOG.Set CHK_RST_STOP " "
+  ELSE
+    DIALOG.Set CHK_RST_STOP ""
+
+  IF (&OptByte_USER&0x4)!=0
+    DIALOG.Set CHK_RST_STDBY " "
+  ELSE
+    DIALOG.Set CHK_RST_STDBY ""
+
+  ; Get user data bytes
+  DIALOG.Set EDIT_DATA0 "0x"+FORMAT.HEX(2.,&OptByte_Data0)
+  DIALOG.Set EDIT_DATA1 "0x"+FORMAT.HEX(2.,&OptByte_Data1)
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Select all EEFC sector lock bits
+
+WRPSelectAll:
+  LOCAL &bitnum
+
+  &bitnum=0.
+  WHILE &bitnum<&WrpBits
+  (
+    LOCAL &fieldname
+    &fieldname="CHK_WRP_0x"+FORMAT.HEX(1.,&bitnum)
+    DIALOG.Set &fieldname ""
+    &bitnum=&bitnum+1.
+  )
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Deselect all EEFC sector lock bits
+
+WRPDeselectAll:
+  LOCAL &bitnum
+
+  &bitnum=0.
+  WHILE &bitnum<&WrpBits
+  (
+    LOCAL &fieldname
+    &fieldname="CHK_WRP_0x"+FORMAT.HEX(1.,&bitnum)
+    DIALOG.Set &fieldname " "
+    &bitnum=&bitnum+1.
+  )
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Check user data value
+
+CheckDatax:
+  LOCAL &dataNr
+  ENTRY &dataNr
+
+  LOCAL &data &regname
+
+  &data=DIALOG.STRing(EDIT_DATA&dataNr)
+  &regname="&"+"OptByte_WRP"+FORMAT.Decimal(1.,&dataNr)
+  &&origdata=&regname
+
+  LOCAL &error
+  &error=0
+
+  ON.ERROR GOSUB
+  (
+    &error=1
+    RETURN
+  )
+  &data="0x"+FORMAT.HEX(1.,&data)
+  ON.ERROR
+  IF &error!=0
+  (
+    DIALOG.OK "Data must be a 8-bit unsigned numeric value!"
+    DIALOG.Set EDIT_DATA&dataNr "&origdata"
+  )
+  ELSE
+  (
+    Eval &data
+    IF EVAL()>0xFF||EVAL()<0x00
+    (
+      DIALOG.OK "Data is out of range!" "Data must be a 8-bit unsigned numeric value"
+      DIALOG.Set EDIT_DATA&dataNr "&origdata"
+    )
+    ELSE
+    (
+      &data="0x"+FORMAT.HEX(2.,&data)
+      DIALOG.Set EDIT_DATA&dataNr "&data"
+    )
+  )
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Programming Option Bytes
+
+ProgramFlashSettings:
+  LOCAL &result
+  LOCAL &error
+  LOCAL &sectorlockbit
+
+  ; Set write protection option bytes
+  LOCAL &bitnum &wrpval
+  &bitnum=0.
+  &wrpval=0x0
+  WHILE &bitnum<&WrpBits
+  (
+    LOCAL &fieldname
+
+    &fieldname="CHK_WRP_0x"+FORMAT.HEX(1.,&bitnum)
+    IF !DIALOG.BOOLEAN(&fieldname)
+      &wrpval=&wrpval|(0x1<<&bitnum)
+
+    &bitnum=&bitnum+1.
+  )
+
+  &OptByte_WRP0=&wrpval&0xFF
+  &OptByte_WRP1=(&wrpval>>8.)&0xFF
+  &OptByte_WRP2=(&wrpval>>16.)&0xFF
+  &OptByte_WRP3=(&wrpval>>24.)&0xFF
+
+  ; Set read protection option byte
+  IF !DIALOG.BOOLEAN("CHK_RDP")
+    &OptByte_RDP=0xA5
+  ELSE
+    &OptByte_RDP=0x00
+
+  ; Set user option byte
+  IF DIALOG.BOOLEAN(CHSB_WDG.SW)
+    &OptByte_USER=&OptByte_USER|0x01
+  ELSE
+    &OptByte_USER=&OptByte_USER&0xFE
+
+  IF !DIALOG.BOOLEAN("CHK_RST_STOP")
+    &OptByte_USER=&OptByte_USER|0x02
+  ELSE
+    &OptByte_USER=&OptByte_USER&0xFD
+
+  IF !DIALOG.BOOLEAN("CHK_RST_STDBY")
+    &OptByte_USER=&OptByte_USER|0x04
+  ELSE
+    &OptByte_USER=&OptByte_USER&0xFB
+
+  ; Set user data bytes
+  &OptByte_Data0=DIALOG.STRing(EDIT_DATA0)
+  &OptByte_Data1=DIALOG.STRing(EDIT_DATA1)
+
+  ; Program into option byte flash section
+  GOSUB ProgramOptionBytes
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Activate programmed flash settings by resetting device
+
+ActivateFlashSettings:
+
+  GOSUB ResetDevice
+  GOSUB UpdateWindowFromFlashContents
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Reset device
+
+ResetDevice:
+
+  SYStem.Down
+  SYStem.Up
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Read option byte values out of flash
+
+ReadOptionBytes:
+  &LOCAL &tmp
+  
+  &OptByte_WRP0=Data.Long(&FlashRegBase+0x20)&0xFF
+  &OptByte_WRP1=(Data.Long(&FlashRegBase+0x20)>>8.)&0xFF
+  &OptByte_WRP2=(Data.Long(&FlashRegBase+0x20)>>16.)&0xFF
+  &OptByte_WRP3=(Data.Long(&FlashRegBase+0x20)>>24.)&0xFF
+  
+  &tmp=Data.Long(&FlashRegBase+0x1C)
+  
+  IF (&tmp&0x2)==0x2
+    &OptByte_RDP=0x0
+  ELSE
+    &OptByte_RDP=0xA5
+  
+  &OptByte_Data0=(&tmp>>10.)&0xFF
+  &OptByte_Data1=(&tmp>>18.)&0xFF
+  &OptByte_USER=((&tmp>>2.)&0x7)|0xF8
+  
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Program option bytes
+
+ProgramOptionBytes:
+  LOCAL &locked
+  &locked=Data.Long(&FlashRegBase+0x10)&0x80                // locked = FLASH->CR & CR_LOCK_Set;
+
+  ; Unlock the Flash Program Erase controller
+  Data.Set &FlashRegBase+0x04 %Long 0x45670123              // FLASH->KEYR = FLASH_KEY1;
+  Data.Set &FlashRegBase+0x04 %Long 0xCDEF89AB              // FLASH->KEYR = FLASH_KEY2;
+
+  ; Clear All pending flags
+  Data.Set &FlashRegBase+0x0C %Long 0x00000035              // FLASH->SR = (FLASH_FLAG_BSY | FLASH_FLAG_EOP | FLASH_FLAG_PGERR | FLASH_FLAG_WRPRTERR);
+
+  ; Wait for last operation to be completed
+  IF (Data.Long(&FlashRegBase+0x0C)&0x00000001)==0x00000001 // if ((FLASH->SR & FLASH_FLAG_BSY) == FLASH_FLAG_BSY) 
+  (
+    PRINT %ERROR "Flash memory interface busy, operation aborted"
+    RETURN
+  )
+
+  ; Authorize the small information block programming
+  Data.Set &FlashRegBase+0x08 %Long 0x45670123              // FLASH->OPTKEYR = FLASH_KEY1;
+  Data.Set &FlashRegBase+0x08 %Long 0xCDEF89AB              // FLASH->OPTKEYR = FLASH_KEY2;
+    
+  ; erase the option bytes
+  Data.Set &FlashRegBase+0x10 %Long Data.Long(&FlashRegBase+0x10)|0x00000020  // FLASH->CR |= CR_OPTER_Set;
+  Data.Set &FlashRegBase+0x10 %Long Data.Long(&FlashRegBase+0x10)|0x00000040  // FLASH->CR |= CR_STRT_Set;
+  ; Wait for last operation to be completed */
+  WHILE (Data.Long(&FlashRegBase+0x0C)&0x00000001)==0x00000001 // while ((FLASH->SR & FLASH_FLAG_BSY) == FLASH_FLAG_BSY) 
+  (
+  )
+
+  ; if the erase operation is completed, disable the OPTER Bit
+  Data.Set &FlashRegBase+0x10 %Long Data.Long(&FlashRegBase+0x10)&0x00001FDF  // FLASH->CR &= CR_OPTER_Reset;
+
+  ; Enable the Option Bytes Programming operation
+  Data.Set &FlashRegBase+0x10 %Long Data.Long(&FlashRegBase+0x10)|0x00000010  // FLASH->CR |= CR_OPTPG_Set;
+
+  ; Program read protection Option Byte */
+  Data.Set &OptionByteBase+0x00 %Word &OptByte_RDP             // OB->RDP = (uint16_t)val; 
+  ; Wait for last operation to be completed */
+  WHILE (Data.Long(&FlashRegBase+0x0C)&0x00000001)==0x00000001 // while ((FLASH->SR & FLASH_FLAG_BSY) == FLASH_FLAG_BSY) 
+  (
+  )
+  ; Program User Option Byte */
+  Data.Set &OptionByteBase+0x02 %Word &OptByte_USER             // OB->USER = (uint16_t)val; 
+  ; Wait for last operation to be completed */
+  WHILE (Data.Long(&FlashRegBase+0x0C)&0x00000001)==0x00000001 // while ((FLASH->SR & FLASH_FLAG_BSY) == FLASH_FLAG_BSY) 
+  (
+  )
+  ; Program User Data Byte 0 */
+  Data.Set &OptionByteBase+0x04 %Word &OptByte_Data0             // OB->Data0 = (uint16_t)val; 
+  ; Wait for last operation to be completed */
+  WHILE (Data.Long(&FlashRegBase+0x0C)&0x00000001)==0x00000001 // while ((FLASH->SR & FLASH_FLAG_BSY) == FLASH_FLAG_BSY) 
+  (
+  )
+  ; Program User Data Byte 1 */
+  Data.Set &OptionByteBase+0x06 %Word &OptByte_Data1             // OB->Data1 = (uint16_t)val; 
+  ; Wait for last operation to be completed */
+  WHILE (Data.Long(&FlashRegBase+0x0C)&0x00000001)==0x00000001 // while ((FLASH->SR & FLASH_FLAG_BSY) == FLASH_FLAG_BSY) 
+  (
+  )
+  ; Program WRP0 */
+  Data.Set &OptionByteBase+0x08 %Word &OptByte_WRP0              // OB->WRP0 = (uint16_t)val; 
+  ; Wait for last operation to be completed */
+  WHILE (Data.Long(&FlashRegBase+0x0C)&0x00000001)==0x00000001 // while ((FLASH->SR & FLASH_FLAG_BSY) == FLASH_FLAG_BSY) 
+  (
+  )
+  ; Program WRP1 */
+  Data.Set &OptionByteBase+0x0A %Word &OptByte_WRP1              // OB->WRP1 = (uint16_t)val; 
+  ; Wait for last operation to be completed */
+  WHILE (Data.Long(&FlashRegBase+0x0C)&0x00000001)==0x00000001 // while ((FLASH->SR & FLASH_FLAG_BSY) == FLASH_FLAG_BSY) 
+  (
+  )
+  ; Program WRP2 */
+  Data.Set &OptionByteBase+0x0C %Word &OptByte_WRP2              // OB->WRP2 = (uint16_t)val; 
+  ; Wait for last operation to be completed */
+  WHILE (Data.Long(&FlashRegBase+0x0C)&0x00000001)==0x00000001 // while ((FLASH->SR & FLASH_FLAG_BSY) == FLASH_FLAG_BSY) 
+  (
+  )
+  ; Program WRP3 */
+  Data.Set &OptionByteBase+0x0E %Word &OptByte_WRP3              // OB->WRP3 = (uint16_t)val; 
+  ; Wait for last operation to be completed */
+  WHILE (Data.Long(&FlashRegBase+0x0C)&0x00000001)==0x00000001 // while ((FLASH->SR & FLASH_FLAG_BSY) == FLASH_FLAG_BSY) 
+  (
+  )
+
+  ; if the program operation is completed, disable the OPTWRE Bit */
+  Data.Set &FlashRegBase+0x10 %Long Data.Long(&FlashRegBase+0x10)&0x00001EFF  // FLASH->CR &= CR_OPTPG_Reset;
+  ; if the program operation is completed, disable the OPTPG Bit */
+  Data.Set &FlashRegBase+0x10 %Long Data.Long(&FlashRegBase+0x10)&0x00001FEF  // FLASH->CR &= CR_OPTPG_Reset;
+
+  IF &locked!=0x00                                            // if ( locked )
+  (
+    Data.Set &FlashRegBase+0x10 %Long Data.Long(&FlashRegBase+0x10)|0x00000080  //   FLASH->CR |= CR_LOCK_Set;
+  )
+
+  RETURN

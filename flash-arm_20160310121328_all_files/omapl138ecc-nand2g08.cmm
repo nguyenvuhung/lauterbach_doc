@@ -1,0 +1,77 @@
+; --------------------------------------------------------------------------------
+; @Title: OMAP-L138 NAND FLASH Programming Script
+; @Description:
+; NAND FLASH(MT29F2G08) is connected to CS3 
+; 4-bit ECC writing to the spare Area (10B per 512B)
+; The algorithm file needs more stack to save the ECC data.
+;
+; Internal SRAM    : 0x80000000
+; Command Register : 0x62000010   
+; Address Register : 0x62000008  
+; Data Register    : 0x62000000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: OMAP-L138
+; @Keywords: MT29F2G08 Flash NAND
+; --------------------------------------------------------------------------------
+; $Id: omapl138ecc-nand2g08.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+SYStem.RESet
+SYStem.CPU OMAP-L138
+SYStem.Option EnReset OFF
+SYStem.CONFIG.Slave OFF
+SYStem.JtagClock RTCK
+SYStem.Mode Up
+
+  PER.Set.simple C15:0x1 %Long 0x00052078  ; disable MMU & Cache
+
+  GOSUB enable_NAND
+
+  FLASHFILE.RESet
+
+//FLASHFILE.config   <Cmd_reg>   <Addr_reg>   <Data_reg>
+  FLASHFILE.CONFIG   0x62000010   0x62000008  0x62000000
+
+//FLASHFILE.target <Code_range>       <Data_range>        <Algorithm file>
+  FLASHFILE.TARGET 0x80000000++0x1FFF 0x80002000++0x1FFF   ~~/demo/arm/flash/byte/nand2g08_omapl138.bin  /STACKSIZE 0x200  /KEEP
+
+  FLASHFILE.GETID   ; Read FLASH Manufacture and Device ID
+  
+//FLASHFILE.ERASE 0x0--0xFFFFF   ; Erase the flash 0x0--0xFFFFF
+
+//FLASHFILE.LOAD * 0x0           ; Write a file to the flash  
+//FLASHFILE.LOAD * 0x0 /ComPare  ; Verify
+
+//FLASHFILE.LOAD ./arm-nand-ais.bin 0x20000  
+//FLASHFILE.LOAD ./lbu.bin          0x40000  
+//FLASHFILE.LOAD ./u-boot.bin       0x40800  
+
+   FLASHFILE.DUMP 0x0  ; Read out from the flash
+
+ENDDO
+
+enable_NAND:
+
+// Enable Function for PSC0
+Data.Set SD:0x1C10A0C %LE %Long 0x3  ;PSC0_MDCTL
+Data.Set SD:0x1C10120 %LE %Long 0x1  ;PSC0_PTCMD
+WAIT 1.ms
+
+Data.Set SD:0x1C1413C %LE %Long 0x10110010 ; PINMUX7
+Data.Set SD:0x1C14144 %LE %Long 0x11111111 ; PINMUX9
+Data.Set SD:0x1C14150 %LE %Long 0x01100000 ; PINMUX12
+
+
+Data.Set SD:0x68000010 %LE %Long 0x3FFFFFFC ; EMIF25_ACFG2
+Data.Set SD:0x68000060 %LE %Long 0x12       ; EMIF25_NANDFCR
+
+RETURN
+
+
+
+
+
+
+
+

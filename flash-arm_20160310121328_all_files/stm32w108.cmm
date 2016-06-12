@@ -1,0 +1,79 @@
+; --------------------------------------------------------------------------------
+; @Title: Example Script for programming of ST STM32W108 internal flash
+;
+; @Description:
+; Script arguments:
+;
+;   DO stm32w108 [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/stm32w108 PREPAREONLY
+;
+; List of STM32W108 derivatives and their configuration:
+;
+;   CPU-Type      Flash size   SRAM size 
+;                   (kByte)     (kByte)
+; --------------------------------------------------------------------------------
+;   STM32W108CB      128.          8.
+;   STM32W108HB      128.          8.
+;
+; Flash base address is 0x08000000
+; SRAM base address is  0x20000000
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: STM32W108CB
+; --------------------------------------------------------------------------------
+; $Rev: 2903 $
+; $Id: stm32w108.cmm 2903 2014-07-16 11:19:46Z kjmal $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  ; ------------------------------------------------------------------------------
+  ; CPU setup
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU STM32W108CB
+    SYStem.Up
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+
+  FLASH.Create 1. 0x08000000++0x1ffff 0x400 TARGET Word
+  FLASH.TARGET 0x20000000 0x20000800 0x800 ~~/demo/arm/flash/word/stm32f100.bin
+
+  FLASH.List
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+  
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+
+  IF &progflash 
+  (
+    FLASH.ReProgram ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO

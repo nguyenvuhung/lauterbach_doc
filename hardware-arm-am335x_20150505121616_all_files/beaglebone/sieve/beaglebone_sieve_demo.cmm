@@ -1,0 +1,52 @@
+; --------------------------------------------------------------------------------
+; @Title: Start-Up Script for BeagleBone Board
+; @Description:
+;   This demo demonstrates the debugging of the Cortex-A8 core of the AM3359
+;   using a simple sieve demo loaded to the SRAM.
+; @Keywords: AM335x, BeagleBone, Cortex-A8, STM, trace
+; @Author: JBO
+; @Board: BeagleBone
+; @Chip: AM335*
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: beaglebone_sieve_demo.cmm 8293 2015-04-07 13:40:20Z hlohn $
+
+  WinCLEAR
+  AREA.CLEAR
+  SYStem.RESet
+  Break.RESet
+  TRANSlation.RESet
+  sYmbol.RESet
+  MAP.RESet
+
+; Basic setup
+  SYStem.CPU AM3359
+  SYStem.Up
+
+; disable_watchdog
+  Data.Set ASD:0x44E35048 %LE %Long 0x0000AAAA   ;write magic1 to WDT_WSPR
+  Data.Set ASD:0x44E35048 %LE %Long 0x00005555   ;write magic2 to WDT_WSPR
+
+; Load demo application
+  Data.LOAD.Elf "~~~~/beaglebone_sieve_demo.axf"
+  Register.Init
+  Register.Set PC main
+  Register.Set R13 0x402fa000
+
+; Configure onchip trace
+  ETM.RESet
+  Onchip.RESet
+  ETM.ON
+  Trace.Method Onchip
+
+; open some windows
+  WinCLEAR
+  WinPOS 0% 0% 100% 50%
+  List.auto
+  WinPOS 0% 50% 50% 50%
+  Frame /Locals /Caller
+  WinPOS 50% 50% 50% 50%
+  Var.Watch
+  Var.AddWatch ast; flags;
+
+ENDDO

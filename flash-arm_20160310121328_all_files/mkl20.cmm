@@ -1,0 +1,311 @@
+; --------------------------------------------------------------------------------
+; @Title: Generic script for Freescale MKL2* internal flash
+;
+; @Description:
+;
+; Example for flash declaration of Freescale MKL24, MKL25, MKL26 and MKL27 
+; internal flash.
+;
+; Script arguments:
+;
+;   DO mkl2 [PREPAREONLY] [CPU=<cpu>] [DUALPORT=0|1] [MASSERASE]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;             example
+;
+;     CPU=<cpu> selects CPU derivative <cpu>. <cpu> can be CPU name out of the
+;             table listed below. For these derivatives the flash declaration
+;             is done by the script.
+;
+;     DUALPORT default value is 0 (disabled). If DualPort mode is enabled
+;             flash algorithm stays running until flash programming is
+;             finished. Data is tranferred via dual port memory access. 
+;
+;     MASSERASE forces mass erase of device before establishing debug connection
+;
+; For example:
+;
+;   DO ~~/demo/arm/flash/mkl20 CPU=MKL25Z128VFM4  DUALPORT=1 PREPAREONLY
+;
+; List of MKL24/MKL25/MKL26/MKL27 derivatives and their configuration:
+;
+;   CPU-Type       ProgFlash   RamSize
+;                    [Byte]     [Byte]
+; --------------------------------------------------------------------------------
+;   MKL24Z32VFM4      32kB        4kB
+;   MKL24Z32VFT4      32kB        4kB
+;   MKL24Z32VLH4      32kB        4kB
+;   MKL24Z32VLK4      32kB        4kB
+;   MKL24Z64VFM4      64kB        8kB
+;   MKL24Z64VFT4      64kB        8kB
+;   MKL24Z64VLH4      64kB        8kB
+;   MKL24Z64VLK4      64kB        8kB
+; --------------------------------------------------------------------------------
+;   MKL25Z32VFM4      32kB        4kB
+;   MKL25Z32VFT4      32kB        4kB
+;   MKL25Z32VLH4      32kB        4kB
+;   MKL25Z32VLK4      32kB        4kB
+;   MKL25Z64VFM4      64kB        8kB
+;   MKL25Z64VFT4      64kB        8kB
+;   MKL25Z64VLH4      64kB        8kB
+;   MKL25Z64VLK4      64kB        8kB
+;   MKL25Z128VFM4    128kB       16kB
+;   MKL25Z128VFT4    128kB       16kB
+;   MKL25Z128VLH4    128kB       16kB
+;   MKL25Z128VLK4    128kB       16kB
+; --------------------------------------------------------------------------------
+;   MKL26Z32VFM4      32kB        4kB
+;   MKL26Z32VFT4      32kB        4kB
+;   MKL26Z32VLH4      32kB        4kB
+;   MKL26Z64VFM4      64kB        8kB
+;   MKL26Z64VFT4      64kB        8kB
+;   MKL26Z64VLH4      64kB        8kB
+;   MKL26Z128CAL4    128kB       16kB
+;   MKL26Z128VFM4    128kB       16kB
+;   MKL26Z128VFT4    128kB       16kB
+;   MKL26Z128VLH4    128kB       16kB
+;   MKL26Z128VLL4    128kB       16kB
+;   MKL26Z128VMC4    128kB       16kB
+;   MKL26Z128VMP4    256kB       32kB
+;   MKL26Z256VLH4    256kB       32kB
+;   MKL26Z256VLL4    256kB       32kB
+;   MKL26Z256VMC4    256kB       32kB
+;   MKL26Z256VMP4    256kB       32kB
+; --------------------------------------------------------------------------------
+;   MKL27Z32VFM4      32kB        4kB
+;   MKL27Z64VFM4      64kB        8kB
+;   MKL27Z32VDA4      32kB        4kB
+;   MKL27Z64VDA4      64kB        8kB
+;   MKL27Z32VFT4      32kB        4kB
+;   MKL27Z64VFT4      64kB        8kB
+;   MKL27Z32VMP4      32kB        4kB
+;   MKL27Z64VMP4      64kB        8kB
+;   MKL27Z32VLH4      32kB        4kB
+;   MKL27Z64VLH4      64kB        8kB
+;   MKL27Z128VFM4    128kB       32kB
+;   MKL27Z256VFM4    256kB       32kB
+;   MKL27Z128VFT4    128kB       32kB
+;   MKL27Z256VFT4    256kB       32kB
+;   MKL27Z128VLH4    128kB       32kB
+;   MKL27Z256VLH4    256kB       32kB
+;   MKL27Z128VMP4    128kB       32kB
+;   MKL27Z256VMP4    256kB       32kB
+;
+; Flash Configuration Field:
+;
+;   Byte address    Width   Description
+; --------------------------------------------------------------------------------
+;   0x0400--0x0407    8    Backdoor Comparison Key.
+;   0x0408--0x040B    4    Program flash protection bytes (FPROT0-3).
+;   0x040F            1    Program flash only devices: Reserved
+;                          FlexNVM devices: Data flash protection byte
+;                          (FDPROT).
+;   0x040E            1    Program flash only devices: Reserved
+;                          FlexNVM devices: EEPROM protection byte
+;                          (FEPROT).
+;   0x040D            1    Flash nonvolatile option byte (FOPT).
+;   0x040C            1    Flash security byte (FSEC).
+;
+;   Flash Configuration Field can be programmed using FLASH.AUTO command 
+;   with /CENSORSHIP option.
+;
+; @Chip: MKL24* MKL25* MKL26* MKL27*
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 3274 $
+; $Id: mkl20.cmm 3274 2015-04-29 08:30:26Z fcaron $
+;
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly &param_masserase &param_cpu
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  &param_masserase=(STRing.SCAN(STRing.UPpeR("&parameters"),"MASSERASE",0)!=-1)
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  LOCAL &param_dualport
+  &param_dualport=0
+  IF VERSION.BUILD.BASE()>=43441.
+    &param_dualport=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"DUALPORT=","0")
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF (SYStem.MODE()<5)||&param_masserase
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(MKL2*)
+      SYStem.CPU MKL2*
+
+    SYStem.CONFIG.DEBUGPORTTYPE SWD
+
+    IF &param_masserase
+      GOSUB MassErase
+
+    ON.ERROR GOSUB Unsecure
+    SYStem.Up
+    ON.ERROR
+  )
+
+  ; Unsecure device
+  IF (Data.Long(EDBG:0x40000100)&0x04)==0x04
+    GOSUB Unsecure
+
+  ; Disable watchdog
+  ON.ERROR GOSUB Unsecure
+  GOSUB DisableWatchdog
+  ON.ERROR
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration &param_dualport
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+
+    ; Disable watchdog
+    GOSUB DisableWatchdog
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Disable watchdog
+
+DisableWatchdog:
+
+  Data.Set SD:0x40048100 %Long 0x00000000 ; this register can only be accessed once after reset.
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Try to unsecure a secured device
+
+Unsecure:
+  IF VERSION.BUILD()<48722.
+    DO ~~~~/kinetis-unsecure
+  ELSE
+  (
+    ; Print security state information
+    SYStem.Mode.Prepare
+    PRINT "MDM-AP Status Register is 0x" Data.Long(EDBG:0x40000100)
+
+    DIALOG.YESNO "Execute mass erase to unsecure chip?"
+    LOCAL &masserase
+    ENTRY &masserase
+    IF &masserase
+    (
+      ON.ERROR DEFault
+
+      ; Unsecure device
+      SYStem.Down
+      FLASH.UNSECUREerase
+      SYStem.Mode.Prepare
+      IF (Data.Long(EDBG:0x40000100)&0x04)==0x04
+      (
+        PRINT %ERROR "Unsecure failed, MDM-AP Status Register is 0x" Data.Long(EDBG:0x40000100)
+        SYStem.Down
+        ENDDO
+      )
+    )
+    ELSE
+      ENDDO
+  )
+
+  SYStem.Up
+
+  ; Disable watchdog
+  GOSUB DisableWatchdog
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Try to mass erase the device
+
+MassErase:
+  IF VERSION.BUILD.BASE()<49714.
+    DO ~~~~/kinetis-unsecure
+  ELSE
+  (
+    ; Mass erase device by unsecure command
+    SYStem.Down
+    FLASH.UNSECUREerase
+    SYStem.Mode.Prepare
+    IF (Data.Long(EDBG:0x40000100)&0x24)!=0x20
+    (
+      PRINT %ERROR "Mass erase failed, MDM-AP Status Register is 0x" Data.Long(EDBG:0x40000100)
+      SYStem.Down
+      ENDDO
+    )
+  )
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &DualPort
+  ENTRY &DualPort
+
+  LOCAL &PFlashSize
+
+  ; Setup configuration values
+  IF CPUIS("MKL2?Z32V*")
+    &PFlashSize=0x8000
+  ELSE IF CPUIS("MKL2?Z64V*")
+    &PFlashSize=0x10000
+  ELSE IF CPUIS("MKL2?Z128*")
+    &PFlashSize=0x20000
+  ELSE IF CPUIS("MKL2?Z256V*")
+    &PFlashSize=0x40000
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is not supported by the script"
+    ENDDO
+  )
+
+  ; Program Flash
+  IF &PFlashSize>=0x8000
+    FLASH.Create 1. 0x00000000--0x00007FFF 0x400 TARGET Long /KEEP 0x3FC--0x3FF
+  IF &PFlashSize>=0x10000
+    FLASH.Create 1. 0x00008000--0x0000FFFF 0x400 TARGET Long
+  IF &PFlashSize>=0x20000
+    FLASH.Create 1. 0x00010000--0x0001FFFF 0x400 TARGET Long
+  IF &PFlashSize>=0x40000
+    FLASH.Create 1. 0x00020000--0x0003FFFF 0x400 TARGET Long
+
+  IF &DualPort==0
+    FLASH.TARGET 0x1FFFFC00 0x20000400 0x400 ~~/demo/arm/flash/long/ftfa.bin
+  ELSE
+    FLASH.TARGET 0x1FFFFC00 EAHB:0x20000400 0x400 ~~/demo/arm/flash/long/ftfa.bin /DualPort
+
+  RETURN

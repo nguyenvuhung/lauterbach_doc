@@ -1,0 +1,104 @@
+; --------------------------------------------------------------------------------
+; @Title: BCM53344 Serial FLASH Programming Script
+; @Description:
+; Serial FLASH (Numonyx, N25Q256) is connected the QSPI0 
+; (Serial Peripheral Interface)
+;
+; SDRAM    : 0x1b000000
+; Serial FLASH Controller Addr: 0x18027000  
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: BCM5334X
+; @Keywords: Numonyx N25Q256 FLASH SPI
+; --------------------------------------------------------------------------------
+; $Id: bcm53344-spi.cmm 3415 2015-09-22 12:02:18Z jjeong $
+
+RESet
+SYStem.CPU BCM5334X
+SYStem.Mode.Attach
+
+IF RUN()
+Break.direct
+	
+PER.Set.simple C15:0x1 %Long Data.Long(C15:0x1)&~0x1005
+
+Data.Set AZSD:0x18027200 %LE %Long 0x0A  ;SPCR0_LSB  Serial Clock, 10Mhz
+
+Data.Set AZSD:0x18027008 %LE %Long 0x1   ; SPI by MSPI not BSPI
+Data.Set AZSD:0x18027204 %LE %Long 0xA3  ; 8bits transfer, CPOL=1, CPHA=1
+
+Data.Set AZSD:0x18027210 %LE %Long 0x0  ; new qp
+Data.Set AZSD:0x18027214 %LE %Long 0x7  ; end qp
+
+
+//FLASH READ ID TEST
+AREA.CLEAR
+AREA.view
+GOSUB READ_ID_TEST
+DIALOG.YESNO "the flash id is correct on AREA window?"
+ENTRY &result
+IF !&result
+(
+PRINT "pls, check your register configuration to enable your flash controller"
+ENDDO
+)
+
+//S(D)RAM TEST for algorithm file
+GOSUB SDRAM_INIT
+Data.Test 0x1b000000++0x3FFF  /Prime ;s(d)ram test
+IF FOUND()
+( 
+PRINT "s(d)ram is NOT initialized around 0x" ADDRESS.OFFSET(TRACK.ADDRESS())
+ENDDO
+)
+
+programFlash:
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  FLASHFILE.CONFIG  0x18027000  0x0 0x0
+
+// FLASHFILE.TARGET <<code range>>    <<data range>>    <<algorithm file>>
+  FLASHFILE.TARGET 0x1b000000++0x1FFF  0x1b002000++0x1FFF    ~~/demo/arm/flash/byte/spi4b64fs_bcm4708x.bin   /KEEP
+
+  FLASHFILE.GETID
+  FLASHFILE.DUMP 0x0
+
+  ;FLASHFILE.unlock 0x0--0xFFFFFF
+  ;FLASHFILE.erase 0x0--0xFFFFF
+  ;FLASHFILE.load * 0x0
+  ;FLASHFILE.load * 0x0  /ComPare
+ENDDO
+
+READ_ID_TEST:
+
+//write
+Data.Set AZSD:0x18027240 %LE %Long 0x9F  ;tx
+Data.Set AZSD:0x18027248 %LE %Long 0x01  ;tx
+Data.Set AZSD:0x18027250 %LE %Long 0x02  ;tx
+Data.Set AZSD:0x18027258 %LE %Long 0x03  ;tx
+
+Data.Set AZSD:0x18027340 %LE %Long 0xC0  ;cmd
+Data.Set AZSD:0x18027344 %LE %Long 0xC0  ;cmd
+Data.Set AZSD:0x18027348 %LE %Long 0xC0  ;cmd
+Data.Set AZSD:0x1802734C %LE %Long 0xC0  ;cmd
+Data.Set AZSD:0x18027350 %LE %Long 0xC0  ;cmd
+Data.Set AZSD:0x18027358 %LE %Long 0xC0  ;cmd
+
+Data.Set AZSD:0x18027210 %LE %Long 0x0  ;new qp
+Data.Set AZSD:0x18027214 %LE %Long 0x3  ;end qp
+
+Data.Set AZSD:0x18027218 %LE %Long 0x40  ; QSPI_MSPI_SPCR2  //enable
+
+//Read
+PRINT "Read 1st = 0x" Data.Long(A:0x180272C4)
+PRINT "Read 2nd = 0x" Data.Long(A:0x180272CC) " (Manufacture ID)"
+PRINT "Read 3rd = 0x" Data.Long(A:0x180272D4) " (Device ID)"
+PRINT "Read 4th = 0x" Data.Long(A:0x180272DC)
+
+RETURN
+
+SDRAM_INIT:
+RETURN

@@ -1,0 +1,92 @@
+; --------------------------------------------------------------------------------
+; @Title: i.MX51 eMMC FLASH Programming Script
+; @Description:
+; eMMC FLASH(Numonyx, NAND16GXH) is connected eSDHC3
+; 
+; S(D)RAM: 0x20000000
+; eSDHC3 Register : 0x70020000   
+;
+; 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: iMX515
+; @Keywords: Numonyx NAND16GXH flash eMMC
+; --------------------------------------------------------------------------------
+; $Id: imx51-emmc.cmm 3172 2015-02-17 11:24:33Z jjeong $
+
+  AREA.RESet
+  AREA.view
+  
+//SYStem configuration
+  SYStem.CPU iMX515
+  SYStem.Option ResBreak ON    
+  SYStem.Option EnReset OFF    
+  SYStem.JtagClock 20MHz       
+
+  SYStem.Mode Up
+
+  PER.Set.simple C15:0x1 %Long  (Data.Long(C15:0x1)&~(0x5))  ; disable interrupt and mmu
+
+  GOSUB init_emmc
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  FLASHFILE.CONFIG  0x70020000 0x0   0x0
+
+// FLASHFILE.TARGET <<code range>>    <<data range>>      <<algorithm file>>
+  FLASHFILE.TARGET 0x20000000++0x1fff 0x20002000++0x1fff  ~~/demo/arm/flash/byte/emmc_imx6.bin /KEEP
+  
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+ ;FLASHFILE.DUMP 0x0                             ; Read NAND 
+ ;FLASHFILE.ERASE 0x0--0xFFFFF  /EraseBadBlock   ; Erase NAND
+ ;FLASHFILE.LOAD * 0x0  /WriteBadBlock           ; Write NAND
+
+ENDDO
+
+init_emmc:
+
+  PER.Set.simple AD:0x73FD401C %Long 0xA5A2A020
+  PER.Set.simple AD:0x73FD4020 %Long 0x02A5A88A
+  PER.Set.simple AD:0x73FD4024 %Long 0x00C30321
+  PER.Set.simple AD:0x73FD4028 %Long 0x00860041
+
+  PER.Set.simple AD:0x73FA8000 %Long 0x00000000
+  PER.Set.simple AD:0x73FA814C %Long 0x00000005
+  PER.Set.simple AD:0x73FA8150 %Long 0x00000015
+  PER.Set.simple AD:0x73FA8164 %Long 0x00000005
+  PER.Set.simple AD:0x73FA8168 %Long 0x00000005
+  PER.Set.simple AD:0x73FA816C %Long 0x00000005
+  PER.Set.simple AD:0x73FA8170 %Long 0x00000005
+
+  PER.Set.simple AD:0x73FA893C %Long 0x00000001
+  PER.Set.simple AD:0x73FA8940 %Long 0x00000001
+  PER.Set.simple AD:0x73FA8944 %Long 0x00000001
+  PER.Set.simple AD:0x73FA8948 %Long 0x00000001
+
+  PER.Set.simple AD:0x73FA8534 %Long 0x00002014
+  PER.Set.simple AD:0x73FA8538 %Long 0x00002014
+  PER.Set.simple AD:0x73FA8550 %Long 0x00002014
+  PER.Set.simple AD:0x73FA8554 %Long 0x00002014
+  PER.Set.simple AD:0x73FA8558 %Long 0x00002014
+  PER.Set.simple AD:0x73FA854C %Long 0x00002014
+
+RETURN
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

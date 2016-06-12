@@ -1,0 +1,147 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of ST STM32L4xx internal flash
+; @Description:
+;   Script arguments:
+;
+;    DO stm32l476 [PREPAREONLY] [CPU=<cpu>]
+;
+;      PREPAREONLY only declares flash but does not execute flash programming
+;
+;      CPU=<cpu> selects CPU derivative <cpu>
+;
+;   Example:
+;
+;   DO ~~/demo/arm/flash/stm32l4xx CPU=STM32L476ZG PREPAREONLY
+;
+;   List of STM32L4xx derivatives and their configuration:
+;
+;     CPU-Type        Flash size   Page size    SRAM size
+;                       [Byte]      [Byte]        [Byte]
+; --------------------------------------------------------------------------------
+;     STM32L476JG       0x100000     0x800       0x20000
+;     STM32L476QE        0x80000     0x800       0x20000
+;     STM32L476QG       0x100000     0x800       0x20000
+;     STM32L476RC        0x40000     0x800       0x20000
+;     STM32L476RE        0x80000     0x800       0x20000
+;     STM32L476RG       0x100000     0x800       0x20000
+;     STM32L476VC        0x40000     0x800       0x20000
+;     STM32L476VE        0x80000     0x800       0x20000
+;     STM32L476VG       0x100000     0x800       0x20000
+;     STM32L476ZE        0x80000     0x800       0x20000
+;     STM32L476ZG       0x100000     0x800       0x20000
+;     STM32L486QG       0x100000     0x800       0x20000
+;     STM32L486RG       0x100000     0x800       0x20000
+;     STM32L486VG       0x100000     0x800       0x20000
+;     STM32L486ZG       0x100000     0x800       0x20000
+;
+; @Author: FLC
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 3273 $
+; $Id: stm32l4xx.cmm 3273 2015-04-29 08:23:24Z fcaron $
+
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly &param_cpu
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(STM32L4*)
+      SYStem.CPU STM32L4*
+    
+    SYStem.Option.ResBreak OFF
+    SYStem.Up
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+ ; -------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+    
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &FlashSize &FlashDriver
+
+  IF CPUIS("STM32L476?C")
+  (
+    &FlashSize=0x40000
+    &FlashDriver="stm32l4c.bin"
+  )
+  ELSE IF CPUIS("STM32L476?E")
+  (
+    &FlashSize=0x80000
+    &FlashDriver="stm32l4e.bin"
+  )
+  ELSE IF CPUIS("STM32L476?G")||CPUIS("STM32L486??")
+  (
+    &FlashSize=0x100000
+    &FlashDriver="stm32l4g.bin"
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  IF &FlashSize==0x40000
+  (
+    FLASH.Create  1. 0x08000000--0x0801FFFF 0x800 TARGET Quad
+    FLASH.Create  2. 0x08020000--0x0803FFFF 0x800 TARGET Quad
+  )
+  ELSE IF &FlashSize==0x80000
+  (
+    FLASH.Create  1. 0x08000000--0x0803FFFF 0x800 TARGET Quad
+    FLASH.Create  2. 0x08040000--0x0807FFFF 0x800 TARGET Quad
+  )
+  ELSE IF &FlashSize==0x100000
+  (
+    FLASH.Create  1. 0x08000000--0x0807FFFF 0x800 TARGET Quad
+    FLASH.Create  2. 0x08080000--0x080FFFFF 0x800 TARGET Quad
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+  
+  FLASH.TARGET 0x20000000 0x20001000 0x1000 ~~/demo/arm/flash/byte/&FlashDriver
+  
+  RETURN

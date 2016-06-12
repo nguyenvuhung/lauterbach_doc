@@ -1,0 +1,131 @@
+; @Title: XMC4500 (Infineon) SPI FLASH Program script
+; @Description:
+; XMC4500 CPU_45A_V2 on-board qspi flash chip (S25FL032P)
+;
+; SRAM: 0x20000000
+; QuadSPI(controller) Base: 0x48020200
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: xmc4*
+; @Keywords: S25FL032 Spansion Flash SPI QuadSPI
+; $Id: xmc4500-spi64.cmm 2881 2014-07-07 10:35:48Z kjmal $
+;
+
+Break.RESet
+SYStem.RESet
+SYStem.CPU XMC4500
+SYStem.Option ResBreak OFF
+SYStem.CONFIG.DEBUGPORTTYPE SWD
+SYStem.CONFIG.CONNECTOR MIPI20T
+SYStem.MemAccess DAP
+SYStem.Option DUALPORT ON
+SYStem.Up
+
+//SPI001_init
+Data.Set 0x50004420 %Long 0x80
+Data.Set 0x4802020C %Word 0x7  ; USICRegs->KSCFG
+Data.Set 0x48020210 %Long 0x8000   ; /* Normal divider mode selected */
+Data.Set 0x48020210 %Long 0x03FF83FF  ;USICRegs->FDR 
+Data.Set 0x48020214 %Long 0x40007880  ;USICRegs->BRG 
+Data.Set 0x48020234 %Long 0x0E2F0103  ;USICRegs->SCTR
+Data.Set 0x48020238 %Long 0x500 ; 
+Data.Set 0x4802023C %Long 0x02072F ; USICRegs->PCR_SSCMode
+Data.Set 0x48020308 %Long 0x100   ;USICRegs->TBCTR
+Data.Set 0x4802030C %Long 0x10000100   ;USICRegs->RBCTR
+Data.Set 0x48020240 %Long 0x1          ;USICRegs->CCR
+Data.Set 0x48028344 %Long 0x02222222   ;PORT3->PDR1
+Data.Set 0x4802831C %Long 0x0  ;PORT3->IOCR12
+Data.Set 0x48028044 %Long 0x22022222  ;PORT0->PDR1
+Data.Set 0x48028340 %Long 0x22220222    ;PORT3->PDR0
+
+//DAVE_MUX_Init
+Data.Set 0x4802021C %Long 0x1          ;USIC1_CH1->DX0CR
+Data.Set 0x48020308 %Long 0x01000102   ;USIC1_CH1->TBCTR
+Data.Set 0x4802030C %Long 0x11000100   ;USIC1_CH1->RBCTR
+Data.Set 0x4802801C %Long     0x9000   ;PORT0->IOCR12
+Data.Set 0x48028310 %Long     0x90000000  ;PORT3->IOCR0
+Data.Set 0x48028318 %Long     0x8000   ;PORT3->IOCR8
+Data.Set 0x4802831C %Long     0x90000000  ;PORT3->IOCR12
+
+Data.Set D:0x48020214 %Long 0x40107880  ;clk
+Data.Set D:0x48020234 %Long 0x71F0103  ;
+;Data.Set D:0x48020238 %Long 0x04002520  ;start of frame
+Data.Set D:0x4802021C %Long 0x11  ; DX0CR , Data input line
+
+//FLASH READ ID TEST
+AREA.CLEAR
+AREA.view
+GOSUB READ_ID_TEST
+DIALOG.YESNO "the flash id is correct on AREA window?"
+ENTRY &result
+IF !&result
+(
+PRINT "pls, check your register configuration to enable your flash controller"
+ENDDO
+)
+
+//S(D)RAM TEST for algorithm file
+GOSUB SDRAM_INIT
+Data.Test 0x20000000++0x3FFF  /Prime ;s(d)ram test
+IF FOUND()
+( 
+PRINT "s(d)ram is NOT initialized around 0x" ADDRESS.OFFSET(TRACK.ADDRESS())
+ENDDO
+)
+
+programFlash:
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.CONFIG <QuadSPI Base> 
+  FLASHFILE.CONFIG  0x48020200
+
+//FLASHFILE.TARGET <Code_range>        <Data_range>          <Algorithm file>
+  FLASHFILE.TARGET 0x20000000++0x1FFF  0x20002000++0x1FFF    ~~/demo/arm/flash/byte/spi64_xmc4000.bin  /KEEP  /STACKSIZE 0x400
+
+  FLASHFILE.GETID
+  FLASHFILE.UNLOCK 0x0--0xFFFFFF
+  FLASHFILE.DUMP 0x0
+
+//Erase Serial FLASH  
+  ;FLASHFILE.ERASE 0x0--0xFFFFF
+
+//Write
+  ;FLASHFILE.LOAD   * 0x0
+  ;FLASHFILE.LOAD   * 0x0  /ComPare   ;verify
+
+ENDDO
+
+
+READ_ID_TEST:
+
+Data.Set A:48020380 %Long 0x9F  ;write
+Data.Set 0x4802024C %Long 0xC000
+PRINT "1st 0x" Data.Word(A:4802031C)
+Data.Set 0x4802024C %Long 0xC000
+
+Data.Set A:48020380 %Long 0xFF  ;write
+Data.Set 0x4802024C %Long 0xC000
+PRINT "2nd 0x" Data.Word(A:4802031C)   " (Manufacture)"
+Data.Set 0x4802024C %Long 0xC000
+
+Data.Set A:48020380 %Long 0xFF  ;write
+Data.Set 0x4802024C %Long 0xC000
+PRINT "3rd 0x" Data.Word(A:4802031C)   " (Device ID)"
+Data.Set 0x4802024C %Long 0xC000
+
+Data.Set D:0x48020238 %Long 0x04002540  ;end of frame
+
+PER.Set.simple A:48020380 %Long 0xFF  ;write
+Data.Set 0x4802024C %Long 0xC000
+PRINT "4th 0x" Data.Word(A:4802031C)
+Data.Set 0x4802024C %Long 0xC000
+
+RETURN
+
+
+SDRAM_INIT:
+
+RETURN
+

@@ -1,0 +1,561 @@
+; --------------------------------------------------------------------------------
+; @Title: DM365 eMMC FLASH Programming Script
+; @Description:
+;   FLASH Type: eMMC FLASH(Numonyx, NAND16GXH) connected to the MMC controller
+;
+;   SDRAM: 0x80002000
+;   MMC Controller Register : 0x01D11000      
+;
+; @Author: jjeong
+; @Chip: TMS320DM365
+; @Keywords: Numonyx NAND16GXH Davinci
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: dm365-emmc.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+
+SYStem.Down
+SYStem.JtagClock 1Mhz
+
+SYStem.RESet
+SYStem.CPU DM365
+SYStem.Option.ResBreak OFF
+SYStem.JtagClock 1Mhz
+SYStem.Mode go
+WAIT 1.s
+IF run()
+Break.direct
+
+GOSUB Define_RegisterMap
+GOSUB Startup_DM365EVM
+
+PER.Set.simple ASD:0x1C48018 %Long 0x4000000  ;INT26 Enable for MMC0
+
+//Init MMC Card
+Data.Set    0x01D11004  %Long 0x0117  ; MMC CLK
+Data.Set    0x01D11074  %Long Data.Long(SD:0x01D11074)&0xFFFB
+Data.Set    0x01D11000  %Long 0x0007  ; MMCCTL
+Data.Set    0x01D11000  %Long 0x0000   ;MMCCTL
+Data.Set    0x01D11014  %Long 0x00FF   ;MMCTOR
+Data.Set    0x01D11018  %Long 0xFFFF   ;MMCTOD
+
+  FLASHFILE.RESet
+  Break.RESet
+
+//FLASHFILE.CONFIG <MMC Controller Base>  0x0   0x0
+  FLASHFILE.CONFIG 0x01D11000    0x0    0x0
+
+//FLASHFILE.TARGET <Code Range>       <Data Range>        <Algorithm File>
+  FLASHFILE.TARGET 0x80002000++0x1FFF 0x80004000++0x1FFF  ~~/demo/arm/flash/byte/emmc_dm365.bin
+
+//Read FLASH Manufacture and Device ID  
+  FLASHFILE.GETID   ; Read FLASH Manufacture and Device ID
+ 
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+   
+  //Erase FLASH 
+   ;FLASHFILE.ERASE 0x0--0xFFFFFF  
+ 
+  //Write FLASH
+    FLASHFILE.LOAD.binary  * 0x0 
+   
+  //Verify FLASH
+   ;FLASHFILE.LOAD  * 0x0  /ComPare
+  )
+  //Dump FLASH
+  FLASHFILE.DUMP 0x0
+ 
+ENDDO 
+
+
+
+Startup_DM365EVM:
+
+  IF (Data.Long(SD:0x01C408E4)*0x3!=0x0)  //  Only initialize on cold boot (RSTYPE field)
+  (
+    PRINT "VPSS Sync Reset Fix"
+    Data.Set &VPSS_CLKCTL %Long 0x80
+    GOSUB psc_change_state  47. 0x1
+    GOSUB psc_change_state  47. 0x1
+    Data.Set &GPINT_GPEN %Long 0x00020000         
+    Data.Set &GPTDAT_GPDIR %Long 0x00020002
+  )
+
+  Data.Set &PERI_CLKCTL  %Long 0x243F0FF8          // Peripheral Clock control
+
+  GOSUB Disable_IRQ_Flush_Cache
+  GOSUB Setup_Psc_All_On
+  GOSUB Setup_Pin_Mux                   // Setup Pin Mux
+  GOSUB Setup_PLL1                      // Configure DDR
+  GOSUB Setup_PLL2                      // Confogire ARM
+  GOSUB Setup_DDR2                      // Configure DDR2 controller
+//  GOSUB Setup_AEMIF                     // Setup AEMIF (CE0 and CE1)
+
+  SYStem.JtagClock 10.Mhz
+
+  PRINT "Startup Complete." 
+  PRINT ""
+  
+RETURN
+
+Setup_Psc_All_On:
+
+  LOCAL &i
+  &i=0x0
+
+  PRINT "Setup Power Modules (All on)... " 
+
+  RePeaT 53.
+  (
+
+    IF &i!=41.
+    (
+      GOSUB psc_change_state &i 0x3
+    )
+    &i=&i+0x1
+  )
+
+  GOSUB psc_change_state 41. 0x3
+
+  PRINT "[Done]" 
+
+RETURN
+
+
+
+psc_change_state:
+  LOCAL &id 
+  LOCAL &state
+
+  ENTRY &id &state
+
+  LOCAL &PSC_PTCMD
+  LOCAL &PSC_PTSTAT
+  LOCAL &mdstat
+  LOCAL &mdctl
+
+  &PSC_PTCMD=0x01c41120
+  &PSC_PTSTAT=0x01c41128
+
+  &mdstat=0x01c41800+(0x4*&id)
+  &mdctl=0x01c41a00+(0x4*&id)
+
+  IF (Data.Long(SD:&mdstat)&0x1F)==&state
+    RETURN
+  WAIT 10.ms
+
+  Data.Set &mdctl %Long Data.Long(SD:&mdctl)&~0x1F
+  Data.Set &mdctl %Long Data.Long(SD:&mdctl)|&state
+  
+  Data.Set &PSC_PTCMD %Long Data.Long(SD:&PSC_PTCMD)|0x1
+  
+  WAIT 10.ms
+
+RETURN
+
+
+Disable_IRQ_Flush_Cache:
+RETURN
+
+Setup_Pin_Mux:
+
+    PRINT "Setup PinMux... " 
+
+    Data.Set &PINMUX0 %Long 0x00FD0000  // Video Yin, SD0, McBSP, SD1_CLK
+    Data.Set &PINMUX1 %Long 0x00145555  // Video Cout, EXTCLK, FIELD
+    Data.Set &PINMUX2 %Long 0x00000055  // EMIFA
+    Data.Set &PINMUX3 %Long 0x375AFFFF  // SPI0, I2C, UART0, ENET, MDIO
+    Data.Set &PINMUX4 %Long 0x55556555  // SD1, SPI1, SPI2, SPI4, USBDRVVBUS    
+
+    PRINT "[Done]"
+
+RETURN 
+
+
+Setup_PLL1:
+
+LOCAL &pll_ctl     
+LOCAL &pll_secctl  
+LOCAL &pll_pllm    
+LOCAL &pll_prediv  
+LOCAL &pll_cmd     
+LOCAL &pll_stat    
+LOCAL &pll_div1    
+LOCAL &pll_div2    
+LOCAL &pll_div3    
+LOCAL &pll_postdiv 
+LOCAL &pll_div4    
+LOCAL &pll_div5    
+LOCAL &pll_div6    
+LOCAL &pll_div7    
+LOCAL &pll_div8    
+LOCAL &pll_div9
+LOCAL &regValue
+   
+&pll_ctl=0x01c40900 
+&pll_secctl=0x01c40908 
+&pll_pllm=0x01c40910 
+&pll_prediv=0x01c40914 
+&pll_cmd=0x01c40938 
+&pll_stat=0x01c4093c 
+&pll_div1=0x01c40918 
+&pll_div2=0x01c4091c 
+&pll_div3=0x01c40920 
+&pll_postdiv=0x01c40928 
+&pll_div4=0x01c40960 
+&pll_div5=0x01c40964 
+&pll_div6=0x01c40968 
+&pll_div7=0x01c4096C 
+&pll_div8=0x01c40970 
+&pll_div9=0x01c40974 
+   
+
+   PRINT  "Setup PLL0... "
+
+    Data.Set &pll_ctl %Long Data.Long(sd:&pll_ctl)&~0x0002              // Power up PLL
+    Data.Set &pll_ctl %Long Data.Long(sd:&pll_ctl)|0x0010              // Put PLL in disable mode
+    Data.Set &pll_ctl %Long Data.Long(sd:&pll_ctl)&~0x0010              // Take PLL out of disable mode
+    
+    
+    Data.Set &pll_ctl %Long Data.Long(sd:&pll_ctl)&~0x0100;             // Onchip Oscillator
+//    *pll_ctl |=0x0100;              // External Oscillator
+    Data.Set &pll_ctl %Long Data.Long(sd:&pll_ctl)&~0x0020;             // Clear PLLENSRC
+    Data.Set &pll_ctl %Long Data.Long(sd:&pll_ctl)&~0x0001;             // Set PLL in bypass
+    WAIT 200.ms
+
+    Data.Set &pll_ctl %Long Data.Long(sd:&pll_ctl)|0x0008;              // Assert PLL reset
+    Data.Set &pll_ctl %Long Data.Long(sd:&pll_ctl)&~0x0008;             // Take PLL out of reset
+
+    Data.Set &pll_ctl %Long Data.Long(sd:&pll_ctl)&~0x0010;             // Enable PLL
+    WAIT 150.ms
+
+
+//    /* PLLOUT=(OSCIN / prediv) * 2 * (pllm / postdiv)=(24/8) * 2 * (81/1)=486MHz */
+    Data.Set &pll_pllm %Long 81.
+    Data.Set &pll_prediv %Long 0x8007
+   
+    WAIT 100.ms
+
+    Data.Set &pll_secctl %Long 0x00470000 
+    Data.Set &pll_secctl %Long 0x00460000
+    Data.Set &pll_secctl %Long 0x00400000
+    Data.Set &pll_secctl %Long 0x00410000
+    Data.Set &pll_postdiv %Long 0x8000
+    
+    Data.Set &pll_div3 %Long 0x8001
+    Data.Set &pll_div4 %Long 0x8003
+    Data.Set &pll_div5 %Long 0x8001
+    Data.Set &pll_div6 %Long 0x8011
+    Data.Set &pll_div7 %Long 0x8000
+    Data.Set &pll_div8 %Long 0x8004
+    Data.Set &pll_div9 %Long 0x8001
+
+    Data.Set &pll_cmd %Long Data.Long(sd:&pll_cmd)|0x0001   
+    
+    WAIT 1.s
+    
+    Data.Set &pll_ctl %Long 0x1
+
+    PRINT "[Done]"
+    
+RETURN
+
+Setup_PLL2:
+
+
+    LOCAL &pll_ctl   
+    LOCAL &pll_secctl
+    LOCAL &pll_pllm  
+    LOCAL &pll_prediv
+    LOCAL &pll_cmd   
+    LOCAL &pll_stat  
+    LOCAL &pll_div1  
+    LOCAL &pll_div2  
+    LOCAL &pll_div3  
+    LOCAL &pll_postdiv 
+    LOCAL &pll_div4  
+    LOCAL &pll_div5  
+    LOCAL &pll_bpdiv 
+    
+    
+     &pll_ctl= 0x01c40d00 
+     &pll_secctl= 0x01c40d08 
+     &pll_pllm= 0x01c40d10 
+     &pll_prediv= 0x01c40d14 
+     &pll_cmd= 0x01c40d38 
+     &pll_stat= 0x01c40d3c 
+     &pll_div1= 0x01c40d18 
+     &pll_div2= 0x01c40d1c 
+     &pll_div3= 0x01c40d20 
+     &pll_postdiv= 0x01c40d28 
+     &pll_div4= 0x01c40d60
+     &pll_div5= 0x01c40d64
+     &pll_bpdiv= 0x01c40d2c
+ 
+    PRINT  "Setup PLL1... ";
+
+    Data.Set &pll_ctl %Long Data.Long(sd:&pll_ctl)&~0x0002;              // Power up PLL
+    Data.Set &pll_ctl %Long Data.Long(sd:&pll_ctl)|0x0010;              // Put PLL in disable mode
+    Data.Set &pll_ctl %Long Data.Long(sd:&pll_ctl)&~0x0010;              // Take PLL out of disable mode
+
+    Data.Set &pll_ctl %Long Data.Long(sd:&pll_ctl)&~0x0100;             // Onchip Oscillator
+//    *pll_ctl |= 0x0100;              // External Oscillator
+    Data.Set &pll_ctl %Long Data.Long(sd:&pll_ctl)&~0x0020;             // Clear PLLENSRC
+    Data.Set &pll_ctl %Long Data.Long(sd:&pll_ctl)&~0x0001;             // Set PLL in bypass
+    WAIT 150.ms
+
+    Data.Set &pll_ctl %Long Data.Long(sd:&pll_ctl)|0x0008;              // Assert PLL reset
+    Data.Set &pll_ctl %Long Data.Long(sd:&pll_ctl)&~0x0008;             // Take PLL out of reset
+
+    Data.Set &pll_ctl %Long Data.Long(sd:&pll_ctl)&~0x0010;             // Enable PLL
+    WAIT 150.ms                   // Wait for PLL to stabilize
+
+    Data.Set &pll_pllm %Long 99             // PLL out= (24/8) * 99 * 2 / 1= 594MHz
+    Data.Set &pll_prediv %Long  0x8007;           // prediv= 8
+ 
+    Data.Set &pll_postdiv %Long 0x8000;
+   
+    Data.Set &pll_secctl %Long 0x00470000;        // Assert TENABLE= 1, TENABLEDIV= 1, TINITZ= 1 
+    Data.Set &pll_secctl %Long 0x00460000;        // Assert TENABLE= 1, TENABLEDIV= 1, TINITZ= 0 
+    Data.Set &pll_secctl %Long 0x00400000;        // Assert TENABLE= 0, TENABLEDIV= 0, TINITZ= 0 
+    Data.Set &pll_secctl %Long 0x00410000;        // Assert TENABLE= 0, TENABLEDIV= 0, TINITZ= 1
+			     
+    //Divider setting for PLL2 
+    Data.Set &pll_div1 %Long 0x8011;   // 594/18= 33MHz    -> USB (Use AUXCLK from USB PHY Control register)
+    Data.Set &pll_div2 %Long 0x8001;   // 594/2= 297mhz   -> ARM926/HDVICP(Internal)
+    Data.Set &pll_div4 %Long 0x8005;   // 594/6= 99MHz    -> VOICE
+    Data.Set &pll_div5 %Long 0x8007;   // 594/8= 74.25Mhzv-> VENC for HD video  
+    Data.Set &pll_cmd %Long Data.Long(sd:&pll_cmd)|0x0001;              // Set GOSET
+
+    WAIT 1.s 
+
+    Data.Set &pll_ctl %Long Data.Long(sd:&pll_ctl)|0x0001; 
+
+    PRINT "[Done]";
+RETURN
+
+Setup_DDR2:
+    PRINT "Setup DDR2... " ;
+
+    // VTP Caliberation
+    //PWR_DWN bit is made '0', to power the VTP module 
+
+    Data.Set &DDR_PHY_VTP_IOCTRL %Long Data.Long(sd:&DDR_PHY_VTP_IOCTRL)&0xFFFF9F3F
+    Data.Set &DDR_PHY_VTP_IOCTRL %Long Data.Long(sd:&DDR_PHY_VTP_IOCTRL)|0x00002000
+     
+    //&dummy=data.long(sd:&DDR_PHY_VTP_IOCTRL)
+    WAIT 500.ms
+  
+    Data.Set &DDR_PHY_VTP_IOCTRL %Long Data.Long(sd:&DDR_PHY_VTP_IOCTRL)|0x00000080  
+    
+    // Powerdown VTP as it is locked (bit 6)
+    // Set bit VTP_IOPWRDWN bit 14 for DDR input buffers)
+    Data.Set &DDR_PHY_VTP_IOCTRL %Long Data.Long(sd:&DDR_PHY_VTP_IOCTRL)|0x00004040; 
+
+    // DDR2 configuration for 243MHz clock
+    Data.Set &DDRPHYCTL1 %Long 0x000000c5;    //External DQS gatin enabled
+
+   	Data.Set &SDCFG1 %Long 0x0853C832;		
+    Data.Set &SDREF %Long 0x00000768;    // Program SDRAM Refresh Control Register
+    Data.Set &VBUSMP %Long 0x000000FE;	 // VBUSM Burst Priority Register, pr_old_count= 0xFE
+    Data.Set &SDTIM0 %Long 0x3C934B51;    // Program SDRAM Timing Control Register1
+    Data.Set &SDTIM1 %Long 0x4221C722;    // Program SDRAM Timing Control Register2
+    Data.Set &SDCFG1 %Long 0x08534832;    // Program SDRAM Bank Config Register
+
+    GOSUB psc_change_state 13. 0x1
+    GOSUB psc_change_state 13. 0x3
+
+    PRINT "DDR2 init is done for 16-bit Interface "; 
+    PRINT "[Done]" ;
+
+RETURN
+
+Setup_AEMIF:
+
+    Data.Set &AEMIF_AWCCR %Long 0xff;
+
+    Data.Set &AEMIF_A1CR %Long 0x40400204;  // Setup=0, Strobe=4, Hold=0, TA=1, 8-bit
+    Data.Set &AEMIF_NANDFCR Data.Long(SD:&AEMIF_NANDFCR)|0x1;
+
+    Data.Set &AEMIF_A2CR %Long 0x00a00504;  // Setup=0, Strobe=A, Hold=0, TA=1, 8-bit
+    Data.Set &AEMIF_NANDFCR Data.Long(SD:&AEMIF_NANDFCR)&~2;
+
+RETURN
+
+
+Define_RegisterMap:
+
+GLOBAL &SYSTEM_BASE         
+GLOBAL &PINMUX0             
+GLOBAL &PINMUX1             
+GLOBAL &PINMUX2             
+GLOBAL &PINMUX3             
+GLOBAL &PINMUX4             
+GLOBAL &BOOTCFG             
+GLOBAL &ARM_INTMUX          
+GLOBAL &EDMA_INTMUX         
+GLOBAL &DDR_SLEW            
+GLOBAL &UHPI_CTL            
+GLOBAL &DEVICE_ID           
+GLOBAL &VDAC_CONFIG         
+GLOBAL &TIMER64_CTL         
+GLOBAL &USBPHY_CTL          
+GLOBAL &MISC                
+GLOBAL &MSTPRI0             
+GLOBAL &MSTPRI1             
+GLOBAL &VPSS_CLKCTL         
+GLOBAL &PERI_CLKCTL         
+GLOBAL &DEEPSLEEP           
+GLOBAL &DFT_ENABLE          
+GLOBAL &DEBOUNCE0           
+GLOBAL &DEBOUNCE1           
+GLOBAL &DEBOUNCE2           
+GLOBAL &DEBOUNCE3           
+GLOBAL &DEBOUNCE4           
+GLOBAL &DEBOUNCE5           
+GLOBAL &DEBOUNCE6           
+GLOBAL &DEBOUNCE7           
+GLOBAL &VTPIO_CTL           
+GLOBAL &PUPDCTL0            
+GLOBAL &PUPDCTL1            
+GLOBAL &HDIMCOBT            
+GLOBAL &PLL0_CONFIG         
+GLOBAL &PLL1_CONFIG         
+
+GLOBAL &GPINT_GPEN			
+GLOBAL &GPTDAT_GPDIR	
+
+GLOBAL &INTC_FIQ0           
+GLOBAL &INTC_FIQ1           
+GLOBAL &INTC_IRQ0           
+GLOBAL &INTC_IRQ1           
+GLOBAL &INTC_EINT0          
+GLOBAL &INTC_EINT1          
+GLOBAL &INTC_INTCTL         
+GLOBAL &INTC_EABASE    
+
+GLOBAL &DDR_SDBCR           
+GLOBAL &DDR_SDRCR           
+GLOBAL &DDR_SDTIMR          
+GLOBAL &DDR_SDTIMR2         
+GLOBAL &DDR_DDRPHYCR        
+
+GLOBAL &DDR_VTPIOCR         
+GLOBAL &DDR_DDRVTPR         
+GLOBAL &DDR_DDRVTPER        
+GLOBAL &DDR_PHY_VTP_IOCTRL  
+
+GLOBAL &AEMIF_AWCCR        
+GLOBAL &AEMIF_A1CR         
+GLOBAL &AEMIF_A2CR         
+GLOBAL &AEMIF_A3CR         
+GLOBAL &AEMIF_A4CR         
+GLOBAL &AEMIF_NANDFCR      
+
+GLOBAL &SDCFG1
+GLOBAL &SDREF
+GLOBAL &VBUSMP
+GLOBAL &SDTIM0
+GLOBAL &SDTIM1
+GLOBAL &DDRPHYCTL1
+
+&SDCFG1=0x20000008
+&SDREF=0x2000000C
+&VBUSMP=0x20000020
+&SDTIM0=0x20000010
+&SDTIM1=0x20000014
+
+&DDR_SDBCR=0x20000008
+&DDR_SDRCR=0x2000000c 
+&DDR_SDTIMR=0x20000010 
+&DDR_SDTIMR2=0x20000014 
+&DDR_DDRPHYCR=0x200000e4 
+&DDRPHYCTL1=0x200000e4
+
+&DDR_VTPIOCR=0x200000f0 
+&DDR_DDRVTPR=0x01c42030 
+&DDR_DDRVTPER=0x01c4004c 
+&DDR_PHY_VTP_IOCTRL=0x01C40074 
+
+&AEMIF_AWCCR= 0x01d10004 
+&AEMIF_A1CR= 0x01d10010 
+&AEMIF_A2CR= 0x01d10014 
+&AEMIF_A3CR= 0x01d10018 
+&AEMIF_A4CR= 0x01d1001C 
+&AEMIF_NANDFCR= 0x01d10060 
+
+&INTC_FIQ0=0x01c48000 
+&INTC_FIQ1=0x01c48004 
+&INTC_IRQ0=0x01c48008 
+&INTC_IRQ1=0x01c4800c 
+&INTC_EINT0=0x01c48018 
+&INTC_EINT1=0x01c4801c 
+&INTC_INTCTL=0x01c48020 
+&INTC_EABASE=0x01c48024 
+
+&SYSTEM_BASE=0x01C40000
+&PINMUX0=&SYSTEM_BASE+0x00 
+&PINMUX1=&SYSTEM_BASE+0x04 
+&PINMUX2=&SYSTEM_BASE+0x08 
+&PINMUX3=&SYSTEM_BASE+0x0C 
+&PINMUX4=&SYSTEM_BASE+0x10 
+&BOOTCFG=&SYSTEM_BASE+0x14 
+&ARM_INTMUX=&SYSTEM_BASE+0x18 
+&EDMA_INTMUX=&SYSTEM_BASE+0x1C 
+&DDR_SLEW=&SYSTEM_BASE+0x20 
+&UHPI_CTL=&SYSTEM_BASE+0x24 
+&DEVICE_ID=&SYSTEM_BASE+0x28 
+&VDAC_CONFIG=&SYSTEM_BASE+0x2C 
+&TIMER64_CTL=&SYSTEM_BASE+0x30 
+&USBPHY_CTL=&SYSTEM_BASE+0x34 
+&MISC=&SYSTEM_BASE+0x38 
+&MSTPRI0=&SYSTEM_BASE+0x3C 
+&MSTPRI1=&SYSTEM_BASE+0x40 
+&VPSS_CLKCTL=&SYSTEM_BASE+0x44 
+&PERI_CLKCTL=&SYSTEM_BASE+0x48 
+&DEEPSLEEP=&SYSTEM_BASE+0x4C 
+&DFT_ENABLE=&SYSTEM_BASE+0x50 
+&DEBOUNCE0=&SYSTEM_BASE+0x54 
+&DEBOUNCE1=&SYSTEM_BASE+0x58 
+&DEBOUNCE2=&SYSTEM_BASE+0x5C 
+&DEBOUNCE3=&SYSTEM_BASE+0x60 
+&DEBOUNCE4=&SYSTEM_BASE+0x64 
+&DEBOUNCE5=&SYSTEM_BASE+0x68 
+&DEBOUNCE6=&SYSTEM_BASE+0x6C 
+&DEBOUNCE7=&SYSTEM_BASE+0x70 
+&VTPIO_CTL=&SYSTEM_BASE+0x74 
+&PUPDCTL0=&SYSTEM_BASE+0x78 
+&PUPDCTL1=&SYSTEM_BASE+0x7C 
+&HDIMCOBT=&SYSTEM_BASE+0x80 
+&PLL0_CONFIG=&SYSTEM_BASE+0x84 
+&PLL1_CONFIG=&SYSTEM_BASE+0x88 
+&GPINT_GPEN=0x01C21C08
+&GPTDAT_GPDIR=0x01C21C0C
+
+RETURN
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

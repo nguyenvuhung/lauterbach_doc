@@ -1,0 +1,121 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Samsung S3FM02G internal flash 
+;
+; @Description: 
+; Script arguments:
+;
+;   DO s3fm02g [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/s3fm02g PREPAREONLY
+;
+; Memory ranges:
+;
+;   384 kByte program flash at 0x00000000--0x0005ffff
+;    16 kByte data flash at    0x80000000--0x80003fff
+;    24 kByte internal RAM at  0x20000000--0x20005fff
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: S3FM02G
+; --------------------------------------------------------------------------------
+; $Rev: 3491 $
+; $Id: s3fm02g.cmm 3491 2015-11-12 10:10:14Z fcaron $
+
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  ; --------------------------------------------------------------------------------
+  ; CPU setup
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU S3FM02G
+    IF CABLE.TWOWIRE()
+    (
+      SYStem.CONFIG.DEBUGPORTTYPE SWD
+    )
+    SYStem.Up
+  )
+
+  ; Enable all peripheral clocks
+  Data.Set 0x40020010 %Long 0xffffffff     ; CM_PCSR0
+  Data.Set 0x40020014 %Long 0x000003ff     ; CM_PCSR1
+
+  ; Disable watchdog
+  Data.Set 0x4003000c %Long 0x00002340     ; WDT_OMR
+
+  ; Change System Clock to IMCLK(20Mhz):
+  ; Enable Internal Main Clock
+  Data.Set 0x40020008 %Long 0x00000002                             ; CM_CSR: IMCLK=1
+  ; Wait for stable clock
+  IF !&param_prepareonly
+  (
+    WAIT (Data.Long(SD:0x40020040)&0x00000002)==0x00000002           ; wait for CM_SR: IMCLK==1
+  )
+  ; Select IMCLK for SYSCLK
+  Data.Set 0x4002002C %Long 0yXxxxXxxxXxxxXxxxXxxxXxxxXxxxX011     ; CM_MR1: SYSCLK=IMCLK
+  ; Wait for stable clock
+  IF !&param_prepareonly
+  (
+    WAIT (Data.Long(SD:0x40020040)&0x00000010)==0x00000010           ; wait for CM_SR: STABLE==1
+  )
+  ; Set SYSCLK and Peripheral Clock divider
+  Data.Set 0x40020044 %Long 0xacdc0000                             ; CM_SDCR: SDIV=0
+  Data.Set 0x40020048 %Long 0xa3c50000                             ; CM_PDCR: PDIV=0
+
+  ; Enable Program Flash Clock
+  Data.Set 0x40010004 %Long 0x00000001                             ; PF_CEDR: CLKEN=1
+  ; Perform Program Flash Controller Software Reset operation
+  Data.Set 0x40010008 %Long 0x00000001                             ; PF_SRR: SWRST=1
+  ; Program Flash Read Wait Setting to 3 Wait Cycle
+  Data.Set 0x40010010 %Long 0yXxxxXxxxXxxxXxxxXxxxXxx1Xx10Xxxx     ; PF_MR: PBUFEN=1, WAIT=0y10
+
+  ; Enable Data Flash Clock
+  Data.Set 0x40011004 %Long 0x00000001                             ; DF_CEDR: CLKEN=1
+  ; Perform Data Flash Controller Software Reset operation
+  Data.Set 0x40011008 %Long 0x00000001                             ; DF_SRR: SWRST=1
+  ; Data Flash Read Wait Setting to 7 Wait Cycle
+  Data.Set 0x40011010 %Long 0yXxxxXxxxXxxxXxxxXxxxXxxxXxxx0111     ; DF_MR: WAIT=0y0111
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  
+  ; Program flash
+  FLASH.Create 1. 0x00000000--0x0005ffff 0x8000 TARGET Long
+  ; Data flash
+  FLASH.Create 2. 0x80000000--0x80003fff 0x0400 TARGET Byte
+  
+  FLASH.TARGET 0x20000000 0x20001000 0x1000 ~~/demo/arm/flash/long/s3fm02g.bin
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+  
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO

@@ -1,0 +1,275 @@
+; --------------------------------------------------------------------------------
+; @Title: Generic script for Freescale MKV40 internal flash
+;
+; @Description:
+; Example for flash declaration of Freescale MKV40 internal flash.
+;
+; Script arguments:
+;
+;   DO mkv40 [PREPAREONLY] [CPU=<cpu>] [MASSERASE]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;
+;     MASSERASE forces mass erase of device before establishing debug connection
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/mkv40 CPU=MKV40F64VLH15 PREPAREONLY
+;
+; List of MKV40 derivatives and their configuration:
+;
+;   CPU-Type       ProgFlash   FlexNVM   EEPROM   RamSize
+;                    [Byte]     [Byte]    [Byte]   [Byte]
+; --------------------------------------------------------------------------------
+;   MKV42F128VLH16   128KB        -        -       24KB
+;   MKV42F128VLL16   128KB        -        -       24KB
+;   MKV42F256VLH16   256KB        -        -       32KB
+;   MKV42F256VLL16   256KB        -        -       32KB
+;   MKV44F128VLF16   128KB        -        -       24KB
+;   MKV44F128VLH16   128KB        -        -       24KB
+;   MKV44F128VLL16   128KB        -        -       24KB
+;   MKV44F256VLH16   256KB        -        -       32KB
+;   MKV44F256VLL16   256KB        -        -       32KB
+;   MKV44F64VLF16     64KB        -        -       16KB
+;   MKV44F64VLH16     64KB        -        -       16KB
+;   MKV46F128VLH16   128KB        -        -       24KB
+;   MKV46F128VLL16   128KB        -        -       24KB
+;   MKV46F256VLH16   256KB        -        -       32KB
+;   MKV46F256VLL16   256KB        -        -       32KB
+;
+; Flash Configuration Field:
+;
+;   Byte address    Width   Description
+; --------------------------------------------------------------------------------
+;   0x0400--0x0407    8    Backdoor Comparison Key.
+;   0x0408--0x040B    4    Program flash protection bytes (FPROT0-3).
+;   0x040F            1    Program flash only devices: Reserved
+;                          FlexNVM devices: Data flash protection byte
+;                          (FDPROT).
+;   0x040E            1    Program flash only devices: Reserved
+;                          FlexNVM devices: EEPROM protection byte
+;                          (FEPROT).
+;   0x040D            1    Flash nonvolatile option byte (FOPT).
+;   0x040C            1    Flash security byte (FSEC).
+;
+; @Author: FLC
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 3391 $
+; $Id: mkv40.cmm 3391 2015-09-08 11:21:03Z fcaron $
+;
+
+	LOCAL &parameters
+	ENTRY %LINE &parameters
+
+	LOCAL &param_prepareonly &param_masserase
+	&param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+	&param_masserase=(STRing.SCAN(STRing.UPpeR("&parameters"),"MASSERASE",0)!=-1)
+
+	LOCAL &param_cpu
+	&param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+	
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+	IF (SYStem.MODE()<5)||&param_masserase
+	(
+		SYStem.RESet
+
+		IF "&param_cpu"!=""
+			SYStem.CPU &param_cpu
+		IF !CPUIS(MKV4*)
+			SYStem.CPU MKV4*
+
+    SYStem.CONFIG.DEBUGPORTTYPE SWD
+    
+    SYStem.Option ResBreak OFF
+    SYStem.Option WaitReset 500us 
+    
+		IF &param_masserase
+			GOSUB MassErase
+
+		ON.ERROR GOSUB Unsecure
+		SYStem.Up
+		ON.ERROR
+	)
+
+	; Unsecure device
+	IF (Data.Long(EDBG:0x40000100)&0x04)==0x04
+		GOSUB Unsecure
+
+	; Disable watchdog
+	ON.ERROR GOSUB Unsecure
+	GOSUB DisableWatchdog
+	ON.ERROR
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+	FLASH.RESet
+	GOSUB FlashDeclaration
+
+	; Flash script ends here if called with parameter PREPAREONLY
+	IF &param_prepareonly
+	ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+	DIALOG.YESNO "Program flash memory?"
+	LOCAL &progflash
+	ENTRY &progflash
+	IF &progflash 
+	(
+		FLASH.ReProgram.ALL /Erase
+		Data.LOAD.auto *
+		FLASH.ReProgram.off
+
+		; Reset device
+		SYStem.Down
+		SYStem.Up
+
+		; Disable watchdog
+		GOSUB DisableWatchdog
+	)
+
+	ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Disable watchdog
+
+DisableWatchdog:
+  LOCAL &tmp1 &tmp2
+  &tmp1=Data.Long(ST:0x20000000)
+  &tmp2=Data.Long(ST:0x20000004)
+
+  ; The watchdog has a restrictive timing. It has to be configured and unlocked within a peripod
+  ; of 20+256 cycles. Therefor the unlock sequence need to be done by a small target program.
+  Data.Assemble ST:0x20000000  strh r1,[r0]  ;SD:0x4005200E = 0xC520   (Key 1)
+  Data.Assemble ,              strh r2,[r0]  ;SD:0x4005200E = 0xD928   (Key 2)
+  Data.Assemble ,              strh r4,[r3]  ;SD:0x40052000 = 0x0000   (Config register)
+  Data.Assemble ,              bkpt #0
+  Register.Set PC 0x20000000
+  Register.Set SP 0x20001000
+  Register.Set R0 0x4005200E
+  Register.Set R1 0xC520
+  Register.Set R2 0xD928
+  Register.Set R3 0x40052000
+  Register.Set R4 0x0
+  Go.direct
+  WAIT !RUN()
+
+  Data.Set ST:0x20000000 %Long &tmp1
+  Data.Set ST:0x20000004 %Long &tmp2
+
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+; Try to unsecure a secured device
+
+Unsecure:
+  IF (Data.Long(EDBG:0x40000104)&0x08)==0x08
+  (
+    Data.Set EDBG:0x40000104 %Long (Data.Long(EDBG:0x40000104)&0xFFFFFFF7)
+  )
+	; Print security state information
+	SYStem.Mode.Prepare
+	PRINT "MDM-AP Status Register is 0x" Data.Long(EDBG:0x40000100)
+
+	DIALOG.YESNO "Execute mass erase to unsecure chip?"
+	LOCAL &masserase
+	ENTRY &masserase
+	IF &masserase
+	(
+		ON.ERROR DEFault
+
+		; Unsecure device
+		SYStem.Down
+		FLASH.UNSECUREerase
+		SYStem.Mode.Prepare
+		IF (Data.Long(EDBG:0x40000100)&0x04)==0x04
+		(
+			PRINT %ERROR "Unsecure failed, MDM-AP Status Register is 0x" Data.Long(EDBG:0x40000100)
+			SYStem.Down
+			ENDDO
+		)
+	)
+	ELSE
+		ENDDO
+		
+	SYStem.Up
+
+	; Disable watchdog
+	GOSUB DisableWatchdog
+
+	RETURN
+
+
+; --------------------------------------------------------------------------------
+; Try to mass erase the device
+
+MassErase:
+	; Mass erase device by unsecure command
+	SYStem.Down
+	FLASH.UNSECUREerase
+	SYStem.Mode.Prepare
+	IF (Data.Long(EDBG:0x40000100)&0x24)!=0x20
+	(
+		PRINT %ERROR "Mass erase failed, MDM-AP Status Register is 0x" Data.Long(EDBG:0x40000100)
+		SYStem.Down
+		ENDDO
+	)
+	RETURN
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+	LOCAL &PFlashSize 
+	LOCAL &PSectorSize 
+	LOCAL &flashdriver
+
+	&flashdriver="t.b.d."
+
+	; Setup configuration values
+  IF CPUIS("MKV4?F64VL???")
+	(
+    &PFlashSize=0x10000
+    &PSectorSize=0x1000
+		&flashdriver="ftfa.bin"
+	)
+  ELSE IF CPUIS("MKV4?F128VL???")
+	(
+    &PFlashSize=0x20000
+    &PSectorSize=0x1000
+		&flashdriver="ftfa.bin"
+  )
+  ELSE IF CPUIS("MKV4?F256VL???")
+  (
+    &PFlashSize=0x40000
+    &PSectorSize=0x1000
+    &flashdriver="ftfa.bin"
+  )
+	ELSE
+	(
+		PRINT %ERROR "FLASH size of CPU type is not supported by the script"
+		ENDDO
+	)
+
+  ; Program Flash
+	IF &PFlashSize>=0x10000
+    FLASH.Create 1. 0x00000000--0x0000FFFF &PSectorSize TARGET Long
+	IF &PFlashSize>=0x20000
+    FLASH.Create 1. 0x00010000--0x0001FFFF &PSectorSize TARGET Long
+  IF &PFlashSize>=0x40000
+    FLASH.Create 1. 0x00020000--0x0003FFFF &PSectorSize TARGET Long
+
+  FLASH.TARGET 0x1FFFF000 0x20001000 &PSectorSize ~~/demo/arm/flash/long/&flashdriver
+ 	
+ 	RETURN

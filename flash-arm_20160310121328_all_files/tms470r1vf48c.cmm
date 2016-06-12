@@ -1,0 +1,143 @@
+; --------------------------------------------------------------------------------
+; @Title: TMS470 internal flash of TMS470R1VF48C
+;
+; @Description: 
+; Script arguments:
+;
+;   DO tms470r1vf48c [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/tms470r1vf48c PREPAREONLY
+;
+; 1 Mbyte flash on flash cores 0, 1
+;
+; internal flash is mapped to 0x00000000
+; internal RAM is mapped to 0x01000000
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: TMS470R1VF48C
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: tms470r1vf48c.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+LOCAL &parameters &param_prepareonly
+ENTRY %LINE &parameters
+&param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+; --------------------------------------------------------------------------------
+; Init script variables
+
+DO ~~~~/tms470-func Init
+
+; --------------------------------------------------------------------------------
+; Setup CPU
+
+ON ERROR NOTHING
+IF SYStem.MODE()<5
+(
+  SYStem.RESet
+  SYStem.CPU TMS470R1VF48C
+  SYStem.Option.BigEndian ON
+  SYStem.Option NOIRCHECK ON
+  SYStem.Up
+)
+
+; --------------------------------------------------------------------------------
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Config for TMS470R1VF48C rev 0
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;Device ID: 0xA5F               TMS470R1VF48C
+;  ProgVersion: 0.35 ; Library version
+;  ProgRoutines: f05a.lib ; Library archive
+LOCAL &ProgRoutines
+&ProgRoutines="f05a"
+
+;  Frequency: 24.0 Range: 10.0 - 24.0
+;  Minor Revisions: 2
+;    0 "TMS470R1VF48C rev 0"
+;    1 "TMS470R1VF48C Rev A"
+;  Ram Config: 0x01000000 0x00010000
+LOCAL &RamStart &RamSize
+&RamStart=0x01000000 
+&RamSize=0x00010000 
+
+;  Memory Security 1 Keys:
+;  0xfffff700 0x0000ffe0: 0xffffffff 0xffffffff 0xffffffff 0xffffffff
+DO ~~~~/tms470-func Memory_Security_1 0xfffff700 0x0000ffe0 0xffffffff 0xffffffff 0xffffffff 0xffffffff
+
+;  Initialization: 7
+;    0xffff4020: 0x00000000 ; Disable MPU
+;    0xfffffd30: 0x00000002 ; Disable peripherals
+;    0xfffffd30: 0x00000003 ; Enable peripherals
+;    0xfffffe00: 0x00000000 0x000000a0 0x00000008 0x000000a0 0x00000100 0x00000070 0x00000000 0x00000000
+;    0xfffffe20: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+;    0xfffffe40: 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+;    0xfffffe00: 0x00000000 0x000001a0 ; enable memory map
+Data.Set 0xffff4020 %Long 0x00000000 ; Disable MPU
+Data.Set 0xfffffd30 %Long 0x00000002 ; Disable peripherals
+Data.Set 0xfffffd30 %Long 0x00000003 ; Enable peripherals
+Data.Set 0xfffffe00 %Long 0x00000000 0x000000a0 0x00000008 0x000000a0 0x00000100 0x00000070 0x00000000 0x00000000
+Data.Set 0xfffffe20 %Long 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+Data.Set 0xfffffe40 %Long 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+Data.Set 0xfffffe00 %Long 0x00000000 0x000001a0 ; enable memory map
+
+;  PLL Config: 0xffffffdc 0x00000009 0xffffffff ; configure PLL address, data, and mask
+;  Data.Set 0xffffffdc %Long 0x00000009|(Data.Long(SD:0xffffffdc)&~0xffffffff) 
+Data.Set 0xffffffdc %Long 0x00000007 ; configure PLL
+LOCAL &FlashClock_Frequency
+&FlashClock_Frequency="15MHz"      ; Setup flash clock frequency to PLL frequency
+
+;  Engr ID: 0xffe88000 0x00000000
+;  Protection Keys:
+;  0xffe88000 0x0000fff0: 0xffffffff 0xffffffff 0xffffffff 0xffffffff
+DO ~~~~/tms470-func FlashProtection 0xffe88000 0x0000fff0 0xffffffff 0xffffffff 0xffffffff 0xffffffff
+
+;  Number of Blocks: 17
+FLASH.RESet
+DO ~~~~/tms470-func DeclareSector Type: OTP    Start: 0x00000000   Length: 0x00000800   Control: 0xffe88000   Core: 0x00   Sector: 0x00
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00000000   Length: 0x00010000   Control: 0xffe88000   Core: 0x00   Sector: 0x00
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00010000   Length: 0x00010000   Control: 0xffe88000   Core: 0x00   Sector: 0x01
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00020000   Length: 0x00010000   Control: 0xffe88000   Core: 0x00   Sector: 0x02
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00030000   Length: 0x00010000   Control: 0xffe88000   Core: 0x00   Sector: 0x03
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00040000   Length: 0x00010000   Control: 0xffe88000   Core: 0x00   Sector: 0x04
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00050000   Length: 0x00010000   Control: 0xffe88000   Core: 0x00   Sector: 0x05
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00060000   Length: 0x00010000   Control: 0xffe88000   Core: 0x00   Sector: 0x06
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00070000   Length: 0x00010000   Control: 0xffe88000   Core: 0x00   Sector: 0x07
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00080000   Length: 0x00010000   Control: 0xffe88000   Core: 0x01   Sector: 0x00
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x00090000   Length: 0x00010000   Control: 0xffe88000   Core: 0x01   Sector: 0x01
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x000a0000   Length: 0x00010000   Control: 0xffe88000   Core: 0x01   Sector: 0x02
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x000b0000   Length: 0x00010000   Control: 0xffe88000   Core: 0x01   Sector: 0x03
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x000c0000   Length: 0x00010000   Control: 0xffe88000   Core: 0x01   Sector: 0x04
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x000d0000   Length: 0x00010000   Control: 0xffe88000   Core: 0x01   Sector: 0x05
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x000e0000   Length: 0x00010000   Control: 0xffe88000   Core: 0x01   Sector: 0x06
+DO ~~~~/tms470-func DeclareSector Type: FLASH  Start: 0x000f0000   Length: 0x00010000   Control: 0xffe88000   Core: 0x01   Sector: 0x07
+
+DO ~~~~/tms470-func DeclareFlashAlgortihm &ProgRoutines &RamStart &RamSize &FlashClock_Frequency
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; End of flash.cfg
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Flash script ends here if called with parameter PREPAREONLY
+IF &param_prepareonly
+  ENDDO PREPAREDONE
+; --------------------------------------------------------------------------------
+; Flash programming example
+;
+FLASH.List
+;
+DIALOG.YESNO "Program flash memory?"
+ENTRY &progflash
+
+IF &progflash 
+(  
+  FLASH.Erase ALL
+  FLASH.Program ALL
+  Data.LOAD.auto * /Long
+  FLASH.Program off
+  Data.LOAD.auto * /Long /ComPare
+)
+
+ENDDO

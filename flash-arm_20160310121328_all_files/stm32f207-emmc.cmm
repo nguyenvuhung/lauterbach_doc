@@ -1,0 +1,88 @@
+; --------------------------------------------------------------------------------
+; @Title: eMMC FLASH Programming script for STM32F207
+; @Description:
+; eMMC FLASH(Numonyx, NAND16GXH) is connected
+;
+; Internal SRAM: 0x20000000
+;
+; SD/MMC Controller Register : 0x40012C00      
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: STM32F207ZG
+; @Keywords: Numonyx NAND16GXH eMMC
+; --------------------------------------------------------------------------------
+; $Id: stm32f207-emmc.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+SYStem.CPU stm32f207zg
+SYStem.Up
+
+GOSUB board_init
+
+//clk enable for GPIO & SDIO
+PER.Set.simple SD:0x40023844 %Long 0x800  
+PER.Set.simple SD:0x40023864 %Long 0x75f33
+
+//SDIO pin configuration
+PER.Set.simple SD:0x40023830 %Long 0x4001CC ;gpio_c
+PER.Set.simple SD:0x40020800 %Long 0x2aa4000 
+PER.Set.simple SD:0x40020808 %Long 0x1558000
+PER.Set.simple SD:0x4002080C %Long 0x554000 
+PER.Set.simple SD:0x40020824 %Long 0xCCCCC  ;sdio_clk, sdio_d0
+
+PER.Set.simple SD:0x40020C00 %Long 0x20   ;gpio_d
+PER.Set.simple SD:0x40020C08 %Long 0x10
+PER.Set.simple SD:0x40020C0C %Long 0x10
+PER.Set.simple SD:0x40020C20 %Long 0xc00  ;sido_cmd
+
+//SDIO controller configuration
+PER.Set.simple SD:0x40012C00 %Long 0x3     ;power on
+PER.Set.simple SD:0x40012C24 %Long 0xFFFFFFFF
+PER.Set.simple SD:0x40012C28 %Long 0x200
+PER.Set.simple SD:0x40012C2C %Long 0x0
+PER.Set.simple SD:0x40012C04 %Long 0x176   ;clk 400Khz
+
+  Break.RESet
+  FLASHFILE.RESet 
+  FLASHFILE.CONFIG  0x40012C00  0x0 0x0 0x0
+
+// FLASHFILE.TARGET <<code range>> <<data range>> <<algorithm file>>
+  FLASHFILE.TARGET 0x20000000++0x1fff 0x20004000++0x1fff   ~~/demo/arm/flash/byte/emmc_stm32.bin /KEEP    ;for mmc
+; FLASHFILE.TARGET 0x20000000++0x1fff 0x20004000++0x1fff   ~~/demo/arm/flash/byte/emmcsd_stm32.bin /keep  ;for sd
+
+PER.Set.simple SD:0x40012C04 %Long 0x176   ; clk 400Khz
+FLASHFILE.GETID
+PER.Set.simple SD:0x40012C04 %Long 0x100   ; change clk to 20Mhz
+
+FLASHFILE.DUMP 0x0
+
+//Read mmc Extended CSD registers
+; FLASHFILE.getextcsd
+
+//Erase & Write & Verify
+; FLASHFILE.ERASE 0x0--0xFFFFFF  
+; FLASHFILE.LOAD  * 0x0 
+; FLASHFILE.LOAD  * 0x0   /ComPare
+
+ENDDO
+
+board_init:
+
+//Configure PLL
+PER.Set.simple SD:0x40023800 %LE %Long 0x9383 
+PER.Set.simple SD:0x40023808 %LE %Long 0x0
+PER.Set.simple SD:0x40023800 %LE %Long 0x9383 
+PER.Set.simple SD:0x40023804 %LE %Long 0x24003010
+PER.Set.simple SD:0x40023800 %LE %Long 0x9383 
+PER.Set.simple SD:0x40023808 %LE %Long 0x8000
+PER.Set.simple SD:0x40023808 %LE %Long 0x9400
+PER.Set.simple SD:0x40023804 %LE %Long 0x5403c19
+PER.Set.simple SD:0x40023800 %LE %Long 01039383
+PER.Set.simple SD:0x40023808 %LE %Long 0x940A
+
+PER.Set.simple SD:0xE000ED08 %LE %Long 0x08000000  ; Vector table on the flash based
+
+PER.Set.simple SD:0xE000ED0C %Long 0xfa050600
+PER.Set.simple SD:0xE000E104 %Long 0x20000
+
+RETURN

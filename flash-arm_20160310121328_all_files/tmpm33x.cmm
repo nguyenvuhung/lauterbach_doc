@@ -1,0 +1,171 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Toshiba TMPM33x internal flash. 
+;
+; @Description: 
+; Script arguments:
+;
+;   DO tmpm33x [PREPAREONLY] [CPU=<cpu>] [DUALPORT=0|1]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;             example
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;
+;     DUALPORT default value is 0 (disabled). If DualPort mode is enabled
+;             flash algorithm stays running until flash programming is
+;             finished. Data is tranferred via dual port memory access. 
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/tmpm33x CPU=TMPM330FD DUALPORT=1 PREPAREONLY
+;
+; List of TMPM33x derivatives and their configuration:
+;
+;   CPU-Type        Flash size   SRAM size   Page size
+;                     [Byte]       [Byte]      [Byte]
+; --------------------------------------------------------------------------------
+;   TMPM330FD        0x80000      0x8000       0x200
+;   TMPM330FY        0x40000      0x4000       0x200
+;   TMPM330FW        0x20000      0x2000       0x100
+;   TMPM332FW        0x20000      0x2000       
+;
+; The internal flash is located at 0x00000000 (User boot mode)
+;                               or 0x3F800000 (Single boot mode)
+; The internal RAM is located at   0x20000000
+; The BOOTROM is located at        0x00000000 (Single boot mode)
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: TMPM33*
+; --------------------------------------------------------------------------------
+; $Rev: 3535 $
+; $Id: tmpm33x.cmm 3535 2015-12-15 16:27:01Z fcaron $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &param_cpu
+  IF VERSION.BUILD()>=29755.
+    &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  LOCAL &param_dualport
+  &param_dualport=0
+  IF VERSION.BUILD.BASE()>=43441.
+    &param_dualport=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"DUALPORT=","0")
+
+  LOCAL &flashbase 
+  LOCAL &flashsize
+  LOCAL &flashdriver
+  &flashdriver="tbd.bin"
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(TMPM33*)
+    (
+      IF VERSION.BUILD()>=37389.
+        SYStem.CPU TMPM33*
+      ELSE
+        SYStem.CPU TMPM330FD
+    )
+
+    SYStem.Option.EnReset OFF
+    SYStem.Up
+  )
+
+  ; Disable watchdog
+  Data.Set 0x40040000 %Long 0x00000000   ; disable timer
+  Data.Set 0x40040004 %Long 0x000000B1   ; write key
+
+  ; Setup flash base address depending on boot mode
+  &flashbase=0x00000000
+
+  ; ------------------------------------------------------------------------------
+  ; Setup flash configuration depending on selected CPU.
+
+  IF ((CPU()=="TMPM330FD*"))
+  (
+    &flashsize=0x80000
+    &flashdriver="~~/demo/arm/flash/long/tmpm330.bin"
+  )
+  ELSE IF ((CPU()=="TMPM330FY*"))
+  (
+    &flashsize=0x40000
+    &flashdriver="~~/demo/arm/flash/long/tmpm330.bin"
+  )
+  ELSE IF ((CPU()=="TMPM330FW*")||(CPU()=="TMPM332FW*"))
+  (
+    &flashsize=0x20000
+    &flashdriver="~~/demo/arm/flash/long/tmpm330fw.bin"
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+
+  IF &flashsize==0x20000
+  (
+    FLASH.Create 1. (&flashbase+0x00000)++0x07FFF 0x04000 TARGET Long
+    FLASH.Create 1. (&flashbase+0x08000)++0x07FFF 0x08000 TARGET Long
+    FLASH.Create 1. (&flashbase+0x10000)++0x0FFFF 0x10000 TARGET Long
+  )
+  ELSE IF &flashsize==0x40000
+  (
+    FLASH.Create 1. (&flashbase+0x00000)++0x0FFFF 0x08000 TARGET Long
+    FLASH.Create 1. (&flashbase+0x10000)++0x0FFFF 0x10000 TARGET Long
+    FLASH.Create 1. (&flashbase+0x20000)++0x1FFFF 0x20000 TARGET Long
+  )
+  ELSE IF &flashsize==0x80000
+  (
+    FLASH.Create 1. (&flashbase+0x00000)++0x0FFFF 0x08000 TARGET Long
+    FLASH.Create 1. (&flashbase+0x10000)++0x0FFFF 0x10000 TARGET Long
+    FLASH.Create 1. (&flashbase+0x20000)++0x5FFFF 0x20000 TARGET Long
+  )
+  ELSE
+  (
+    PRINT %ERROR "Flash size is not supported by the script"
+    ENDDO
+  )
+
+  IF &param_dualport==0
+    FLASH.TARGET 0x20000400 0x20000C00 0x1000 &flashdriver
+  ELSE
+    FLASH.TARGET 0x20000400 EAHB:0x20000C00 0x1000 &flashdriver /DualPort
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO

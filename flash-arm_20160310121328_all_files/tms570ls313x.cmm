@@ -1,0 +1,138 @@
+; --------------------------------------------------------------------------------
+; @Title: Setup of TMS570LS313x internal flash
+;
+; @Description: 
+; Script arguments:
+;
+;  DO tms570ls313x [PREPAREONLY] [AUTOECC=0|1] [DUALPORT=0|1]
+;
+;   PREPAREONLY only declares flash but does not execute flash programming example
+;
+;   AUTOECC default value is 1
+;
+;   DUALPORT default value is 0 (disabled). If DualPort mode is enabled
+;           flash algorithm stays running until flash programming is
+;           finished. Data is tranferred via dual port memory access. 
+;
+; List of TMS570LS313x derivatives and their configuration:
+;
+;   CPU-Type           Flash    RAM
+;   --------------------------------
+;   TMS570LS3134-PGE    3MB    256kB
+;   TMS570LS3134-ZWT    3MB    256kB
+;   TMS570LS3135-PGE    3MB    256kB
+;   TMS570LS3135-ZWT    3MB    256kB
+;   TMS570LS3137-PGE    3MB    256kB
+;   TMS570LS3137-ZWT    3MB    256kB
+;
+; HINTS:
+;
+;   Flash programming algorithm is linked to address 0x08000000 and is not
+;   position independent. Code address of FLASH.TARGET command has not be
+;   changed.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: TMS570LS313* 
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: tms570ls313x.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+
+  ; --------------------------------------------------------------------------------
+  ; Setup script configuration. If auto ECC generation is disabled then
+  ; flash sectors are programmed without generating ECC. ECC sectors can be
+  ; programmed separately or ECC sector programming can be omitted.
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &AutoECCGeneration
+  &AutoECCGeneration=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"AUTOECC=","1")
+
+  LOCAL &param_dualport
+  &param_dualport=0
+  IF VERSION.BUILD.BASE()>=43441.
+    &param_dualport=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"DUALPORT=","0")
+
+  ; --------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    MAP.RESet
+
+    SYStem.CPU TMS570LS3137-ZWT
+    ETM.OFF
+    SYStem.Up
+  )
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+
+  IF &AutoECCGeneration!=0
+  (
+    ; Program flash
+    FLASH.Create  1. 0x00000000--0x0001FFFF  0x8000 TARGET Byte 0.  ; Bank 0
+    FLASH.Create  1. 0x00020000--0x0017FFFF 0x20000 TARGET Byte 0.  ; Bank 0
+    FLASH.Create  2. 0x00180000--0x002FFFFF 0x20000 TARGET Byte 1.  ; Bank 1
+    ; EEPROM emulation flash
+    FLASH.Create  8. 0xF0200000--0xF020FFFF  0x4000 TARGET Byte 7.  ; Bank 7
+
+    IF &param_dualport==0
+      FLASH.TARGET 0x08000000 0x08001000 0x4000 ~~/demo/arm/flash/byte_be/f021r4.bin
+    ELSE
+      FLASH.TARGET 0x08000000 EAHB:0x08001000 0x4000 ~~/demo/arm/flash/byte_be/f021r4.bin /DualPort
+  )
+  ELSE
+  (
+    ; Program flash
+    FLASH.Create  1. 0x00000000--0x0001FFFF  0x8000 TARGET Byte 0. /EraseALIAS 0xf0400000--0xf0403FFF  ; Bank 0
+    FLASH.Create  1. 0x00020000--0x0017FFFF 0x20000 TARGET Byte 0. /EraseALIAS 0xf0404000--0xf042FFFF  ; Bank 0
+    FLASH.Create  2. 0x00180000--0x002FFFFF 0x20000 TARGET Byte 1. /EraseALIAS 0xf0430000--0xf045FFFF  ; Bank 1
+    ; Program flash ECC
+    FLASH.Create  1. 0xF0400000--0xF0403FFF  0x1000 TARGET Byte 0. /EraseALIAS 0x00000000--0x0001FFFF  ; Bank 0
+    FLASH.Create  1. 0xF0404000--0xF042FFFF  0x4000 TARGET Byte 0. /EraseALIAS 0x00020000--0x0017FFFF  ; Bank 0
+    FLASH.Create  2. 0xF0430000--0xF045FFFF  0x4000 TARGET Byte 1. /EraseALIAS 0x00180000--0x002FFFFF  ; Bank 1
+    ; EEPROM emulation flash
+    FLASH.Create  8. 0xF0200000--0xF020FFFF  0x4000 TARGET Byte 7. /EraseALIAS 0xf0100000--0xf0101FFF  ; Bank 7
+    ; EEPROM emulation flash ECC
+    FLASH.Create  8. 0xF0100000--0xF0101FFF   0x800 TARGET Byte 7. /EraseALIAS 0xf0200000--0xf020FFFF  ; Bank 7
+
+    IF &param_dualport==0
+      FLASH.TARGET 0x08000000 0x08001000 0x4000 ~~/demo/arm/flash/byte_be/f021r4noecc.bin
+    ELSE
+      FLASH.TARGET 0x08000000 EAHB:0x08001000 0x4000 ~~/demo/arm/flash/byte_be/f021r4noecc.bin /DualPort
+  )
+
+  FLASH.CLocK.AUTO
+
+  MAP.BUS16 0xF0400000--0xF045FFFF
+  MAP.BUS16 0xF0100000--0xF0101FFF
+  MAP.BUS16 0xF0040000--0xF0041FFF
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+  )
+
+  ENDDO

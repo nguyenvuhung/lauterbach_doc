@@ -1,0 +1,173 @@
+; @Title: Cyclone5 SD/MMC FLASH Program script
+;
+; @Description:
+; SD(HC)CARD is connected to 
+; SRAM: 0xFFFF0000
+; SD/MMC(controller) Regisetr Base: 0xFF704000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: cyclone*
+; @Keywords: altera Flash MMC SD
+; $Id: cyclone5-sdmmc.cmm 3376 2015-08-26 09:36:05Z jjeong $
+
+WinCLEAR
+AREA.view
+
+&MMC_BASE=0xFF704000
+
+LOCAL &arg1
+ENTRY &arg1
+&arg1=STRing.UPpeR("&arg1")  // for example "PREPAREONLY"
+
+RESet
+SYStem.CPU CYCLONEVSOC
+CORE.ASSIGN 1          
+
+SYStem.Up
+
+Data.Set C15:0x1 %Long  (Data.Long(C15:0x1)&~(0x1005))  ; disable interrupt and mmu
+
+; disable Watchdog
+Data.Set A:0xFFD05014 %LE %Long (0x3<<6.) 
+
+Data.Set A:0xFFD040AC %Long 0x15   ;clk source from CLKMGR
+Data.Set A:0xFFD040A0 %Long 0xFFF  ;clk enable from CLKMGR
+
+Data.Set ZSD:&MMC_BASE+014 %LE %Long 0xFFFFFFFF
+Data.Set ZSD:&MMC_BASE+024 %LE %Long 0xFFFF
+Data.Set ZSD:&MMC_BASE+01C %LE %Long 0x200
+Data.Set ZSD:&MMC_BASE+020 %LE %Long 0x200
+Data.Set ZSD:&MMC_BASE+008 %LE %Long 0x10
+Data.Set ZSD:&MMC_BASE+010 %LE %Long 0x1
+
+Data.Set ZSD:&MMC_BASE+000 %LE %Long 0x17   ;reset all then enable
+//Data.Set &MMC_BASE+0x2c %Long 0x80202000 ;cmd
+
+WAIT 10.ms
+
+//clk enableing 
+Data.Set &MMC_BASE+008 %Long 0x10            ;clk divider  (pls make clk < 400khz)
+Data.Set &MMC_BASE+02C %Long 0x80200000      ;update clk
+
+Data.Set &MMC_BASE+044 %LE %Long 0xFFFFFFFF  ;clear status
+
+GOSUB READ_ID_TEST
+
+  FLASHFILE.RESet
+//FLASHFILE.CONFIG <sdmmc base>
+  FLASHFILE.CONFIG 0xFF704000 
+  FLASHFILE.TARGET A:0xFFFF0000++0x1FFF  EAHB:0xFFFF2000++0x1FFF   ~~/demo/arm/flash/byte/emmcsd_dw.bin  /KEEP  /dualport
+
+FLASHFILE.GETID
+
+PER.Set.simple AD:&MMC_BASE+008 %Long 0x1    ;clk divider, make a full clock speed of the sdmmc
+PER.Set.simple AD:&MMC_BASE+02C %Long 0x80200000  ;update clk
+
+//End of the test prepareonly
+IF "&arg1"=="PREPAREONLY"
+  ENDDO
+
+  FLASHFILE.DUMP 0x0                             ; Read
+
+ ;FLASHFILE.ERASE 0x0--0xFFFFF                   ; Erase
+
+ ;FLASHFILE.LOAD * 0x0                           ; Write
+
+ENDDO
+
+
+
+READ_ID_TEST:
+//SD(HC) interface, not MMC
+//CMD0, reset
+
+RePeaT 4.
+(
+Data.Set &MMC_BASE+0x44 %LE %Long 0xFFFFFFFF  ;clear status
+Data.Set &MMC_BASE+0x28 %Long 0x0     ;arg 
+Data.Set &MMC_BASE+0x2c %Long 0xA000A000 ;cmd
+WAIT 10.ms
+)
+
+//CMD8, is madatory to intialize High Capacity SD Memory Card
+RePeaT 2.
+(
+Data.Set &MMC_BASE+0x44 %LE %Long 0xFFFFFFFF  ;clear status
+Data.Set &MMC_BASE+0x28 %Long 0x1AA       ;arg
+Data.Set &MMC_BASE+0x2c %Long 0xA0002148  ;cmd
+WAIT 10.ms
+
+&status=Data.Long(A:(&MMC_BASE+0x44))
+IF (&status&0x4)==0x4
+(
+PRINT "passed CMD8(voltage check)"
+GOTO jump_cmd55
+)
+ELSE
+(
+//CMD0
+Data.Set &MMC_BASE+0x44 %LE %Long 0xFFFFFFFF  ;clear status
+Data.Set &MMC_BASE+0x28 %Long 0x0  ;arg 
+Data.Set &MMC_BASE+0x2c %Long 0x0  ;cmd
+WAIT 10.ms
+)
+)
+
+jump_cmd55:
+//CMD55
+RePeaT 10.
+(
+Data.Set &MMC_BASE+0x44 %LE %Long 0xFFFFFFFF  ;clear status
+Data.Set &MMC_BASE+0x28 %Long 0x0 ;arg
+Data.Set &MMC_BASE+0x2c %Long 0xA0002177 ;cmd55, resp1
+WAIT 10.ms
+
+//ACMD41
+Data.Set &MMC_BASE+0x44 %LE %Long 0xFFFFFFFF  ;clear status
+Data.Set &MMC_BASE+0x28 %Long 0x40FF8000 ;arg
+Data.Set &MMC_BASE+0x2c %Long 0xA0002069; cmd41, resp1
+WAIT 10.ms
+
+&resp=Data.Long(A:(&MMC_BASE+0x30))
+//print "CMD1 resp: 0x" &resp
+IF (&resp&0x80000000)==0x80000000
+(
+GOTO jump_cmd2
+)
+)
+
+PRINT "CMD1 fail"
+END
+
+jump_cmd2:
+//CMD2
+Data.Set &MMC_BASE+0x44 %LE %Long 0xFFFFFFFF  ;clear status
+Data.Set &MMC_BASE+0x28 %Long 0x0          ;arg
+Data.Set &MMC_BASE+0x2c %Long 0xA00021C2   ;cmd2
+WAIT 10.ms
+
+//CMD3
+Data.Set &MMC_BASE+0x44 %LE %Long 0xFFFFFFFF  ;clear status
+Data.Set &MMC_BASE+0x28 %Long 0x00070000  ; arg, MMC RCA is (0x0001<<16.)
+Data.Set &MMC_BASE+0x2c %Long 0x20002143  ;cmd3
+WAIT 10.ms
+
+&cardaddress=Data.Long(A:(&MMC_BASE+0x30))
+&cardaddress=&cardaddress&0xFFFF0000
+
+
+//CMD10
+Data.Set &MMC_BASE+0x44 %LE %Long 0xFFFFFFFF  ;clear status
+Data.Set &MMC_BASE+0x28 %Long &cardaddress  ; arg, card address
+Data.Set &MMC_BASE+0x2c %Long 0xA00021CA    ;cmd10
+WAIT 10.ms
+
+//Response2
+PRINT "CID register"
+PRINT "[127:104] 0x" Data.Long(A:(&MMC_BASE+0x3c))
+PRINT "[103:72]  0x" Data.Long(A:(&MMC_BASE+0x38))
+PRINT "[71:40]   0x" Data.Long(A:(&MMC_BASE+0x34))
+PRINT "[39:8]    0x" Data.Long(A:(&MMC_BASE+0x30))
+
+RETURN

@@ -1,0 +1,64 @@
+; --------------------------------------------------------------------------------
+; @Title: BCM47189 Serial FLASH Programming Script
+; @Description:
+; Serial FLASH (Macronix, MX25L256) is connected the SPI0 
+; (Serial Peripheral Interface)
+;
+; SDRAM    : 0x1000
+; Serial FLASH Controller Addr: 0x18000040   
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: BCM47189
+; @Keywords: MX25L256 FLASH SPI
+; --------------------------------------------------------------------------------
+; $Id: bcm47189-spi.cmm 3531 2015-12-14 16:59:29Z jjeong $
+  
+  ; Setup debugger
+  RESet
+  SYStem.CPU BCM47189
+  SYStem.Up
+  
+  TrOnchip.Set DABORT OFF
+  TrOnchip.Set PABORT OFF
+  TrOnchip.Set UNDEF OFF
+  
+  ; Wait till memory is initialized
+  Break.Set 0x18000040 /Write
+  
+  Go.direct
+  WAIT !RUN()
+
+GOSUB READ_ID_TEST
+
+programFlash:
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  FLASHFILE.CONFIG  0x18000040 0x0 0x0
+
+// FLASHFILE.TARGET <<code range>>    <<data range>>    <<algorithm file>>
+  FLASHFILE.TARGET 0x1000++0x1FFF  0x3000++0x1FFF   ~~\demo\arm\flash\byte\spi4b64_bcm47189.bin   /KEEP
+
+  FLASHFILE.GETID
+  FLASHFILE.DUMP 0x0
+
+  ;FLASHFILE.unlock 0x0--0xFFFFFF
+  ;FLASHFILE.erase 0x0--0xFFFFF
+  ;FLASHFILE.load * 0x0
+  ;FLASHFILE.load * 0x0  /ComPare
+
+ENDDO
+
+READ_ID_TEST:
+
+  &cmd=0x9F
+  &cmd=&cmd|0x9<<8  ; cmd + 2byte read
+  Data.Set ZSD:0x18000040 %LE %Long (&cmd|0x80000000)
+  &read=Data.Long(A:0x18000048)
+  PRINT "Read 1st = 0x" (&read&0xFF)  " (Manufacture ID)"
+  PRINT "Read 2nd = 0x" ((&read>>8.)&0xFF)  " (Device ID)"
+
+RETURN
+

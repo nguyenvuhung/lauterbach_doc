@@ -1,0 +1,529 @@
+; --------------------------------------------------------------------------------
+; @Title: TMS470/TMS570 internal flash 
+;
+; @Description: 
+; This file implements the common handling of memory security, flash 
+; protection and flash declaration.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: TMS470* TMS570*
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: tms470-func.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+ENTRY &func &arg1 &arg2 &arg3 &arg4 &arg5 &arg6 &arg7 &arg8 &arg9 &arg10 &arg11 &arg12
+
+IF "&func"=="Init"
+(
+  GOSUB Init &arg1 &arg2
+  ENDDO
+)
+ELSE IF "&func"=="DeclareSector"
+(
+  GOSUB DeclareSector &arg1 &arg2 &arg3 &arg4 &arg5 &arg6 &arg7 &arg8 &arg9 &arg10 &arg11 &arg12
+  ENDDO
+)
+ELSE IF "&func"=="SelectCore"
+(
+  GOSUB SelectCore &arg1
+  ENDDO
+)
+ELSE IF "&func"=="DeclareFlashAlgortihm"
+(
+  GOSUB DeclareFlashAlgortihm &arg1 &arg2 &arg3 &arg4
+  ENDDO
+)
+ELSE IF "&func"=="FlashProtection"
+(
+  GOSUB FlashProtection &arg1 &arg2 &arg3 &arg4 &arg5 &arg6
+  ENDDO
+)
+ELSE IF "&func"=="Memory_Security_1"
+(
+  GOSUB Memory_Security_1 &arg1 &arg2 &arg3 &arg4 &arg5 &arg6
+  ENDDO
+)
+ELSE IF "&func"=="JTAG_Security"
+(
+  GOSUB JTAG_Security &arg1
+  ENDDO
+)
+ELSE
+(
+  PRINT %ERROR "Illegal function call"
+  ENDDO
+)
+
+
+; --------------------------------------------------------------------------------
+; Init script variables
+Init:
+
+; Flash type
+GLOBAL &FlashType
+       &FlashType="FLASH"      ; Type of flash - FLASH or FLASHPAR or FLASHECC
+
+; Flash protection
+GLOBAL &Protection_Keys        ; Protection key location in first sector of flash
+       &Protection_Keys=0x0
+
+; JSM - JTAG Security Module
+GLOBAL &JTAG_Security_Keys      ; JSM location in first sector of flash
+       &JTAG_Security_Keys=0x0
+
+; MSM - Memory Security Module 1
+GLOBAL &Memory_Security_1_Keys      ; MSM key location in first sector of flash
+       &Memory_Security_1_Keys=0x0
+
+; Core selector for multi core CPUs
+GLOBAL &CoreSelector
+       &CoreSelector="MASTER_CORE"    ; Core of the CPU - MASTER_CORE or SLAVE_CORE0
+
+RETURN
+
+
+; --------------------------------------------------------------------------------
+; Unprotect Flash
+;
+FlashProtection:
+
+LOCAL &FlashControl_Base &Protection_Addr &Protection_Key1 &Protection_Key2 &Protection_Key3 &Protection_Key4
+ENTRY &FlashControl_Base &Protection_Addr &Protection_Key1 &Protection_Key2 &Protection_Key3 &Protection_Key4
+
+&Protection_Keys=&Protection_Addr
+
+IF &Protection_Keys!=0x0
+(
+  LOCAL &FMBBUSY_Addr &FMPKEY_Addr
+  LOCAL &FMBBUSY
+  LOCAL &GLBCTRL
+  LOCAL &PSWD1
+
+  ; Set flash configuration bit  
+  &GLBCTRL=Data.Long(ASD:0xFFFFFFDC)
+  Data.Set 0xFFFFFFDC %Long Data.Long(ASD:0xFFFFFFDC)|0x00000010
+  
+  ; Setup register addresses
+  IF &FlashControl_Base==0xffe88000
+  (
+    &FMBBUSY_Addr=&FlashControl_Base+0x1c08
+    &FMPKEY_Addr=&FlashControl_Base+0x1c0c
+  )
+  ELSE IF &FlashControl_Base==0xfff87000
+  (
+    &FMBBUSY_Addr=&FlashControl_Base+0x108
+    &FMPKEY_Addr=&FlashControl_Base+0x10c
+  )
+  ELSE
+  (
+    DIALOG.OK "Illegal flash control base address."
+    ENDDO
+  )
+  
+  ; Check if flash protection already disabled
+  &FMBBUSY=Data.Long(ASD:&FMBBUSY_Addr)
+  IF (&FMBBUSY&0x8000)==0x0
+  (
+    ; Unprotect flash with default keys
+    &PSWD1=Data.Long(ASD:&Protection_Keys)
+    Data.Set ASD:&FMPKEY_Addr %Long &Protection_Key1
+    &PSWD1=Data.Long(ASD:&Protection_Keys+0x04)
+    Data.Set ASD:&FMPKEY_Addr %Long &Protection_Key2
+    &PSWD1=Data.Long(ASD:&Protection_Keys+0x08)
+    Data.Set ASD:&FMPKEY_Addr %Long &Protection_Key3
+    &PSWD1=Data.Long(ASD:&Protection_Keys+0x0c)
+    Data.Set ASD:&FMPKEY_Addr %Long &Protection_Key4
+
+    ; Check if flash protection already disabled
+    &FMBBUSY=Data.Long(ASD:&FMBBUSY_Addr)
+    IF (&FMBBUSY&0x8000)==0x0
+    (
+RetryFlashProtection:
+      ; select flash protection keys
+      GOSUB FlashProtection_Dialog
+
+      ; Unprotect flash
+      &PSWD1=Data.Long(ASD:&Protection_Keys)
+      Data.Set ASD:&FMPKEY_Addr %Long &Protection_Key1
+      &PSWD1=Data.Long(ASD:&Protection_Keys+0x04)
+      Data.Set ASD:&FMPKEY_Addr %Long &Protection_Key2
+      &PSWD1=Data.Long(ASD:&Protection_Keys+0x08)
+      Data.Set ASD:&FMPKEY_Addr %Long &Protection_Key3
+      &PSWD1=Data.Long(ASD:&Protection_Keys+0x0c)
+      Data.Set ASD:&FMPKEY_Addr %Long &Protection_Key4
+  
+      ; Check flash protection again
+      &FMBBUSY=Data.Long(ASD:&FMBBUSY_Addr)
+      IF (&FMBBUSY&0x8000)==0x0
+      (
+        DIALOG.OK "Flash protection is still enabled." "Please check protection keys." 
+        GOTO RetryFlashProtection
+      )
+    )
+  )
+)
+
+RETURN
+
+
+; --------------------------------------------------------------------------------
+; Function to unsecure memory using Memory Security 1
+;
+Memory_Security_1:
+  LOCAL &MSM_Base &MSM_Addr &MSM_Key1 &MSM_Key2 &MSM_Key3 &MSM_Key4
+  ENTRY &MSM_Base &MSM_Addr &MSM_Key1 &MSM_Key2 &MSM_Key3 &MSM_Key4
+
+  LOCAL &MSMSCR
+  LOCAL &PSWD1 &PSWD2 &PSWD3 &PSWD4
+  
+  ; Setup global variable for flash declaration executed later
+  &Memory_Security_1_Keys=&MSM_Addr
+  
+Memory_Security_retry:
+  IF &Memory_Security_1_Keys!=0x0
+  (
+    IF SYStem.MODE()<5
+    (
+      SYStem.Option NOIRCHECK ON
+      SYStem.Up
+    )
+
+    ; Check memory security
+    &MSMSCR=Data.Long(ASD:&MSM_Base+0x24)
+    IF (&MSMSCR&0x0001)==0x0001
+    (
+      ; suppress bus error and reset error messages
+      SYStem.Option NOIRCHECK ON
+      SYStem.Option ShowError OFF
+    
+      ; write FORCESEC
+      Data.Set &MSM_Base+0x24 %Long 0x80000000
+
+      ; Read PWL 
+      &PSWD1=Data.Long(ASD:&Memory_Security_1_Keys)
+      &PSWD2=Data.Long(ASD:&Memory_Security_1_Keys+0x04)
+      &PSWD3=Data.Long(ASD:&Memory_Security_1_Keys+0x08)
+      &PSWD4=Data.Long(ASD:&Memory_Security_1_Keys+0x0c)
+  
+      ; Check if device is secured forever
+      IF (&PSWD1==0x0)&&(&PSWD2==0x0)&&(&PSWD3==0x0)&&(&PSWD4==0x0)
+      (
+        DIALOG.OK "Device Secured" " " "CPU access is limited." "On-chip memories cannot be debugged or reprogrammed."
+        DIALOG.END
+        END
+      )
+  
+      ; Check memory security
+      &MSMSCR=Data.Long(ASD:&MSM_Base+0x24)
+      IF (&MSMSCR&0x0001)==0x0001
+      (
+        GOSUB Memory_Security_1_Dialog
+  
+        ; Unsecure Memory
+        Data.Set ASD:&MSM_Base+0x00 %Long &MSM_Key1
+        Data.Set ASD:&MSM_Base+0x04 %Long &MSM_Key2
+        Data.Set ASD:&MSM_Base+0x08 %Long &MSM_Key3
+        Data.Set ASD:&MSM_Base+0x0c %Long &MSM_Key4
+  
+        ; Check memory security
+        &MSMSCR=Data.Long(ASD:&MSM_Base+0x24)
+        IF (&MSMSCR&0x0001)==0x0001
+        (
+          DIALOG.OK "Memory is still secured." "Please check security keys." 
+          GOTO Memory_Security_retry
+        )
+      )
+    )
+ 
+    ; reactivate bus error and reset error messages
+    SYStem.Option NOIRCHECK OFF
+    SYStem.Option ShowError ON
+  )
+
+RETURN
+
+
+; --------------------------------------------------------------------------------
+; Function to setup JTAG Security
+;
+JTAG_Security;
+
+  JTAG_Security_Keys=&arg1
+
+RETURN
+
+
+; --------------------------------------------------------------------------------
+; Function to select CPU core used for multi core CPUs
+SelectCore:
+
+  LOCAL &cpucore
+  ENTRY &cpucore
+  
+  IF "&cpucore"=="MASTER_CORE"||"&cpucore"=="SLAVE_CORE0"
+  (
+    &CoreSelector="&cpucore"
+  )
+  ELSE
+  (
+    PRINT %ERROR "CPU core &cpucore not supported by the script"
+  )
+  
+  RETURN
+
+; --------------------------------------------------------------------------------
+; Function to declare one flash sector using syntax from flash.cfg file
+;
+; Unit number is Core number + 1.
+;
+DeclareSector:
+
+  LOCAL &tType &Type &tStart &Start &tLength &Length &tControl &Control &tCore &Core &tSector &Sector
+  ENTRY &tType &Type &tStart &Start &tLength &Length &tControl &Control &tCore &Core &tSector &Sector
+  
+  LOCAL &Unit
+  LOCAL &OptionMask
+  LOCAL &KeyAddrMask
+  LOCAL &UnitOffset
+  
+  &UnitOffset=0.
+  
+  IF "&Type"=="OTP"
+  (
+    ; OTP flash not supported
+    RETURN
+  )
+  IF "&Type"=="OTPPAR"
+  (
+    ; OTPPAR flash not supported, OTP Parity Flash
+    RETURN
+  )
+  IF "&Type"=="OTPECC"
+  (
+    ; OTPECC flash not supported, OTP ECC Flash
+    RETURN
+  )
+  
+  IF "&Type"=="FLASH"||"&Type"=="FLASHPAR"||"&Type"=="FLASHECC"
+  (
+    ; Default setting for flash without parity or ECC
+    &OptionMask=0x10000000
+    
+    IF "&Type"=="FLASH"&&"&FlashType"=="FLASHPAR"
+    (
+      &OptionMask=0x10001000
+    )
+    IF "&Type"=="FLASH"&&"&FlashType"=="FLASHECC"
+    (
+      &OptionMask=0x10002000
+    )
+    IF "&Type"=="FLASHPAR"
+    (
+      &OptionMask=0x10005000
+    )
+    IF "&Type"=="FLASHECC"
+    (
+      &OptionMask=0x10006000
+    )
+
+    ; Select core of CPU
+    IF "&CoreSelector"=="SLAVE_CORE0"
+    (
+      &OptionMask=&OptionMask|0x04000000
+      &UnitOffset=10.
+    )
+    
+    ; Declare flash sector. 
+    &Unit=FORMAT.Decimal(2, &Core+1+&UnitOffset)
+    &KeyAddrMask=0x0
+    IF &JTAG_Security_Keys!=0x0
+    (
+      &OptionMask=&OptionMask|0x20000000
+      &KeyAddrMask=(&JTAG_Security_Keys&0x01ff00)<<8
+    )
+    IF &Memory_Security_1_Keys!=0x0
+    (
+      &OptionMask=&OptionMask|0x80000000
+      &KeyAddrMask=(&Memory_Security_1_Keys&0x01ff00)<<8
+    )
+    IF &Protection_Keys!=0x0
+    (
+      &KeyAddrMask=(&Protection_Keys&0x01ff00)<<8
+      &OptionMask=&OptionMask&0xe0007000
+    )
+    FLASH.Create &Unit. &Start++(&Length-1) &Length TARGET Long (&OptionMask+&KeyAddrMask+(&Core<<8)+&Sector)
+  )
+  
+  RETURN
+
+
+; --------------------------------------------------------------------------------
+DeclareFlashAlgortihm:
+
+  LOCAL &ProgRoutines &RamStart &RamSize &Frequency
+  ENTRY &ProgRoutines &RamStart &RamSize &Frequency
+  
+  LOCAL &CodeSize &StackSize &DataRangeStart &DataBufSize
+  
+  ; Calculate RAM usage
+  &CodeSize=OS.FILE.SIZE(~~/demo/arm/flash/long_be/&ProgRoutines.bin)
+  &CodeSize=(&CodeSize&0xffffffe0)+0x40
+  &DataRangeStart=&RamStart+&CodeSize
+  &StackSize=0x200
+  IF "&ProgRoutines"=="f05as"
+  (
+    &StackSize=0x100
+  )
+  &DataBufSize=&RamSize-&CodeSize-&StackSize-0x20
+  IF &DataBufSize<0x20
+  (
+    DIALOG.OK "Not enough memory for flash algorithm."
+    END
+  )
+  IF &DataBufSize>0x1000
+  (
+    &DataBufSize=0x1000
+  )
+
+  IF ("&ProgRoutines"=="f05a"||"&ProgRoutines"=="f05as")&&&RamStart!=0x01000000
+  (
+    DIALOG.OK "Illegal flash algorithm code address &RamStart" "F05A flash algorithm is linked to 0x01000000"
+    END
+  )
+  IF "&ProgRoutines"=="f035"&&&RamStart!=0x08000000
+  (
+    DIALOG.OK "Illegal flash algorithm code address &RamStart" "&ProgRoutines flash algorithm is linked to 0x08000000"
+    END
+  )
+  IF ("&ProgRoutines"=="pf035"||"&ProgRoutines"=="pf035a"||"&ProgRoutines"=="pf035amc"||"&ProgRoutines"=="pf035a_slavecore"||"&ProgRoutines"=="pf035am3"||"&ProgRoutines"=="pf035a_cortexm3")&&&RamStart!=0x08000000
+  (
+    DIALOG.OK "Illegal flash algorithm code address &RamStart" "&ProgRoutines flash algorithm is linked to 0x08000000"
+    END
+  )
+  IF ("&ProgRoutines"=="pf05a"||"&ProgRoutines"=="pf05b")&&&RamStart!=0x08000000
+  (
+    DIALOG.OK "Illegal flash algorithm code address &RamStart" "&ProgRoutines flash algorithm is linked to 0x08000000"
+    END
+  )
+
+  ; Declaration of flash algorithm
+  FLASH.TARGET &RamStart &DataRangeStart &DataBufSize ~~/demo/arm/flash/long_be/&ProgRoutines.bin /STACKSIZE &StackSize
+  FLASH.CLocK &Frequency
+
+  RETURN
+  
+
+; --------------------------------------------------------------------------------
+; Dialog to select flash protection keys
+;
+FlashProtection_Dialog:
+  DIALOG.view  
+  (     
+    HEADER "Unprotect flash"
+
+    POS 0. 0. 46. 4.
+      BOX ""   
+
+    POS  2. 1. 30. 1.
+      TEXT "Protection keys"
+    POS  2. 2. 9. 1.
+      KEY1:   EDIT "" "GOSUB SETKEY 1"
+    POS 13. 2. 9. 1.
+      KEY2:   EDIT "" "GOSUB SETKEY 2"
+    POS 24. 2. 9. 1.
+      KEY3:   EDIT "" "GOSUB SETKEY 3"
+    POS 35. 2. 9. 1.
+      KEY4:   EDIT "" "GOSUB SETKEY 4"
+
+    POS 2. 4. 12. 1.     
+      BUTTON "OK " "continue"  
+      
+    CLOSE "GOSUB CANCELDIALOG"
+  )  
+  DIALOG.Set KEY1 "&Protection_Key1"
+  DIALOG.Set KEY2 "&Protection_Key2"
+  DIALOG.Set KEY3 "&Protection_Key3"
+  DIALOG.Set KEY4 "&Protection_Key4"
+  STOP   
+ 
+  &Protection_Key1=DIALOG.STRing(KEY1)
+  &Protection_Key2=DIALOG.STRing(KEY2)
+  &Protection_Key3=DIALOG.STRing(KEY3)
+  &Protection_Key4=DIALOG.STRing(KEY4)
+  
+  DIALOG.END
+
+  RETURN
+
+; --------------------------------------------------------------------------------
+; Dialog to select memory security 1 keys
+;
+Memory_Security_1_Dialog:
+  DIALOG.view  
+  (     
+    HEADER "Memory Security 1"
+
+    POS 0. 0. 46. 4.
+      BOX ""   
+
+    POS  2. 1. 30. 1.
+      TEXT "Security keys"
+    POS  2. 2. 9. 1.
+      KEY1:   EDIT "" "GOSUB SETKEY 1"
+    POS 13. 2. 9. 1.
+      KEY2:   EDIT "" "GOSUB SETKEY 2"
+    POS 24. 2. 9. 1.
+      KEY3:   EDIT "" "GOSUB SETKEY 3"
+    POS 35. 2. 9. 1.
+      KEY4:   EDIT "" "GOSUB SETKEY 4"
+
+    POS 2. 4. 12. 1.     
+      BUTTON "OK " "continue"  
+      
+    CLOSE "GOSUB CANCELDIALOG"
+  )  
+  DIALOG.Set KEY1 "&MSM_Key1"
+  DIALOG.Set KEY2 "&MSM_Key2"
+  DIALOG.Set KEY3 "&MSM_Key3"
+  DIALOG.Set KEY4 "&MSM_Key4"
+  STOP   
+ 
+  &MSM_Key1=DIALOG.STRing(KEY1)
+  &MSM_Key2=DIALOG.STRing(KEY2)
+  &MSM_Key3=DIALOG.STRing(KEY3)
+  &MSM_Key4=DIALOG.STRing(KEY4)
+  
+  DIALOG.END
+
+  RETURN
+
+; --------------------------------------------------------------------------------
+; Dialog functions
+;
+SETKEY:
+  ENTRY &KeyNr
+    &key=DIALOG.STRing(KEY&KeyNr)
+    &len=STRing.LENgth("&key")
+    IF &len>8
+    (
+      &len=&len-8
+    )
+    ELSE
+    (
+      &len=0.
+    )
+    &key=STRing.MID("&key",&len,8.)
+    &key=STRing.UPpeR("&key")
+    &len=STRing.SCAN("&key","X",0.)
+    IF &len!=-1
+    (
+      &key=STRing.MID("&key",&len+1.,8.)
+    )
+    &key=FORMAT.HEX(8.,0x0&key)
+    DIALOG.Set KEY&KeyNr "0x&key"
+  RETURN
+
+CANCELDIALOG:
+  DIALOG.END
+  END        

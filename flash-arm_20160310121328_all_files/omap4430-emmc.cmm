@@ -1,0 +1,172 @@
+; --------------------------------------------------------------------------------
+; @Title: eMMC FLASH Programming script for OMAP4430
+; @Description:
+; eMMC FLASH(SanDisk, iNAND 8GBytes) is connected
+;
+; Internal SRAM: 0x40301000
+;
+; SD/MMC Controller Register : 0x480B4200 (MMCHS2)          
+; SD/MMC Controller Register : 0x4809C200 (MMCHS1)          
+;
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: OMAP4430
+; @Keywords: SanDisk iNAND eMMC
+; --------------------------------------------------------------------------------
+; $Id: omap4430-emmc.cmm 3178 2015-02-20 11:20:01Z jjeong $
+
+WinCLEAR
+AREA.view
+
+LOCAL &MMCHS
+
+&MMCHS=0x4809C200   ;on MMCHS1
+;&MMCHS=0x480B4200  ;on MMCHS2
+&MMC_BASE=&MMCHS
+
+SYStem.RESet
+SYStem.CPU omap4430
+
+SYStem.JtagClock 10.Mhz
+
+SYStem.Option DACR ON  ; Give Debugger global write permissions
+SETUP.IMASKASM OFF     ; Lock interrupts while single stepping
+SYStem.MemAccess DAP   ; Enable DAP access
+
+TrOnchip.Set DABORT OFF
+TrOnchip.Set PABORT OFF
+TrOnchip.Set UNDEF  OFF
+
+SYStem.Mode.Go
+
+IF run()
+Break.direct
+
+  PER.Set.simple C15:0x1 %Long  (Data.Long(C15:0x1)&~(0x5))  ; disable interrupt and mmu
+
+  GOSUB disable_watchdog
+
+  Data.Set &MMCHS+0x2C %LE %Long 0xe3C87     ; 400Khz 
+  Data.Set &MMCHS+0x34 %LE %Long 0x307f0033  ; enable the BRR bit
+
+
+GOSUB READ_ID_TEST
+
+  Break.RESet
+
+  FLASHFILE.RESet
+
+//FLASHFILE.CONFIG <MMC Controller Base>  0x0   0x0
+  FLASHFILE.CONFIG &MMCHS             0x0   0x0
+
+//FLASHFILE.target <Code_range>       <Data_range>       <Algorithm file>
+  FLASHFILE.TARGET 0x40301000++0x1FFF 0x40303000++0x2FFF   ~~/demo/arm/flash/byte/emmc_omap.bin /KEEP  ; for eMMC flash
+; FLASHFILE.TARGET 0x40301000++0x1FFF 0x40303000++0x2FFF   ~~/demo/arm/flash/byte/emmcsd_omap.bin /keep  ;for SDCARD
+
+  Data.Set &MMCHS+0x2C %LE %Long 0xE3C87     ; 400Khz , the Card identification mode
+  FLASHFILE.GETID
+  Data.Set &MMCHS+0x2C %LE %Long 0xE1087     ; higher clock speed for the Data transfer mode
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+ 
+  //Erase FLASH 
+    FLASHFILE.Erase 0x0--0xFFFFFF  
+
+  //Write FLASH
+    FLASHFILE.LOAD.binary  * 0x0 
+  
+  //Verify FLASH
+    ; FLASHFILE.LOAD  * 0x0  /ComPare
+  )
+
+  //Dump FLASH
+  FLASHFILE.DUMP 0x0
+
+ENDDO 
+
+
+disable_watchdog:
+(
+
+ PRINT "DISABLE WATCHDOG ..."
+
+ // Enable Clock
+ Data.Set SR:0x4A307830 %Long 0x02
+ 
+ // Check that module is IDLE
+ WHILE ((Data.Long(SR:0x4A307830)&0x20000)==0x20000) 
+ 
+ // Wait until reset complete 
+   WHILE ((Data.Long(SR:0x4A314014)&0x01)!=0x1)
+  
+ //Disable watchdog timer
+ Data.Set SR:0x4A314048 %LE %Long 0x0000AAAA;
+  WHILE ((Data.Long(SR:0x4A314034)&0x10)==0x10)
+
+ Data.Set SR:0x4A314048 %LE %Long 0x00005555;
+ WHILE ((Data.Long(SR:0x4A314034)&0x10)==0x10)
+)
+
+RETURN
+
+
+READ_ID_TEST:
+//MMC interface, not SD(HC)
+//CMD0
+RePeaT 2.
+(
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x0  ;arg 
+Data.Set &MMC_BASE+0xc %Long 0x0  ;cmd
+WAIT 10.ms
+)
+
+//CMD1
+RePeaT 10.
+(
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x40FF8000 ;arg
+Data.Set &MMC_BASE+0xc %Long 0x01020000 ;cmd1
+WAIT 10.ms
+&resp=Data.Long(A:(&MMC_BASE+0x10))
+//print "CMD1 resp: 0x" &resp
+IF (&resp&0x80000000)==0x80000000
+(
+GOTO jump_cmd2
+)
+)
+
+PRINT "CMD1 fail"
+END
+
+jump_cmd2:
+//CMD2
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x0     ;arg
+Data.Set &MMC_BASE+0xc %Long 0x02010000 ;cmd2
+WAIT 10.ms
+
+//CMD3
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x00010000  ; arg, MMC RCA is (0x0001<<16.)
+Data.Set &MMC_BASE+0xc %Long 0x03020000  ;cmd3
+WAIT 10.ms
+
+//CMD10
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x00010000 ; arg, MMC RCA is (0x0001<<16.)
+Data.Set &MMC_BASE+0xc %Long 0x0A010000  ;cmd10
+WAIT 10.ms
+
+//Response2
+PRINT "CID register"
+PRINT "[127:104] 0x" Data.Long(A:(&MMC_BASE+0x1c))
+PRINT "[103:72]  0x" Data.Long(A:(&MMC_BASE+0x18))
+PRINT "[71:40]   0x" Data.Long(A:(&MMC_BASE+0x14))
+PRINT "[39:8]    0x" Data.Long(A:(&MMC_BASE+0x10))
+
+RETURN

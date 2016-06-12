@@ -1,0 +1,200 @@
+; --------------------------------------------------------------------------------
+; @Title:  Freescale K70 series TOWER SYSTEM MODULE SDHC(MMC) Program script
+;
+; @Description:
+; SD(HC)CARD is connected to ESDHC0
+; SRAM: 0x20000000
+; SD/MMC Controller Register : 0x400B1000     
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ?K70F*
+; @Board: K70F120
+; @Keywords:  kinetis flash eMMC
+; --------------------------------------------------------------------------------
+; $Id: k70f120m-emmcsd.cmm 3241 2015-03-26 15:14:16Z jjeong $
+
+&MMC_BASE=0x400B1000
+
+  WinCLEAR
+  RESet
+  SYStem.CPU MK70FN1M0VMJ15
+  SYStem.JtagClock CTCK 20Mhz
+  SYStem.MemAccess DAP
+  SYStem.CONFIG.CONNECTOR MIPI20T
+  SYStem.CONFIG.DEBUGPORTTYPE SWD
+  SYStem.Option IMASKASM ON
+  SYStem.Option DUALPORT ON
+  SYStem.Up
+
+  GOSUB DisableWatchdog
+
+//CCM config
+  PER.Set.simple SD:0x40048030 %Long 0x00021100  ;SCGC3 clock enable for NFC, DSPI2, ESDHC
+  PER.Set.simple SD:0x40048038 %Long 0x43D82     ;PORTB,PORTC,PORTD,PORTE clock enable 
+
+  GOSUB IOMUX_SDHC_config
+
+; --------------------------------------------------------------------------------
+; Config SDHC
+; --------------------------------------------------------------------------------
+Data.Set &MMC_BASE+0x04 %LE %Long 0x00010200  ; blk size,cnt
+Data.Set &MMC_BASE+0x28 %LE %Long 0x08800020  ; bus width, endian
+Data.Set &MMC_BASE+0x2C %LE %Long 0x008E01F8  ; clk
+
+GOSUB READ_ID_TEST
+
+programFlash:
+
+FLASHFILE.RESet
+
+//FLASHFILE.CONFIG  <eMMC controller> <0x0> <0x0>
+  FLASHFILE.CONFIG  &MMC_BASE         0x0  0x0
+
+//FLASHFILE.TARGET <Code_range>        <Data_range>          <Algorithm file>
+  FLASHFILE.TARGET 0x20000000++0x3FFF  0x20004000++0x41FF ~~/demo/arm/flash/byte/emmcsd_imx6.bin  /KEEP
+
+  Data.Set &MMC_BASE+0x2C %LE %Long 0x008E01F8  ; 400KHz clk
+  FLASHFILE.GETID
+  
+  Data.Set &MMC_BASE+0x2C %LE %Long 0x008E0108  ; aound 10.Mhz clk
+  FLASHFILE.DUMP 0x0                             ; Read eMMC 
+
+ ;FLASHFILE.ERASE 0x0--0xFFFFF                   ; Erase eMMC
+
+ ;FLASHFILE.LOAD * 0x0                           ; Write eMMC
+
+ENDDO
+
+IOMUX_SDHC_config:
+
+  PER.Set.simple SD:0x4004D000 %Long 0x400; PTE0, SDHC0_D1, ALT4 
+  PER.Set.simple SD:0x4004D004 %Long 0x400; PTE1, DAT0
+  PER.Set.simple SD:0x4004D008 %Long 0x400; PTE2, CLK
+  PER.Set.simple SD:0x4004D00C %Long 0x400; PTE3, CMD
+  PER.Set.simple SD:0x4004D010 %Long 0x400; PTE4, DAT3
+  PER.Set.simple SD:0x4004D014 %Long 0x400; PTE5, DAT2 
+  
+RETURN
+
+; --------------------------------------------------------------------------------
+; Disable watchdog
+
+DisableWatchdog:
+  LOCAL &tmp1 &tmp2
+  &tmp1=Data.Long(ST:0x20000000)
+  &tmp2=Data.Long(ST:0x20000004)
+
+  ; The watchdog has a restrictive timing. It has to be configured and unlocked within a peripod
+  ; of 20+256 cycles. Therefor the unlock sequence need to be done by a small target program.
+  Data.Assemble ST:0x20000000  strh r1,[r0]  ;SD:0x4005200E = 0xC520   (Key 1)
+  Data.Assemble ,              strh r2,[r0]  ;SD:0x4005200E = 0xD928   (Key 2)
+  Data.Assemble ,              strh r4,[r3]  ;SD:0x40052000 = 0x0000   (Config register)
+  Data.Assemble ,              bkpt #0
+  Register.Set PC 0x20000000
+  Register.Set R0 0x4005200E
+  Register.Set R1 0xC520
+  Register.Set R2 0xD928
+  Register.Set R3 0x40052000
+  Register.Set R4 0x0
+  Go.direct
+  WAIT !RUN()
+
+  Data.Set ST:0x20000000 %Long &tmp1
+  Data.Set ST:0x20000004 %Long &tmp2
+
+  RETURN
+
+
+READ_ID_TEST:
+//SD(HC) interface, not MMC
+//CMD0
+RePeaT 2.
+(
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x0  ;arg 
+Data.Set &MMC_BASE+0xc %Long 0x0  ;cmd
+WAIT 10.ms
+)
+
+//CMD8, is madatory to intialize High Capacity SD Memory Card
+RePeaT 2.
+(
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x1AA     ;arg
+Data.Set &MMC_BASE+0xc %Long 0x08020000 ;cmd
+WAIT 10.ms
+
+&status=Data.Long(A:&MMC_BASE+0x30)
+IF (&status&0x30000)==0x0
+(
+PRINT "passed CMD8(voltage check)"
+GOTO jump_cmd55
+)
+ELSE
+(
+//CMD0
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x0  ;arg 
+Data.Set &MMC_BASE+0xc %Long 0x0  ;cmd
+WAIT 10.ms
+)
+)
+
+jump_cmd55:
+//CMD55
+RePeaT 10.
+(
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x0 ;arg
+Data.Set &MMC_BASE+0xc %Long 0x37020000 ;cmd55, resp1
+WAIT 10.ms
+
+//ACMD41
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x40FF8000 ;arg
+Data.Set &MMC_BASE+0xc %Long 0x29020000 ;cmd41, resp1
+WAIT 10.ms
+
+&resp=Data.Long(A:(&MMC_BASE+0x10))
+//print "CMD1 resp: 0x" &resp
+IF (&resp&0x80000000)==0x80000000
+(
+GOTO jump_cmd2
+)
+)
+
+PRINT "CMD1 fail"
+END
+
+jump_cmd2:
+//CMD2
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x0     ;arg
+Data.Set &MMC_BASE+0xc %Long 0x02010000 ;cmd2
+WAIT 10.ms
+
+//CMD3
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long 0x00010000  ; arg, MMC RCA is (0x0001<<16.)
+Data.Set &MMC_BASE+0xc %Long 0x03020000  ;cmd3
+WAIT 10.ms
+
+&cardaddress=Data.Long(A:(&MMC_BASE+0x10))
+&cardaddress=&cardaddress&0xFFFF0000
+
+
+//CMD10
+Data.Set &MMC_BASE+0x30 %Long 0xFFFFFFFF ;clear status
+Data.Set &MMC_BASE+0x8 %Long &cardaddress  ; arg, card address
+Data.Set &MMC_BASE+0xc %Long 0x0A010000  ;cmd10
+WAIT 10.ms
+
+//Response2
+PRINT "CID register"
+PRINT "[127:104] 0x" Data.Long(A:(&MMC_BASE+0x1c))
+PRINT "[103:72]  0x" Data.Long(A:(&MMC_BASE+0x18))
+PRINT "[71:40]   0x" Data.Long(A:(&MMC_BASE+0x14))
+PRINT "[39:8]    0x" Data.Long(A:(&MMC_BASE+0x10))
+
+RETURN

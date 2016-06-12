@@ -1,0 +1,127 @@
+; --------------------------------------------------------------------------------
+; @Title: BCM7445 Serial FLASH Programming Script
+; @Description:
+; Serial FLASH (MACRONIX, MX25L128) is connected the SPI0 
+; (Serial Peripheral Interface)
+;
+; S(D)RAM    : 0xFFE00000
+; Serial FLASH Controller Addr: 0xF0443400 (HIF_MSPI: Public MSPI Registers)
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Keywords: MACRONIX MX25L128 FLASH SPI
+; --------------------------------------------------------------------------------
+; $Id: bcm7445-spi64.cmm 2881 2014-07-07 10:35:48Z kjmal $
+  
+&baseAddr=0xF0443400
+
+    SYStem.RESet
+    SYStem.CPU CortexA15MPCore
+    SYStem.CONFIG.CoreNumber 4.
+    SYStem.CONFIG.COREDEBUG.Base    0x80110000 0x80112000 0x80114000 0x80116000
+    SYStem.CONFIG.BMC.Base          0x80111000 0x80113000 0x80115000 0x80117000
+    SYStem.CONFIG.CTI.Base          0x80118000 0x80119000 0x8011a000 0x8011b000
+    SYStem.CONFIG.ETM.Base          0x8011c000 0x8011d000 0x8011e000 0x8011f000
+    SYStem.CONFIG.FUNNEL1.Base      0x80200000
+    SYStem.CONFIG.FUNNEL1.ATBSource ETM.0 0  ETM.1 1 ETM.2 2 ETM.3 3
+    SYStem.CONFIG.TPIU.Base         0x80400000
+    SYStem.CONFIG.TPIU.ATBSource    FUNNEL1
+
+    SYStem.Option ResBreak OFF
+    SYStem.Option WaitReset 300ms
+
+    CORE.ASSIGN 1.
+   
+    ETM.OFF
+
+SYStem.Mode.Attach
+
+IF run()
+Break.direct
+
+PER.Set.simple c15:0x1 %Long Data.Long(C15:0x1)&~0x9
+
+Data.Set AZSD:&baseAddr %LE %Long 0x0A   ;SPCR0_LSB  Serial Clock, 10Mhz
+
+Data.Set AZSD:0xF0443208 %LE %Long 0x1    ;SPI bus is drivern by MSPI not BSPI
+Data.Set AZSD:(&baseAddr+0x4) %LE %Long 0xA3   ;8bits transfer, CPOL=1, CPHA=1
+
+Data.Set AZSD:(&baseAddr+0x10) %LE %Long 0x0    ;new qp
+Data.Set AZSD:(&baseAddr+0x14) %LE %Long 0x7    ;end qp
+
+//FLASH READ ID TEST
+AREA.CLEAR
+AREA.view
+GOSUB READ_ID_TEST
+DIALOG.YESNO "the flash id is correct on AREA window?"
+ENTRY &result
+IF !&result
+(
+PRINT "pls, check your register configuration to enable your flash controller"
+ENDDO
+)
+
+//S(D)RAM TEST for algorithm file
+GOSUB SDRAM_INIT
+Data.Test 0xFFE00000++0x7FFF  /Prime ;s(d)ram test
+IF FOUND()
+( 
+PRINT "s(d)ram is NOT initialized around 0x" ADDRESS.OFFSET(TRACK.ADDRESS())
+ENDDO
+)
+
+programFlash:
+
+  Break.RESet
+
+  FLASHFILE.RESet
+
+//FLASHFILE.CONFIG  (HIF_MSPI-0x200)
+  FLASHFILE.CONFIG  (&baseAddr-0x200)  0x0 0x0
+
+// FLASHFILE.TARGET <<code range>>    <<data range>>    <<algorithm file>>
+  FLASHFILE.TARGET 0xFFE00000++0x3FFF  0xFFE04000++0x1FFF    ~~/demo/arm/flash/byte/spi64_bcm4708x.bin   /KEEP
+
+  FLASHFILE.GETID
+  FLASHFILE.DUMP 0x0
+
+  ;FLASHFILE.unlock 0x0--0xFFFFFF
+  ;FLASHFILE.erase 0x0--0xFFFFF
+  ;FLASHFILE.load * 0x0
+  ;FLASHFILE.load * 0x0  /ComPare
+ENDDO
+
+READ_ID_TEST:
+
+//write
+Data.Set AZSD:(&baseAddr+0x40) %LE %Long 0x9F  ;tx
+Data.Set AZSD:(&baseAddr+0x48) %LE %Long 0x01  ;tx
+Data.Set AZSD:(&baseAddr+0x50) %LE %Long 0x02  ;tx
+Data.Set AZSD:(&baseAddr+0x58) %LE %Long 0x03  ;tx
+
+Data.Set AZSD:(&baseAddr+0x140) %LE %Long 0xC0  ;cmd
+Data.Set AZSD:(&baseAddr+0x144) %LE %Long 0xC0  ;cmd
+Data.Set AZSD:(&baseAddr+0x148) %LE %Long 0xC0  ;cmd
+Data.Set AZSD:(&baseAddr+0x14C) %LE %Long 0xC0  ;cmd
+Data.Set AZSD:(&baseAddr+0x150) %LE %Long 0xC0  ;cmd
+Data.Set AZSD:(&baseAddr+0x158) %LE %Long 0xC0  ;cmd
+
+Data.Set AZSD:(&baseAddr+0x10) %LE %Long 0x0  ;new qp
+Data.Set AZSD:(&baseAddr+0x14) %LE %Long 0x3  ;end qp
+
+;QSPI_MSPI_SPCR2
+Data.Set AZSD:(&baseAddr+0x18) %LE %Long 0x40  ; QSPI_MSPI_SPCR2  //enable
+
+//Read
+PRINT "Read 1st = 0x" Data.Long(A:(&baseAddr+0xC4))
+PRINT "Read 2nd = 0x" Data.Long(A:(&baseAddr+0xCC)) " (Manufacture ID)"
+PRINT "Read 3rd = 0x" Data.Long(A:(&baseAddr+0xD4)) " (Device ID)"
+PRINT "Read 4th = 0x" Data.Long(A:(&baseAddr+0xDC))
+
+RETURN
+
+
+SDRAM_INIT:
+
+RETURN
+

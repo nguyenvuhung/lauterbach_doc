@@ -1,0 +1,301 @@
+; --------------------------------------------------------------------------------
+; @Title: Generic script for ST STR91x internal flash
+;
+; @Description:
+;
+; Example script for flash declaration and programming of ST STR91x internal
+; flash.
+;
+; Script arguments:
+;
+;   DO str91x [PREPAREONLY] [CPU=<cpu>] [BOOTBANK=<addr>] [NONBOOTBANK=<addr>]
+;             [BOOT=<bank>]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;
+;     BOOTBANK=<addr> configures flash base address of boot bank. 
+;     Default base address is read from FMI_BBADR configuration register.
+;
+;     NONBOOTBANK=<addr> configures flash base address of non boot bank. 
+;     Default base address is
+;             read from FMI_NBBADR configuration register.
+;
+;     BOOT=<bank> setups flash boot bank. <bank> can be BANK0 or BANK1.
+;
+; For example:
+;
+;   DO ~~/demo/arm/flash/str91x CPU=STR912FAW44 PREPAREONLY
+;
+; List of STR91x derivatives and their configuration:
+;
+;   CPU-Type      FlashBank0   FlashBank1  SRAM size 
+;                  (kByte)       (kByte)    (kByte)
+; --------------------------------------------------------------------------------
+;   STR910FM32       256            32         64 
+;   STR910FW32       256            32         64 
+;   STR910FAM32      256            32         64
+;   STR910FAW32      256            32         64
+;   STR910FAZ32      256            32         64
+; --------------------------------------------------------------------------------
+;   STR911FM42       256            32         96 
+;   STR911FM44       512            32         96 
+;   STR911FAM42      256            32         96
+;   STR911FAW42      256            32         96
+;   STR911FAM44      512            32         96
+;   STR911FAW44      512            32         96
+;   STR911FAM46     1024           128         96
+;   STR911FAW46     1024           128         96
+;   STR911FAM47     2048           128         96
+;   STR911FAW47     2048           128         96
+; --------------------------------------------------------------------------------
+;   STR912FW42       256            32         96 
+;   STR912FW44       512            32         96 
+;   STR912FAW32      256            32         64
+;   STR912FAW42      256            32         96
+;   STR912FAZ42      256            32         96
+;   STR912FAW44      512            32         96
+;   STR912FAZ44      512            32         96
+;   STR912FAW46     1024           128         96
+;   STR912FAZ46     1024           128         96
+;   STR912FAW47     2048           128         96
+;   STR912FAZ47     2048           128         96
+;
+; Flash base addresses have to programmed in xBBADR FMI registers.
+;
+; SRAM base address is 0x4000000.
+;
+; @Chip: STR91*
+; @Keywords: ST
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 2903 $
+; $Id: str91x.cmm 2903 2014-07-16 11:19:46Z kjmal $
+;
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly &param_cpu &param_bootbank &param_nonbootbank &param_boot
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  IF VERSION.BUILD()>=29755.
+  (
+    &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+    &param_bootbank=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"BOOTBANK=","")
+    &param_nonbootbank=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"NONBOOTBANK=","")
+    &param_boot=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"BOOT=","")
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  LOCAL &Bank0Size &Bank1Size
+  LOCAL &Bank0Addr &Bank1Addr
+  LOCAL &BootBankSize &NonBootBankSize
+  LOCAL &BootBankAddr &NonBootBankAddr
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+
+    IF VERSION.BUILD()>=37389.
+    (
+      IF !CPUIS(STR91*)
+        SYStem.CPU STR91*
+    )
+
+    IF VERSION.BUILD()<16863.&&(CPU()!="STR910")&&(CPU()!="STR911")&&(CPU()!="STR912")
+    (
+      ; For older Trace32 software versions setup CPU selection here
+      SYStem.CPU STR912
+    )
+
+    SYStem.JtagClock RTCK
+
+    SYStem.Up
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Setup flash configuration 
+
+  IF (CPU()=="STR910")||(CPU()=="STR911")||(CPU()=="STR912")
+  (
+    ; For older Trace32 software versions.
+    ; Setup the configuration information out of the table above.
+    ; Example for STR912FAW47:
+    &Bank0Size=2048.
+    &Bank1Size=128.
+    &BootBankAddr=0x00000000
+    &NonBootBankAddr=0x00200000
+  )
+  ELSE
+  (
+    &BootBankAddr=0x00000000
+    IF "&param_Bank0Addr"!=""
+      &BootBankAddr=&param_bootbank
+
+    &NonBootBankAddr=0x00200000
+    IF "&param_Bank1Addr"!=""
+      &NonBootBankAddr=&param_nonbootbank
+
+    IF CPUIS(STR91*2)
+    (
+      &Bank0Size=256.
+      &Bank1Size=32.
+    )
+    ELSE IF CPUIS(STR91*4)
+    (
+      &Bank0Size=512.
+      &Bank1Size=32.
+    )
+    ELSE IF CPUIS(STR91*6)
+    (
+      &Bank0Size=1024.
+      &Bank1Size=128.
+    )
+    ELSE IF CPUIS(STR91*7)
+    (
+      &Bank0Size=2048.
+      &Bank1Size=128.
+    )
+  )
+
+  ; Swap Boot Bank
+  IF (((Data.Quad(DBG:0x520000)&0x0001000000000000)==0)&&("&param_boot"=="BANK1"))||(((Data.Quad(DBG:0x520000)&0x0001000000000000)==0x0001000000000000)&&("&param_boot"=="BANK0"))
+  (
+    GOSUB swapBootBank
+    SYStem.Up
+  )
+
+  IF (Data.Quad(DBG:0x520000)&0x0001000000000000)==0
+  (
+    ; Boot from flash bank 0
+    &BootBankSize=&Bank0Size
+    &Bank0Addr=&BootBankAddr
+    &NonBootBankSize=&Bank1Size
+    &Bank1Addr=&NonBootBankAddr
+  )
+  ELSE
+  (
+    ; Boot from flash bank 1
+    &BootBankSize=&Bank1Size
+    &Bank1Addr=&BootBankAddr
+    &NonBootBankSize=&Bank0Size
+    &Bank0Addr=&NonBootBankAddr
+  )
+
+  IF &BootBankSize==32.
+    Data.Set SD:0x54000000 %Long 0x00   ; FMI_BBSR = 32 kByte
+  ELSE IF &BootBankSize==128.
+    Data.Set SD:0x54000000 %Long 0x02   ; FMI_BBSR = 128 kByte
+  ELSE IF &BootBankSize==256.
+    Data.Set SD:0x54000000 %Long 0x03   ; FMI_BBSR = 256 kByte
+  ELSE IF &BootBankSize==512.
+    Data.Set SD:0x54000000 %Long 0x04   ; FMI_BBSR = 512 kByte
+  ELSE IF &BootBankSize==1024.
+    Data.Set SD:0x54000000 %Long 0x05   ; FMI_BBSR = 1 MByte
+  ELSE IF &BootBankSize==2048.
+    Data.Set SD:0x54000000 %Long 0x06   ; FMI_BBSR = 2 MByte
+
+  IF &NonBootBankSize==32.
+    Data.Set SD:0x54000004 %Long 0x02   ; FMI_NBBSR = 32 kByte
+  ELSE IF &NonBootBankSize==128.
+    Data.Set SD:0x54000004 %Long 0x04   ; FMI_NBBSR = 128 kByte
+  ELSE IF &NonBootBankSize==256.
+    Data.Set SD:0x54000004 %Long 0x05   ; FMI_NBBSR = 256 kByte
+  ELSE IF &NonBootBankSize==512.
+    Data.Set SD:0x54000004 %Long 0x06   ; FMI_NBBSR = 512 kByte
+  ELSE IF &NonBootBankSize==1024.
+    Data.Set SD:0x54000004 %Long 0x07   ; FMI_NBBSR = 1 MByte
+  ELSE IF &NonBootBankSize==2048.
+    Data.Set SD:0x54000004 %Long 0x08   ; FMI_NBBSR = 2 MByte
+
+  Data.Set SD:0x5400000C %Long &BootBankAddr>>2                     ; FMI_BBADR
+  Data.Set SD:0x54000010 %Long &NonBootBankAddr>>2                  ; FMI_NBBADR
+  Data.Set SD:0x54000018 %Long Data.Long(SD:0x54000018)|0x18        ; FMI_CR enable Bank1
+
+  Data.Set SD:0x5C002034 %Long Data.Long(SD:0x5C002034)&0xFFFFFFFE  ; Disable PFQBC
+
+  ; In this example script SCU_CLKCNTR is set to the reset value to ensure 
+  ; flash programming. But also other SCU_CLKCNTR configuration is possible
+  ; and may provide better performance.
+  Data.Set SD:0x5C002000 %Long 0x00020002     ; SCU_CLKCNTR reset value
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+
+  ; Bank 0
+  FLASH.Create 1. &Bank0Addr++(&Bank0Size*0x400-0x01) 0x10000 TARGET Word
+
+  ; Bank 1
+  IF &Bank1Size==32.
+    FLASH.Create 2. &Bank1Addr++(&Bank1Size*0x400-0x01) 0x2000 TARGET Word
+  ELSE IF &Bank1Size==128.
+    FLASH.Create 2. &Bank1Addr++(&Bank1Size*0x400-0x01) 0x4000 TARGET Word
+
+  IF SYStem.BIGENDIAN()
+    FLASH.TARGET 0x40000000 ESD:0x40001000 0x2000 ~~/demo/arm/flash/word_be/str9.bin
+  ELSE
+    FLASH.TARGET 0x40000000 ESD:0x40001000 0x2000 ~~/demo/arm/flash/word/str9.bin
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+
+  IF &progflash 
+  (
+    FLASH.UNLOCK.ALL
+
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+    ; Data.LOAD * /ComPare
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Swap flash boot bank
+
+swapBootBank:
+  SYStem.Down
+  SYStem.JtagClock 1MHz
+  SYStem.Mode.Prepare
+
+  ; Print ID code register of the flash TAP #3
+  PRINT "Flash TAP #3 ID code is 0x" Data.Long(DBG:0x00600000)
+
+  ; Read out configuration sector and invert bit CSX to swap boot flash 
+  ; bank selection.
+  LOCAL &configuration
+  &configuration=Data.Quad(DBG:0x520000)^0x0001000000000000
+
+  ; Erase configuration sector
+  Data.Set DBG:0x600010 %Quad 0x0002000000000000
+
+  ; Program configuration sector
+  Data.Set DBG:0x520000 %Quad &configuration
+
+  IF (Data.Quad(DBG:0x520000)&0x0001000000000000)==0
+    PRINT "Flash Bank 0 ist selected for boot"
+  ELSE
+    PRINT "Flash Bank 1 ist selected for boot"
+
+  SYStem.Down
+  SYStem.JtagClock RTCK
+
+  RETURN

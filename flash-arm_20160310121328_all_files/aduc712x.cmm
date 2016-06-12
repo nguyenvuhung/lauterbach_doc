@@ -1,0 +1,92 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Analog Devices ADuC712x internal flash.
+; 
+; @Description: 
+; Script arguments:
+;
+;   DO aduc712x [PREPAREONLY] 
+;
+;     PREPAREONLY only declares flash but does not execute flash programming 
+; 
+; Example:
+;
+;   DO ~~/demo/arm/flash/aduc712x PREPAREONLY
+;
+; List of ADuC712x derivatives and their configuration:
+;
+;   CPU-Type       FlashSize   RamSize
+;                    (KB)       (KB)
+;   ----------------------------------
+;   ADuC7122         126.         8.
+;   ADuC7124         126.        32.
+;   ADuC7128         126.         8.
+;   ADuC7129         126.         8.
+;
+; Flash location:
+;   126kB flash at 0x00000000--0x0001f7ff or 0x00080000--0x0009f7ff
+;
+; RAM location:
+;   32kB RAM at    0x00040000--0x00047fff or 0x00000000--0x00007fff
+;   8kB RAM at     0x00040000--0x00041fff or 0x00000000--0x00001fff
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ADuC712*
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: aduc712x.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  ; --------------------------------------------------------------------------------
+  ; Set configuration values.
+
+  LOCAL &FlashBase
+  LOCAL &RamBase
+
+  &FlashBase=0x00080000
+  &RamBase=0x00040000
+
+  ; --------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU ADUC7128
+    SYStem.Option EnReset OFF
+    SYStem.Up
+  )
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  FLASH.Create 1. (&FlashBase+0x00000)--(&FlashBase+0x0ffff) 0x200 TARGET Word
+  FLASH.Create 2. (&FlashBase+0x10000)--(&FlashBase+0x1f7ff) 0x200 TARGET Word
+  FLASH.TARGET &RamBase &RamBase+0x800 0x200 ~~/demo/arm/flash/word/aduc7220.bin
+  
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.Erase.ALL
+
+    FLASH.Program.ALL
+    Data.LOAD.auto * /Word
+    FLASH.Program.off
+  )
+
+  ENDDO

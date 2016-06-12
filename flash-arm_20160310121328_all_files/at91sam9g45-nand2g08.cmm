@@ -1,0 +1,128 @@
+; --------------------------------------------------------------------------------
+; @Title: AT91SAM9G45 NAND FLASH Programming Script
+; @Description:
+; NAND FLASH(SAMSUNG,K9F2G08U) is connected NCS3(PC14)
+; 
+; Internal SRAM    : 0x300000
+; Command Register : 0x40400000  
+; Address Register : 0x40200000
+; Data Register    : 0x40000000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: AT91SAM9G45
+; @Keywords: SAMSUNG K9F2G08U flash NAND
+; --------------------------------------------------------------------------------
+; $Id: at91sam9g45-nand2g08.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+//SYStem Configuration 
+ SYStem.RESet
+ SYStem.CPU AT91SAM9G45
+ SYStem.JtagClock RTCK
+ SYStem.Option IMASKASM ON
+ SYStem.Option IMASKHLL ON
+ SYStem.Option RESBREAK OFF
+ SYStem.Option ENRESET ON
+ SYStem.Mode Up
+
+ Register.RESet
+
+//CPU initialization
+GOSUB cpu_init
+
+//Assign the EBI CS3 to the NandFlash
+Data.Set ASD:0xFFFFEB28 %Long 0x10008   ; EBI_CS3A
+
+// setup NCS3 (NAND Flash) 8-bit
+Data.Set ASD:0xFFFFE830   %Long    0x03030303     ; SMC_SETUP
+Data.Set ASD:0xFFFFE834   %Long    0x04040404     ; SMC_PULSE
+Data.Set ASD:0xFFFFE838   %Long    0x00080008     ; SMC_CYCLE
+;Data.Set ASD:0xFFFFE83C  %Long    0x00161003     ; SMC_MODE     ; 16-bit
+Data.Set ASD:0xFFFFE83C   %Long    0x00160003     ; SMC_MODE      ; 8-bit
+
+// NAND FLash: configure PIOs in periph mode
+Data.Set ASD:0xFFFFF600 %Long 0x4000   ;PIOC.14 Enable  
+Data.Set ASD:0xFFFFF610 %Long 0x4000   ;PIOC.14 Output Enable         
+
+//for asserting the Nand Flash Chip select (PIOC.14) 
+Data.Set ASD:0xFFFFF630 %Long 0x4000  ; High 
+Data.Set ASD:0xFFFFF634 %Long 0x4000  ; Low
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.config <Cmd_reg> <Addr_reg> <Data_reg>
+  FLASHFILE.CONFIG 0x40400000 0x40200000  0x40000000
+
+// FLASHFILE.TARGET <code range> <data range> <Algorithm file>
+  FLASHFILE.TARGET 0x300000++0x1fff 0x302000++0x1fff ~~/demo/arm/flash/byte/nand2g08.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Put a list of bad blocks into area window for 2Gbit (256MB) size
+  ;FLASHFILE.GETBADBLOCK 0x0--0xFFFFFFF
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+  //Erase NAND FLASH Main and Bad block inforamtion
+   FLASHFILE.Erase 0x0--0xFFFFFFF  /EraseBadBlocks
+  
+  //Program
+   FLASHFILE.LOAD.binary * 0x0
+   
+  //Verify
+   ;FLASHFILE.LOAD * 0x0 /ComPare
+   
+  )
+//for releasing the Nand Flash Chip select
+  Data.Set A:0xFFFFF830 %Long 0x4000	 ; High
+
+ENDDO 
+
+cpu_init:
+
+;Disable Watchdog
+Data.Set ASD:0xFFFFFD44 %Long 8000
+
+;Write charge pump
+Data.Set ASD:0xFFFFFC80 %Long 0
+
+;Setup PLL to 400MHz / MCLK 133 Mhz
+Data.Set ASD:0xFFFFFD50 %Long 0x00000001
+WAIT 10ms
+
+Data.Set ASD:0xFFFFFC20 %Long 0x00004001
+WAIT 10ms
+
+Data.Set ASD:0xFFFFFC28 %Long 0x20c73f03 
+WAIT 10ms
+
+Data.Set ASD:0xFFFFFC30 %Long 0x00001306 ; changed the pll make 1/2 slower
+;Data.Set ASD:0xFFFFFC30 %Long 0x00001302
+WAIT 10ms
+
+;Data.Set ASD:0xFFFFFC10 %Long 0x00000010
+WAIT 10ms
+
+; It is necessary to write to memory after setting it up
+Data.Set 0x20000000 %Long 0x1
+
+;Reset ECC
+Data.Set ASD:0xFFFFE000 %Long 1
+
+; Setup ITCM and DTCM
+Data.Set ASD:0xFFFFED14 %Long 0xB66
+
+;Remap SRAM to 0x0
+Data.Set SD:0xFFFFED00 %LE %Long 0x3
+
+;Disable Watchdog
+Data.Set ASD:0xFFFFFD44 %Long 8000
+
+RETURN
+
+

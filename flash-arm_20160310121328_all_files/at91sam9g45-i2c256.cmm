@@ -1,0 +1,106 @@
+; --------------------------------------------------------------------------------
+; @Title: AT91SAM9G45 EEPROM Programming Script
+; @Description: 
+; EEPROM (ATMEL, AT24C256) is connected the TWI0 (PA20=TWD0 and PA21=TWCK0)
+;
+; Internal SRAM    : 0x300000
+; Serial FLASH Controller Addr: 0xFFF84000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: AT91SAM9G45
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: at91sam9g45-i2c256.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+//SYStem Configuration 
+IF SYStem.MODE()<5
+(
+  SYStem.RESet
+  SYStem.CPU AT91SAM9G45
+  SYStem.JtagClock RTCK
+  SYStem.Option IMASKASM ON
+  SYStem.Option IMASKHLL ON
+  SYStem.Option RESBREAK OFF
+  SYStem.Option ENRESET ON
+  SYStem.Mode Go
+)
+
+IF run()
+Break.direct
+
+  PER.Set.simple C15:0x1 %Long %LE 0x50078      ; disable mmu & data cache
+  PER.Set.simple ASD:0xFFFFFD44 %Long %LE 8000  ; disable Watchdog
+
+  GOSUB cpu_init
+
+  GOSUB i2c_Init   
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASFILE.CONFIG  <i2c base Reg>
+  FLASHFILE.CONFIG 0xFFF84000 
+
+//FLASHFILE.TARGET <code range>        <data range>           <Algorithm file>
+ ;FLASHFILE.TARGET 0x00300000++0x1FFF 0x00302000++0x1FFF  ~~/demo/arm/flash/byte/i2c02_at91sam.bin     /keep  ; for at24c02
+  FLASHFILE.TARGET 0x00300000++0x1FFF 0x00302000++0x1FFF  ~~/demo/arm/flash/byte/i2c256_at91sam.bin    /KEEP
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Dump window for Serial FLASH
+  FLASHFILE.DUMP 0x0
+
+//Erase EEPROM
+; FLASHFILE.ERASE 0x0--0x7FFF  
+
+//Write EEPROM
+; FLASHFILE.LOAD  * 0x0 
+
+ENDDO
+
+i2c_Init:
+
+PER.Set.simple ASD:0xFFFFF200 %Long %LE 0xFFCFFFFF
+PER.Set.simple ASD:0xFFFFF204 %Long %LE 0x00300000
+PER.Set.simple ASD:0xFFFFF214 %Long %LE 0x00300000
+PER.Set.simple ASD:0xFFFFF210 %Long %LE 0x00300000
+PER.Set.simple ASD:0xFFFFF250 %Long %LE 0x00300000
+PER.Set.simple ASD:0xFFFFF260 %Long %LE 0x00300000
+PER.Set.simple ASD:0xFFFFF270 %Long %LE 0x00000000; PIO20, PIO21
+
+PER.Set.simple ASD:0xFFFFFC10 %Long %LE 0x00005004  
+
+PER.Set.simple ASD:0xFFF84000  %Long %LE 0x80         ;reset i2c controller
+PER.Set.simple ASD:0xFFF84000  %Long %LE 0x24
+;PER.S ASD:0xFFF84004 %LONG %LE 0x00501100  ;1 byte  address for at24c02
+PER.Set.simple ASD:0xFFF84004  %Long %LE 0x00501200  ;2 bytes address for at24c256
+PER.Set.simple ASD:0xFFF84010  %Long %LE 0x17676     ;clock for i2c
+
+RETURN
+
+
+cpu_init:
+
+PER.Set.simple ASD:0xFFFFFC80 %Long %LE 0
+PER.Set.simple ASD:0xFFFFFD50 %Long %LE 0x0000000A
+PER.Set.simple ASD:0xFFFFFC20 %Long %LE 0x0000FF01
+PER.Set.simple ASD:0xFFFFFC28 %Long %LE 0x203F3F01
+PER.Set.simple ASD:0xFFFFFC30 %Long %LE 0x0000110A
+PER.Set.simple ASD:0x20000000 %Long %LE 0x1
+
+PER.Set.simple ASD:0xFFFFE000 %Long %LE 1
+PER.Set.simple ASD:0xFFFFED14 %Long %LE 0x0
+PER.Set.simple ASD:0xFFFFED00 %Long %LE 0x0
+
+PER.Set.simple ASD:0xFFFFFC00 %Long %LE 0x45
+PER.Set.simple ASD:0xFFFFFC10 %Long %LE 0x260d03c
+PER.Set.simple ASD:0xFFFFFC1C %Long %LE 0x11210000
+PER.Set.simple ASD:0xFFFFFC20 %Long %LE 0x20c73f0d 
+PER.Set.simple ASD:0xFFFFFC30 %Long %LE 0x1302
+PER.Set.simple ASD:0xFFFFFC20 %Long %LE 0xff01
+  
+
+RETURN

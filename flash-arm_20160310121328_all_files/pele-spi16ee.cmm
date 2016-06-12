@@ -1,0 +1,59 @@
+; --------------------------------------------------------------------------------
+; @Title: Xilinx PELE SPI EEPROM Programming Script
+; @Description:
+; EEPROM(MICROCHIP, 25AA640) is connected to the ss0
+; 
+; S(D)RAM: 0x00001000
+; SPI Tx Register : 0xE000601C   
+; SPI Rx Register : 0xE0006020   
+; SPI CS Register : 0xE0006000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ZYNQ-7000
+; @Keywords: MICROCHIP 25AA640 SPI
+; --------------------------------------------------------------------------------
+; $Id: pele-spi16ee.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  WinCLEAR
+
+  SYStem.RESet
+  SYStem.CPU ZYNQ-7000
+  CORE.ASSIGN 1             ; second core: "2", both (SMP): "1,2"
+
+  TrOnchip.Set.DABORT OFF
+  TrOnchip.Set.PABORT OFF
+  TrOnchip.Set.UNDEF OFF
+  SYStem.Option DACR ON
+ 
+  Trace.METHOD.Onchip
+
+  SYStem.Mode Attach
+  IF RUN()
+    Break.direct
+
+  Data.Set ZSD:0xE0006014 %LE %Long 0x0     ; Disable SPI
+  Data.Set ZSD:0xE0006000 %LE %Long 0xB829  ; Configuration SPI, SS0, 8bits, Master Mode
+  Data.Set ZSD:0xE0006008 %LE %Long 0xFF    ; Enable SPI Interuppt 
+  Data.Set ZSD:0xE0006014 %LE %Long 0x1     ; Enable SPI
+
+  FLASHFILE.RESet
+
+//FLASFILE.CONFIG  <TXDATA Reg>    <RXDATA Reg>      <CONREG >
+  FLASHFILE.CONFIG 0xE000601C      0xE0006020        0xE0006000
+//FLASHFILE.TARGET <code range>        <data range>        <algorithm file>
+  FLASHFILE.TARGET 0x00001000++0x3FFF  0x00005000++0x21FF  ~~/demo/arm/flash/byte/spi16ee_pele.bin 
+
+  FLASHFILE.GETID
+
+//Dump window for Serial FLASH
+  FLASHFILE.DUMP 0x0
+
+//Write Serial FLASH
+  FLASHFILE.Erase 0x0--0x1FFF
+
+//Write Serial FLASH
+  FLASHFILE.LOAD.binary  * 0x0
+  ;FLASHFILE.LOAD  * 0x0  /CP
+
+ENDDO 

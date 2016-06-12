@@ -1,0 +1,225 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of NXP LPC8xx internal flash.
+;
+; @Description: 
+; Script arguments:
+;
+;  DO lpc8xx [PREPAREONLY]
+;
+;   PREPAREONLY only declares flash but does not execute flash programming
+;
+; List of LPC8xx derivatives and their configuration:
+;
+;   CPU-Type       FlashSize  RamSize
+;                     [kB]      [kB]
+;   ---------------------------------
+;   LPC810M021FN8       4.        1.
+;   LPC811M001FDH16     8.        2.
+;   LPC812M101FD20     16.        4.
+;   LPC812M101FDH16    16.        4.
+;   LPC812M101FDH20    16.        4.
+;   LPC822M101JHI33    16.        4.
+;   LPC822M101JDH20    16.        4.
+;   LPC824M201JHI33    32.        8.
+;   LPC824M201JDH20    32.        8. 
+;
+; Code Read Protection (CRP):
+;
+;   CRP is invoked by programming a specific pattern in flash location 
+;   at 0x000002FC.
+;
+;   Name     Pattern      Description
+;   --------------------------------
+;   NO_ISP   0x4E697370   Prevents sampling of pin PIO0_1 for entering ISP mode.
+;                         PIO0_1 is available for other uses.
+;   CRP1     0x12345678   Access to chip via the SWD pins is disabled. This mode
+;                         allows partial flash update using the following ISP
+;                         commands and restrictions:
+;                         • Write to RAM command should not access RAM below
+;                           0x10000300. Access to addresses below 0x10000200 is
+;                           disabled.
+;                         • Copy RAM to flash command can not write to Sector 0.
+;                         • Erase command can erase Sector 0 only when all 
+;                           sectors are selected for erase.
+;                         • Compare command is disabled.
+;                         • Read Memory command is disabled.
+;                         This mode is useful when CRP is required and flash 
+;                         field updates are needed but all sectors can not be 
+;                         erased. Since compare command is disabled in case of 
+;                         partial updates the secondary loader should implement 
+;                         checksum mechanism to verify the integrity of the flash.
+;   CRP2     0x87654321   Access to chip via the SWD pins is disabled. The 
+;                         following ISP commands are disabled:
+;                         • Read Memory
+;                         • Write to RAM
+;                         • Go
+;                         • Copy RAM to flash
+;                         • Compare
+;                         When CRP2 is enabled the ISP erase command only allows
+;                         erasure of all user sectors.
+;   CRP3     0x43218765   Access to chip via the SWD pins is disabled. ISP entry 
+;                         by pulling PIO0_1 LOW is disabled if a valid user code 
+;                         is present in flash sector 0.
+;                         This mode effectively disables ISP override using PIO0_1 
+;                         pin. It is up to the user’s application to provide a 
+;                         flash update mechanism using IAP calls or call reinvoke 
+;                         ISP command to enable flash update via UART.
+;                         CAUTION: If CRP3 is selected, no future factory testing
+;                         can be performed on the device.
+;
+; RAM used by IAP command handler:
+;
+;   IAP commands, which results in a flash write/erase operation, use 32 bytes of
+;   space in the top portion of the on-chip RAM for execution.
+;
+; HINTS:
+;
+;   Flash clock has to match System Clock Frequency (CCLK). 
+;   FLASH.CLocK.AUTO can be used for automatic flash clock measurement.
+;
+;   Boot flash cannot be programmed or erased with builtin flash 
+;   algorithm. 
+;
+;   Data has to be loaded to flash alignment to page boundaries.
+;
+;   Vector table checksum generation is done by script, so that it 
+;   can be used or switched off, as needed.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: LPC8*
+; --------------------------------------------------------------------------------
+; $Rev: 3508 $
+; $Id: lpc8xx.cmm 3508 2015-11-27 15:11:24Z fcaron $
+
+  LOCAL &parameters &param_prepareonly
+  ENTRY %LINE &parameters
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  ; --------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF !CPUIS(LPC8*)
+      SYStem.CPU LPC8*
+
+    IF !CABLE.TWOWIRE()
+    (
+      PRINT %ERROR "Serial Wire Debug (SWD) not supported by debug cable"
+      ENDDO
+    )
+    SYStem.CONFIG.DEBUGPORTTYPE SWD
+    SYStem.Option.EnReset OFF
+
+    SYStem.Up
+  )
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  FLASH.CLocK.AUTO
+  GOSUB FlashDeclaration
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    ; Switch memory mapping to user flash mode, so that on-chip flash is 
+    ; mapped to address 0x0--0x1ff. System Memory Remap register 
+    ; SYSMEMREMAP:0..1 = 10b
+    Data.Set 0x40048000 %Long 0x02
+
+    ; Example for download 
+    FLASH.ReProgram.ALL /Erase
+    ; 1. Download file
+    Data.LOAD.auto *
+    ; 2. Checksum generation
+    Data.SUM 0x0--0x1B /Long         ;Calculate checksum of all (other) vectors
+    Data.Set 0x1C %Long -Data.SUM()  ;Write the 2's complement in reserved vector's spot
+    ; 3. Flash programming
+    FLASH.ReProgram.off
+
+    ; Reset device and execute boot code until application start
+    LOCAL &startAddress
+    &startAddress=Data.Long(SD:0x04)&0xFFFFFFFE
+    SYStem.Up
+    Go.direct &startAddress
+    WAIT 100.ms
+    IF RUN()
+    (
+      Break.direct
+      Data.List
+      PRINT %ERROR "Boot code didn't branch to application start"
+      ENDDO
+    )
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &FlashSize
+  LOCAL &RAMSize
+
+  IF CPUIS(LPC810*)
+  (
+    &FlashSize=0x1000
+    &RAMSize=0x400
+  )
+  ELSE IF CPUIS(LPC811*)
+  (
+    &FlashSize=0x2000
+    &RAMSize=0x800
+  )
+  ELSE IF CPUIS(LPC8?2*)
+  (
+    &FlashSize=0x4000
+    &RAMSize=0x1000
+  )
+  ELSE IF CPUIS(LPC824*)
+  (
+    &FlashSize=0x8000
+    &RAMSize=0x2000
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  FLASH.Create 1. 0x0--(&FlashSize-1) 0x400 TARGET Long
+
+  IF &RAMSize>=0x1000
+  (
+    FLASH.TARGET 0x10000800 0x10000000 0x400 ~~/demo/arm/flash/long/lpc800.bin /STACKSIZE 0x120
+  )
+  ELSE IF &RAMSize>=0x0800
+  (
+    FLASH.TARGET 0x10000500 0x10000000 0x300 ~~/demo/arm/flash/long/lpc800.bin /STACKSIZE 0x120
+  )
+  ELSE IF &RAMSize>=0x0400
+  (
+    FLASH.TARGET 0x10000200 0x10000000 0x0C0 ~~/demo/arm/flash/long/lpc810.bin /STACKSIZE 0x120
+  )
+  ELSE
+  (
+    PRINT %ERROR "RAM size is not supported by the script"
+    ENDDO
+  )
+
+  RETURN

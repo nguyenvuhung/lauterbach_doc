@@ -1,0 +1,115 @@
+; --------------------------------------------------------------------------------
+; @Title: Serial FLASH Programming script for 88MC200 from Marvell Quad SPI controller
+; @Description:
+; Serial FLASH(ST,25P64) is connected
+;
+; S(D)RAM: 0x100000
+;
+; QSPI Base Register : 0x46010000   
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: 88MC200
+; @Board: 88MC200
+; @Keywords: Marvell flash SPI
+; --------------------------------------------------------------------------------
+; $Id: 88mc200-spi.cmm 3290 2015-05-18 09:04:12Z jjeong $
+
+LOCAL &QSPI_BASE
+&QSPI_BASE=0x46010000   ; QSPI0=0x46010000, QSPI1=0x46090000
+
+RESet
+SYStem.CPU 88MC200
+SYStem.Option.ResBreak  OFF
+SYStem.Option.WaitReset 50ms
+SYStem.Up
+	
+Data.Set SD:0x48040000 %LE %Long 0x0 ; Watchdog Timer  watchdog disable
+
+GOSUB enable_QSPI1
+
+Data.Set &QSPI_BASE+0x4 %Long 0x4222   ; flush 0x200, 4byte read:0x20, clk div:0x2
+
+//FLASH READ ID TEST
+AREA.view
+GOSUB READ_ID_TEST
+DIALOG.YESNO "Is the flash ID correctly shown in the AREA window?"
+LOCAL &result
+ENTRY &result
+IF !&result
+(
+  PRINT "Please check your register configuration to enable your flash controller"
+  ENDDO
+)
+
+programFlash:
+
+//FLASFILE.CONFIG  <base Reg>    
+  FLASHFILE.CONFIG &QSPI_BASE
+
+//FLASHFILE.TARGET  <Code Range>       <Data Range>              <Algorithm File>
+  FLASHFILE.TARGET  0x100000++0x1FFF    EAHB:0x102000++0x3FFF    ~~/demo/arm/flash/byte/SPI64_mrvlqspi.bin  /KEEP  /DualPort
+
+FLASHFILE.GETID
+
+//Dump window for Serial FLASH
+FLASHFILE.DUMP 0x0  
+
+//Erase Serial FLASH
+;FLASHFILE.ERASE 0x0--0xFFFFF
+
+//Write Serial FLASH
+;FLASHFILE.LOAD ~~~~/boot.bin 0x0
+;FLASHFILE.LOAD ~~~~/boot.bin 0x0 /ComPare
+
+ENDDO
+
+enable_QSPI1:
+
+//for QSPI1
+Data.Set SD:0x480A007C %LE %Long 0x04FA0f98   ;QSPI1 clk enable, Peripheral Clock Gating Register (PERI_CLK_EN)
+Data.Set SD:0x480A0094 %LE %Long 0xE4111      ;Peripheral1 Clock Divider Ratio Register (PERI1_CLK_DIV)
+Data.Set SD:0x480A00A4 %LE %Long 0x02666599   ;Power Config Register (IO_PAD_PWR_CFG)
+
+//PINMUX Register
+Data.Set SD:0x48010120 %LE %Long 0x404C   ;GPIO_PINMUX72  QSPI1_SS
+Data.Set SD:0x48010124 %LE %Long 0x404C   ;GPIO_PINMUX73  QSPI1_CLK
+Data.Set SD:0x48010130 %LE %Long 0x404C   ;GPIO_PINMUX76
+Data.Set SD:0x48010134 %LE %Long 0x404C   ;GPIO_PINMUX77
+Data.Set SD:0x48010138 %LE %Long 0x404C   ;GPIO_PINMUX78
+Data.Set SD:0x4801013C %LE %Long 0x404C   ;GPIO_PINMUX79
+
+RETURN
+
+
+READ_ID_TEST:
+
+Data.Set &QSPI_BASE+0x4 %Long 0x4222  ; xfer stop
+
+Data.Set &QSPI_BASE+0x0 %Long 0x0  ;SS_dis
+Data.Set &QSPI_BASE+0x4 %Long Data.Long(A:(&QSPI_BASE+0x4))|0x200  ;flush
+WAIT 10.ms  ;wait for conf.fifo flash=0
+
+Data.Set &QSPI_BASE+0x0 %Long Data.Long(A:(&QSPI_BASE+0x0))|0x1  ;SS_EN
+Data.Set &QSPI_BASE+0x1c %Long 0x01  ;hdrCnt.Instr_cnt, addr_cnt
+
+Data.Set &QSPI_BASE+0x10 %Long 0x9F ;Instr.instr
+
+Data.Set &QSPI_BASE+0x14 %Long 0x00  ;Addr.Addr
+
+Data.Set &QSPI_BASE+0x20 %Long 0x04  ;Dincnt.Data_in_cnt
+
+Data.Set &QSPI_BASE+0x4 %Long  Data.Long(A:(&QSPI_BASE+0x4))&(~0x2000)  ; conf.RW_EN=0, means read
+Data.Set &QSPI_BASE+0x4 %Long  Data.Long(A:(&QSPI_BASE+0x4))|0x8000 ; start transfer
+WAIT 10.ms
+
+&temp=Data.Long(A:&QSPI_BASE+0xC) 
+
+PRINT "read data 1st 0x" (&temp&0xFF)
+PRINT "read data 2nd 0x" ((&temp>>8)&0xFF)
+PRINT "read data 3rd 0x" ((&temp>>16.)&0xFF)
+PRINT "read data 4th 0x" ((&temp>>24.)&0xFF)
+
+Data.Set &QSPI_BASE+0x0 %Long 0x0  ;SS_DIS
+
+RETURN

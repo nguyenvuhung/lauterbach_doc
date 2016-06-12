@@ -1,0 +1,113 @@
+; --------------------------------------------------------------------------------
+; @Title: Setup of TMS570LS21xx internal OTP flash
+;
+; @Description: 
+; Script arguments:
+;
+;   do tms570ls21xx-otp [AUTOECC=0|1]
+;
+;     AUTOECC default value is 1
+;
+; List of TMS570LS21xx derivatives and their configuration:
+;
+;   CPU-Type           Flash    RAM
+;   --------------------------------
+;   TMS570LS2124-PGE    2MB    192kB
+;   TMS570LS2124-ZWT    2MB    192kB
+;   TMS570LS2125-PGE    2MB    192kB
+;   TMS570LS2125-ZWT    2MB    192kB
+;   TMS570LS2134-PGE    2MB    256kB
+;   TMS570LS2134-ZWT    2MB    256kB
+;   TMS570LS2135-PGE    2MB    256kB
+;   TMS570LS2135-ZWT    2MB    256kB
+;
+; HINTS:
+;
+;   Flash programming algorithm is linked to address 0x08000000 and is not
+;   position independent. Code address of FLASH.TARGET command has not be
+;   changed.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: TMS570LS313* 
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: tms570ls21xx-otp.cmm 2881 2014-07-07 10:35:48Z kjmal $
+;
+
+  ; --------------------------------------------------------------------------------
+  ; Setup script configuration. If auto ECC generation is disabled then
+  ; flash sectors are programmed without generating ECC. ECC sectors can be
+  ; programmed separately or ECC sector programming can be omitted.
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &AutoECCGeneration
+  &AutoECCGeneration=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"AUTOECC=","1")
+
+  ; --------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    MAP.RESet
+
+    SYStem.CPU TMS570LS2135-ZWT
+    ETM.OFF
+    SYStem.Up
+  )
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+
+  LOCAL &flashdriver
+
+  IF &AutoECCGeneration!=0
+  (
+    ; OTP flash
+    FLASH.Create 11. 0xf0000000--0xf0000fff  0x1000 TARGET Quad 0. /OTP ; Bank 0
+    FLASH.Create 12. 0xf0002000--0xf0002fff  0x1000 TARGET Quad 1. /OTP ; Bank 1
+    FLASH.Create 18. 0xf000e000--0xf000e7ff   0x800 TARGET Quad 7. /OTP ; Bank 7
+
+    &flashdriver="f021r4.bin"
+  )
+  ELSE
+  (
+    ; OTP flash
+    FLASH.Create 11. 0xf0000000--0xf0000fff  0x1000 TARGET Byte 0. /OTP ; Bank 0
+    FLASH.Create 12. 0xf0002000--0xf0002fff  0x1000 TARGET Byte 1. /OTP ; Bank 1
+    FLASH.Create 18. 0xf000e000--0xf000e7ff   0x800 TARGET Byte 7. /OTP ; Bank 7
+    ; OTP flash ECC
+    FLASH.Create 11. 0xf0040000--0xf00401ff   0x200 TARGET Byte 0. /OTP ; Bank 0
+    FLASH.Create 12. 0xf0040400--0xf00405ff   0x200 TARGET Byte 1. /OTP ; Bank 1
+    FLASH.Create 18. 0xf0041c00--0xf0041cff   0x100 TARGET Byte 7. /OTP ; Bank 7
+
+    &flashdriver="f021r4noecc.bin"
+  )
+
+  FLASH.TARGET 0x08000000 0x08001000 0x1000 ~~/demo/arm/flash/byte_be/&flashdriver
+  IF FLASH.TARGET.BUILD(~~/demo/arm/flash/byte_be/&flashdriver)<1764.
+    PRINT %ERROR "Flash algorithm is to old for OTP programming, please request an update"
+
+  FLASH.CLocK AUTO
+
+  MAP.BUS16 0xf0400000--0xf045ffff
+  MAP.BUS16 0xf0100000--0xf0101fff
+  MAP.BUS16 0xf0040000--0xf0041fff
+
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+  ;
+  ; This script can be called to make flash declaration. Afterwards OTP 
+  ; programming can be done with similar commands by calling script.
+
+  //  FLASH.Program 0xf0000000--0xf0041fff /OTP
+  //  Data.Set
+  //  ; ...
+  //  FLASH.Program off
+
+  ENDDO

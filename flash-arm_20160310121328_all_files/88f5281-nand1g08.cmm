@@ -1,0 +1,78 @@
+; --------------------------------------------------------------------------------
+; @Title: NAND FLASH Programming script for Marvell DB-88F5281-DDR1-BP-A
+; @Description:
+;
+; Connectors and switches
+; CON31 : Power (ATX power supply)
+; CON8  : JTAG
+; SW1   : Power switch
+; SW2   : Reset 
+;
+; SDRAM: 0x00100000
+; Command Register : 0xF0000001  
+; Address Register : 0xF0000002
+; Data Register    : 0xF0000000
+;
+; @Chip: 88FR531
+; @Board: DB-88F5281-DDR1-BP-A
+; @Keywords: Marvell NAND 
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: 88f5281-nand1g08.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+; TRACE32 software newer than June 06, 2006 required
+
+  SYStem.RESet
+  SYStem.CPU 88FR531
+  SYStem.JtagClock RTCK
+  SYStem.Option Bigendian ON
+  SYStem.Up
+
+; Before uploading the demo application the board need a initialization by its self.
+; Uploading the code before will result in an error.
+  Go.direct
+  WAIT 1s
+  IF RUN()
+    Break.direct
+
+; Switch to Little endian mode and turn off MMU and caches
+  &cr=Data.Long(C15:1)
+  &cr=&cr&0xFFFFFF7A
+  Data.Set C15:1 %Long &cr
+
+  SYStem.Option Bigendian OFF
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.config <Cmd_reg>  <Addr_reg>  <Data_reg>
+  FLASHFILE.CONFIG 0xF0000001 0xF0000002  0xF0000000
+
+// FLASHFILE.TARGET <code range>        <data range>           <Algorithm file>
+  FLASHFILE.TARGET 0x00100000++0x1FFF 0x00102000++0x1FFF ~~/demo/arm/flash/byte/nand1g08.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Put a list of bad blocks into area window for 2Gbit (256MB) size
+  FLASHFILE.GETBADBLOCK 0x0--0xFFFFFFF
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+  //Erase NAND FLASH Main and Bad block inforamtion
+    FLASHFILE.Erase 0x0--0xFFFFFFF 
+
+  //Skipped way 
+    FLASHFILE.LOAD.binary  * 0x0 
+    ;FLASHFILE.LOADSPARE * 0x0 
+   
+  //Reserved block area way
+    ;FLASHFILE.LOAD  * 0x0   /WriteBadBlocks
+    ;FLASHFILE.LOADSPARE *  0x0   /WriteBadBlocks  
+  )
+//Open the Dump Windows
+  FLASHFILE.DUMP 0x0
+
+ENDDO 

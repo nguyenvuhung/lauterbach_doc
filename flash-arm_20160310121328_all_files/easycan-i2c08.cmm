@@ -1,0 +1,56 @@
+; --------------------------------------------------------------------------------
+; @Title: I2C EEPROM Programming script for EASYCAN
+; @Description: 
+; EEPROM(Atmel,25C08) is connected to I2C-0
+;
+; SRAM: 0x300000
+;
+; I2C controller base : 0xFFE50000    
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: EASYCAN4
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: easycan-i2c08.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU EASYCAN4F1M32
+    SYStem.JtagClock 3Mhz
+    SYStem.Up
+  )
+
+  GOSUB i2c_Init
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASFILE.CONFIG  <i2c base Reg>
+  FLASHFILE.CONFIG 0xFFE50000  
+
+//FLASHFILE.TARGET <code range>        <data range>           <Algorithm file>
+  FLASHFILE.TARGET 0x300000++0x1FFF    0x302000++0x1FFF       ~~/demo/arm/flash/byte/i2c08_easycan.bin   /KEEP
+
+//FLASHFILE.ERASE 0x0++0x3FF
+//FLASHFILE.LOAD * 0x0            ; Write
+//FLASHFILE.LOAD * 0x0  /ComPare  ; Verify
+
+  FLASHFILE.DUMP 0x0  
+
+ENDDO
+
+i2c_Init:
+
+Data.Set 0xFFE2C004  %Long 0x11111199   ; Set SCL0 and SDA0 function
+Data.Set 0xFFE64050  %Long 0x1          ; Enable PIO blocks for I2C I/O configuration
+Data.Set 0xFFE64004  %Long 0x300        ; Disable PIO function for I2C signals SCL0 and SDA0
+Data.Set 0xFFE64054  %Long 0x1          ; Disable PIO blocks
+Data.Set 0xFFE50050  %Long 0x2          ; Enable I2C Clock
+Data.Set 0xFFE50060  %Long 0x1          ; Software reset
+Data.Set 0xFFE50064  %Long 0x103C       ; With syclk = 24MHz, set FSCL = 400 kHz 
+Data.Set 0xFFE50088  %Long 0x5          ; hold = setup = 1/24MHz = 5*42 ns = 210 ns (min = 100ns@5V)
+
+RETURN

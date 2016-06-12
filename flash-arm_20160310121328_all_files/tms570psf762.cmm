@@ -1,0 +1,189 @@
+; --------------------------------------------------------------------------------
+; @Title: TMS570PSF762 internal flash setup
+;
+; @Description:
+; Script arguments:
+;
+;   DO tms570psf762 [PREPAREONLY]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/tms570psf762 PREPAREONLY
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: TMS570PSF762 
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: tms570psf762.cmm 2881 2014-07-07 10:35:48Z kjmal $
+;
+
+LOCAL &parameters &param_prepareonly
+ENTRY %LINE &parameters
+&param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)  
+; --------------------------------------------------------------------------------
+; Init script variables
+
+DO ~~~~/tms470-func Init
+
+; --------------------------------------------------------------------------------
+; Setup CPU
+IF SYStem.MODE()<5
+(
+  SYStem.RESet
+  SYStem.CPU TMS570PSF762
+  SYStem.Up
+  IF VERSION.BUILD()<15283.
+  (
+    SYStem.Up  ; preliminary work around for endianess problem
+  )
+  ELSE IF VERSION.BUILD.BASE()<15283.
+  (
+    SYStem.Up  ; preliminary work around for endianess problem
+  )
+)
+
+; --------------------------------------------------------------------------------
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Config for TMS570PSF762 REV 0
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; actual device ID is 0x80186B05
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;Device ID: 0x000C         TMS570PSF762 Rev0
+;  ProgVersion: 0.08 ; Library Version
+;  ProgRoutines: pf035b.lib ; Platform library archive
+;  With revision 1.02 the pf035a, pf035b and pf035c libraries are unified into the pf035a library.
+;  For dual core CPUs a different binary is used to switch the charge pump to the core.
+LOCAL &ProgRoutines
+&ProgRoutines="pf035a_slavecore"
+
+;  Frequency: 150.0 Range: 10.0 - 150.0
+;  Minor Revisions: 1
+;    0 "TMS570PSF762 Rev 0"
+;  Ram Config: 0x08000000 0x0000A000 ; R4 Ram 40KB
+LOCAL &RamStart &RamSize
+&RamStart=0x08000000 
+&RamSize=0x0000A000 
+
+;  Initialization: 14
+;    0xffffff48: 0x00000000 ; set GHVSRC to OSCIN clock source
+;    0xfffff538: 0x00000005 ; reset ESM
+;    0xffffffd0: 0x01010000 ; Disable peripherals
+;    0xffffffd0: 0x01010100 ; Enable peripherals
+;    0xffffffc0: 0x00000000 ; R4 RAM, Set RAM wait states to 0
+;    0xfff7c414: 0x00000000 ; M3 RAM, Set RAm wait states to 0
+;    0xfff87008: 0x00000005 ; Disable R4 Flash Parity
+;    0xfff88008: 0x00000005 ; Disable M3 Flash Parity
+;    0xfff87000: 0x00000411 ; R4 Flash Wrapper, enable pipeline mode and RWAIT=4
+;    0xfff87040: 0x0000000f ; R4 Flash Wrapper, force active mode for all banks
+;    0xfff88000: 0x00000201 ; M3 Flash Wrapper, enable pipepline mode and RWAIT=2
+;    0xfff88040: 0x0000000f ; M3 Flash Wrapper, force active mode for all banks
+;    0xffffffc4: 0x0000000a ; MEMSW='1010' => R4 Flash at 0x00000000, R4 RAM at 0x08000000
+;    0xfff7c40c: 0x0000000a ; MEMSW='1010' => M3 Flash at 0x00000000, M3 RAM at 0x08000000, in its own memory map
+Data.Set 0xffffff48 %Long 0x00000000 ; set GHVSRC to OSCIN clock source
+Data.Set 0xfffff538 %Long 0x00000005 ; reset ESM
+Data.Set 0xffffffd0 %Long 0x01010000 ; Disable peripherals
+Data.Set 0xffffffd0 %Long 0x01010100 ; Enable peripherals
+Data.Set 0xffffffc0 %Long 0x00000000 ; R4 RAM, Set RAM wait states to 0
+Data.Set 0xfff7c414 %Long 0x00000000 ; M3 RAM, Set RAm wait states to 0
+Data.Set 0xfff87008 %Long 0x00000005 ; Disable R4 Flash Parity
+Data.Set 0xfff88008 %Long 0x00000005 ; Disable M3 Flash Parity
+Data.Set 0xfff87000 %Long 0x00000411 ; R4 Flash Wrapper, enable pipeline mode and RWAIT=4
+Data.Set 0xfff87040 %Long 0x0000000f ; R4 Flash Wrapper, force active mode for all banks
+Data.Set 0xfff88000 %Long 0x00000201 ; M3 Flash Wrapper, enable pipepline mode and RWAIT=2
+Data.Set 0xfff88040 %Long 0x0000000f ; M3 Flash Wrapper, force active mode for all banks
+Data.Set 0xffffffc4 %Long 0x0000000a ; MEMSW='1010' => R4 Flash at 0x00000000, R4 RAM at 0x08000000
+Data.Set 0xfff7c40c %Long 0x0000000a ; MEMSW='1010' => M3 Flash at 0x00000000, M3 RAM at 0x08000000, in its own memory map
+
+;  PLL Config: 0xffffff70 0x21039500 0xffbfffff 0xffffff74 0x7FC07200 0xffffffff ; configure 150Mhz (assuming 16.0 Mhz OSCIN)
+Data.Set    0xffffff70 %Long 0x21039500|(Data.Long(SD:0xffffff70)&~0xffbfffff) 
+Data.Set    0xffffff74 %Long 0x7FC07200|(Data.Long(SD:0xffffff74)&~0xffffffff) 
+LOCAL &FlashClock_Frequency
+&FlashClock_Frequency="150Mhz"      ; Setup flash clock frequency to PLL frequency
+
+;  Engr ID: 0xfff87000 0x00604000
+;  Number of Blocks: 30
+FLASH.RESet
+&FlashType="FLASHPAR"
+
+; R4 Flash Sectors
+DO ~~~~/tms470-func SelectCore MASTER_CORE
+DO ~~~~/tms470-func DeclareSector Type: FLASH     Start: 0x00000000  Length: 0x00004000  Control: 0xfff87000  Core: 0x00  Sector: 0x00
+DO ~~~~/tms470-func DeclareSector Type: FLASH     Start: 0x00004000  Length: 0x00004000  Control: 0xfff87000  Core: 0x00  Sector: 0x01
+DO ~~~~/tms470-func DeclareSector Type: FLASH     Start: 0x00008000  Length: 0x00008000  Control: 0xfff87000  Core: 0x00  Sector: 0x02
+DO ~~~~/tms470-func DeclareSector Type: FLASH     Start: 0x00010000  Length: 0x00010000  Control: 0xfff87000  Core: 0x00  Sector: 0x03
+DO ~~~~/tms470-func DeclareSector Type: FLASH     Start: 0x00020000  Length: 0x00020000  Control: 0xfff87000  Core: 0x00  Sector: 0x04
+DO ~~~~/tms470-func DeclareSector Type: FLASH     Start: 0x00040000  Length: 0x00020000  Control: 0xfff87000  Core: 0x00  Sector: 0x05
+DO ~~~~/tms470-func DeclareSector Type: FLASH     Start: 0x00060000  Length: 0x00010000  Control: 0xfff87000  Core: 0x00  Sector: 0x06
+DO ~~~~/tms470-func DeclareSector Type: FLASH     Start: 0x00070000  Length: 0x00008000  Control: 0xfff87000  Core: 0x00  Sector: 0x07
+DO ~~~~/tms470-func DeclareSector Type: FLASH     Start: 0x00078000  Length: 0x00008000  Control: 0xfff87000  Core: 0x00  Sector: 0x08
+
+; M3 Flash sectors
+DO ~~~~/tms470-func SelectCore SLAVE_CORE0
+DO ~~~~/tms470-func DeclareSector Type: FLASH     Start: 0xFD000000  Length: 0x00008000  Control: 0xfff88000  Core: 0x00  Sector: 0x00
+DO ~~~~/tms470-func DeclareSector Type: FLASH     Start: 0xFD008000  Length: 0x00008000  Control: 0xfff88000  Core: 0x00  Sector: 0x01
+DO ~~~~/tms470-func DeclareSector Type: FLASH     Start: 0xFD010000  Length: 0x00010000  Control: 0xfff88000  Core: 0x00  Sector: 0x02
+DO ~~~~/tms470-func DeclareSector Type: FLASH     Start: 0xFD020000  Length: 0x00010000  Control: 0xfff88000  Core: 0x00  Sector: 0x03
+
+; R4 Flash Parity
+DO ~~~~/tms470-func SelectCore MASTER_CORE
+DO ~~~~/tms470-func DeclareSector Type: FLASHPAR  Start: 0x00400000  Length: 0x00002000  Control: 0xfff87000  Core: 0x00  Sector: 0x00
+DO ~~~~/tms470-func DeclareSector Type: FLASHPAR  Start: 0x00402000  Length: 0x00002000  Control: 0xfff87000  Core: 0x00  Sector: 0x01
+DO ~~~~/tms470-func DeclareSector Type: FLASHPAR  Start: 0x00404000  Length: 0x00004000  Control: 0xfff87000  Core: 0x00  Sector: 0x02
+DO ~~~~/tms470-func DeclareSector Type: FLASHPAR  Start: 0x00408000  Length: 0x00008000  Control: 0xfff87000  Core: 0x00  Sector: 0x03
+DO ~~~~/tms470-func DeclareSector Type: FLASHPAR  Start: 0x00410000  Length: 0x00010000  Control: 0xfff87000  Core: 0x00  Sector: 0x04
+DO ~~~~/tms470-func DeclareSector Type: FLASHPAR  Start: 0x00420000  Length: 0x00010000  Control: 0xfff87000  Core: 0x00  Sector: 0x05
+DO ~~~~/tms470-func DeclareSector Type: FLASHPAR  Start: 0x00430000  Length: 0x00008000  Control: 0xfff87000  Core: 0x00  Sector: 0x06
+DO ~~~~/tms470-func DeclareSector Type: FLASHPAR  Start: 0x00438000  Length: 0x00004000  Control: 0xfff87000  Core: 0x00  Sector: 0x07
+DO ~~~~/tms470-func DeclareSector Type: FLASHPAR  Start: 0x0043C000  Length: 0x00004000  Control: 0xfff87000  Core: 0x00  Sector: 0x08
+
+; M3 Flash Parity
+DO ~~~~/tms470-func SelectCore SLAVE_CORE0
+DO ~~~~/tms470-func DeclareSector Type: FLASHPAR  Start: 0xFD200000  Length: 0x00004000  Control: 0xfff88000  Core: 0x00  Sector: 0x00
+DO ~~~~/tms470-func DeclareSector Type: FLASHPAR  Start: 0xFD204000  Length: 0x00004000  Control: 0xfff88000  Core: 0x00  Sector: 0x01
+DO ~~~~/tms470-func DeclareSector Type: FLASHPAR  Start: 0xFD208000  Length: 0x00008000  Control: 0xfff88000  Core: 0x00  Sector: 0x02
+DO ~~~~/tms470-func DeclareSector Type: FLASHPAR  Start: 0xFD210000  Length: 0x00008000  Control: 0xfff88000  Core: 0x00  Sector: 0x03
+
+; R4 Flash OTP Sector
+DO ~~~~/tms470-func SelectCore MASTER_CORE
+DO ~~~~/tms470-func DeclareSector Type: OTP       Start: 0x00600000  Length: 0x00000800  Control: 0xfff87000  Core: 0x00  Sector: 0x00
+
+; M3 Flash OTP sector
+DO ~~~~/tms470-func SelectCore SLAVE_CORE0
+DO ~~~~/tms470-func DeclareSector Type: OTP       Start: 0xFD800000  Length: 0x00000800  Control: 0xfff88000  Core: 0x01  Sector: 0x00
+
+; R4 Flash OTP Parity
+DO ~~~~/tms470-func SelectCore MASTER_CORE
+DO ~~~~/tms470-func DeclareSector Type: OTPPAR    Start: 0x00608000  Length: 0x00000400  Control: 0xfff87000  Core: 0x00  Sector: 0x00
+
+; M3 Flash OTP Parity
+DO ~~~~/tms470-func SelectCore SLAVE_CORE0
+DO ~~~~/tms470-func DeclareSector Type: OTPPAR    Start: 0xFD808000  Length: 0x00000400  Control: 0xfff88000  Core: 0x01  Sector: 0x00
+
+DO ~~~~/tms470-func DeclareFlashAlgortihm &ProgRoutines &RamStart &RamSize &FlashClock_Frequency
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; End of flash.cfg
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Flash script ends here if called with parameter PREPAREONLY
+IF &param_prepareonly
+  ENDDO PREPAREDONE
+; --------------------------------------------------------------------------------
+; Flash programming example
+;
+FLASH.List
+;
+DIALOG.YESNO "Program flash memory?"
+ENTRY &progflash
+
+IF &progflash 
+(  
+  FLASH.ReProgram ALL
+  Data.LOAD.auto *
+  FLASH.ReProgram.off 
+  Data.LOAD.auto * /ComPare
+)
+
+ENDDO

@@ -1,0 +1,172 @@
+;
+; @Title: Example for flash declaration of EnergyMicro EFM32 Wonder Gecko internal flash.
+;
+; @Description: 
+; Script arguments:
+;
+;   DO efm32wg [PREPAREONLY] [CPU=<cpu>]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/efm32wg CPU=EFM32WG990F PREPAREONLY
+;
+; List of EFM32 Wonder Gecko derivatives and their configuration:
+;
+;   CPU                              FlashSize  RamSize
+;   Derivative         CpuType          [kB]      [kB]
+; --------------------------------------------------------------------------------
+;   EFM32WG230F64      EFM32WG230F       64.      32.
+;   EFM32WG230F128     EFM32WG230F      128.      32.
+;   EFM32WG230F256     EFM32WG230F      256.      32.
+;   EFM32WG232F64      EFM32WG232F       64.      32.
+;   EFM32WG232F128     EFM32WG232F      128.      32.
+;   EFM32WG232F256     EFM32WG232F      256.      32.
+;   EFM32WG280F64      EFM32WG280F       64.      32.
+;   EFM32WG280F128     EFM32WG280F      128.      32.
+;   EFM32WG280F256     EFM32WG280F      256.      32.
+;   EFM32WG290F64      EFM32WG290F       64.      32.
+;   EFM32WG290F128     EFM32WG290F      128.      32.
+;   EFM32WG290F256     EFM32WG290F      256.      32.
+;   EFM32WG295F64      EFM32WG295F       64.      32.
+;   EFM32WG295F128     EFM32WG295F      128.      32.
+;   EFM32WG295F256     EFM32WG295F      256.      32.
+;   EFM32WG330F64      EFM32WG330F       64.      32.
+;   EFM32WG330F128     EFM32WG330F      128.      32.
+;   EFM32WG330F256     EFM32WG330F      256.      32.
+;   EFM32WG332F64      EFM32WG332F       64.      32.
+;   EFM32WG332F128     EFM32WG332F      128.      32.
+;   EFM32WG332F256     EFM32WG332F      256.      32.
+;   EFM32WG380F64      EFM32WG380F       64.      32.
+;   EFM32WG380F128     EFM32WG380F      128.      32.
+;   EFM32WG380F256     EFM32WG380F      256.      32.
+;   EFM32WG390F64      EFM32WG390F       64.      32.
+;   EFM32WG390F128     EFM32WG390F      128.      32.
+;   EFM32WG390F256     EFM32WG390F      256.      32.
+;   EFM32WG395F64      EFM32WG395F       64.      32.
+;   EFM32WG395F128     EFM32WG395F      128.      32.
+;   EFM32WG395F256     EFM32WG395F      256.      32.
+;   EFM32WG840F64      EFM32WG840F       64.      32.
+;   EFM32WG840F128     EFM32WG840F      128.      32.
+;   EFM32WG840F256     EFM32WG840F      256.      32.
+;   EFM32WG842F64      EFM32WG842F       64.      32.
+;   EFM32WG842F128     EFM32WG842F      128.      32.
+;   EFM32WG842F256     EFM32WG842F      256.      32.
+;   EFM32WG880F64      EFM32WG880F       64.      32.
+;   EFM32WG880F128     EFM32WG880F      128.      32.
+;   EFM32WG880F256     EFM32WG880F      256.      32.
+;   EFM32WG890F64      EFM32WG890F       64.      32.
+;   EFM32WG890F128     EFM32WG890F      128.      32.
+;   EFM32WG890F256     EFM32WG890F      256.      32.
+;   EFM32WG895F64      EFM32WG895F       64.      32.
+;   EFM32WG895F128     EFM32WG895F      128.      32.
+;   EFM32WG895F256     EFM32WG895F      256.      32.
+;   EFM32WG940F64      EFM32WG940F       64.      32.
+;   EFM32WG940F128     EFM32WG940F      128.      32.
+;   EFM32WG940F256     EFM32WG940F      256.      32.
+;   EFM32WG942F64      EFM32WG942F       64.      32.
+;   EFM32WG942F128     EFM32WG942F      128.      32.
+;   EFM32WG942F256     EFM32WG942F      256.      32.
+;   EFM32WG980F64      EFM32WG980F       64.      32.
+;   EFM32WG980F128     EFM32WG980F      128.      32.
+;   EFM32WG980F256     EFM32WG980F      256.      32.
+;   EFM32WG990F64      EFM32WG990F       64.      32.
+;   EFM32WG990F128     EFM32WG990F      128.      32.
+;   EFM32WG990F256     EFM32WG990F      256.      32.
+;   EFM32WG995F64      EFM32WG995F       64.      32.
+;   EFM32WG995F128     EFM32WG995F      128.      32.
+;   EFM32WG995F256     EFM32WG995F      256.      32.
+;
+; @Author: HDA
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: EFM32WG*
+; --------------------------------------------------------------------------------
+; $Rev: 3503 $
+; $Id: efm32wg.cmm 3503 2015-11-20 15:57:45Z fcaron $
+
+  LOCAL &parameters &param_prepareonly
+  ENTRY %LINE &parameters
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &param_cpu
+  &param_cpu=STRing.MID(STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=",""),0.,11.)
+
+  LOCAL &FlashSize
+
+  ; ------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(EFM32WG*)
+      SYStem.CPU EFM32WG*
+
+    SYStem.Option.ResBreak OFF
+    IF CABLE.TWOWIRE()
+    (
+      SYStem.CONFIG.DEBUGPORTTYPE SWD
+    )
+    ELSE
+    (
+      PRINT %ERROR "Serial Wire Debug (SWD) not supported by debug cable"
+      ENDDO
+    )
+    SYStem.JtagClock 500Khz
+
+    SYStem.Up
+
+    ; After SYStem.Up the JTAG clock can be set to higher frequency.
+    SYStem.JtagClock 10Mhz
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  ; Detect flash size in kByte via device information page
+  &FlashSize=Data.Word(SD:0x0FE081F8)
+  PRINT "Detected flash size is "+FORMAT.Decimal(1.,&FlashSize)+"kB"
+  IF &FlashSize==0x00
+  (
+    &FlashSize=64.
+  )
+  
+
+  FLASH.RESet
+  IF &FlashSize>=64.
+    FLASH.Create 1. 0x00000--0x0ffff 0x800 TARGET Byte  
+  IF &FlashSize>=128.
+    FLASH.Create 1. 0x10000--0x1ffff 0x800 TARGET Byte
+  IF &FlashSize>=256.    
+    FLASH.Create 1. 0x20000--0x03ffff 0x800 TARGET Byte
+
+  FLASH.TARGET 0x10000000 0x10001000 0x800 ~~/demo/arm/flash/long/efm32.bin
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO

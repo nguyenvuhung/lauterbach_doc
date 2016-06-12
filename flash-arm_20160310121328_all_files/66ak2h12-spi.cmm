@@ -1,0 +1,75 @@
+; --------------------------------------------------------------------------------
+; @Title: 66AK2H12 (KeyStone2) Serial FLASH Programming Script
+; @Description:
+; Serial FLASH (Numonyx, N25Q128) is connected the SSP0 
+; (Serial Peripheral Interface)
+;
+; SDRAM    : 0x0C000000
+; Serial FLASH Controller Addr: 0x21000400  
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2015 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: 66AK2H12
+; @Keywords: Keystone N25Q128 FLASH SPI
+; --------------------------------------------------------------------------------
+; $Id: 66ak2h12-spi.cmm 3421 2015-09-28 09:03:00Z jjeong $
+
+&SSP_BASE=0x21000400  // SPI0 base address
+
+LOCAL &arg1
+ENTRY &arg1
+&arg1=STRing.UPpeR("&arg1")  // for example "PREPAREONLY"
+
+ RESet
+ SYStem.CPU 66ak2h12
+ CORE.ASSIGN 1.
+ SYStem.Mode Attach
+ 
+ IF RUN()
+ (
+   Break.direct
+   WAIT !RUN()
+ )
+
+  ; Disable MMU and cache
+  PER.Set.simple C15:0x1 %Long (Data.Long(C15:0x1)&~0x1005)
+
+  ; Enable SPI
+  Data.Set A:&SSP_BASE+0x0 %Long 0x0		// Reset SPI
+  WAIT 1000.ms
+  Data.Set A:&SSP_BASE+0x0 %Long 0x1		// Release SPI
+  Data.Set A:&SSP_BASE+0x04 %Long 0x3		// Set Master (disabled)
+  Data.Set A:&SSP_BASE+0x14 %Long 0x01010e01
+  Data.Set A:&SSP_BASE+0x50 %Long 0x10208  // [15:8] Prescale div , 0x19508
+  Data.Set A:&SSP_BASE+0x3C %Long 0x10000000
+  Data.Set A:&SSP_BASE+0x48 %Long 0x32320000
+  Data.Set A:&SSP_BASE+0x4C %Long 0x1 
+  Data.Set A:&SSP_BASE+0x08 %Long 0x0 
+  Data.Set A:&SSP_BASE+0x0C %Long 0x0  
+  Data.Set A:&SSP_BASE+0x04 %Long 0x01000003	// Set Master (enabled)
+  Break.RESet
+
+  FLASHFILE.RESet
+
+  ;FLASFILE.CONFIG <Tx Reg>         <Rx Reg>          <CS Reg>    <CS Num>
+  FLASHFILE.CONFIG (&SSP_BASE+0x3C) (&SSP_BASE+0x40)   0x0         0x0
+  FLASHFILE.TARGET 0x0C000000++0x1FFF  EAHB:0x0C002000++0x1FFF   ~~/demo/arm/flash/byte/spi64_dm365.bin /KEEP  /DualPort
+
+  ; Read FLASH Manufacturer and Device ID
+  FLASHFILE.GETID
+
+//End of the test prepareonly
+IF "&arg1"=="PREPAREONLY"
+ENDDO
+
+//Read FLASH
+  FLASHFILE.DUMP 0x0
+
+//Erase FLASH 
+; FLASHFILE.ERASE 0x0--0xFFFFFF 
+
+//Write FLASH
+; FLASHFILE.LOAD  * 0x0 
+; FLASHFILE.LOAD  * 0x0  /ComPare   ;verify
+   
+ENDDO

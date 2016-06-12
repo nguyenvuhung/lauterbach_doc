@@ -1,0 +1,207 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of TI Tiva C series internal flash.
+;
+; @Description: 
+; Script arguments:
+;
+;   DO tm4c [PREPAREONLY] [CPU=<cpu>]
+;
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+;     CPU=<cpu> selects CPU derivative <cpu>
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/tm4c CPU=TM4C1231H6PZ PREPAREONLY
+;
+; List of Tiva C series derivatives and their configuration:
+;
+;   CPU-Type       ProgFlash    EEPROM   RamSize
+; --------------------------------------------------------------------------------
+;   TM4C1230C3PM      32kB        2kB      12kB
+;   TM4C1230D5PM      64kB        2kB      24kB
+;   TM4C1230E6PM     128kB        2kB      32kB
+;   TM4C1230H6PM     256kB        2kB      32kB
+; --------------------------------------------------------------------------------
+;   TM4C1231C3PM      32kB        2kB      12kB
+;   TM4C1231D5PM      64kB        2kB      24kB
+;   TM4C1231D5PZ      64kB        2kB      24kB
+;   TM4C1231E6PM     128kB        2kB      32kB
+;   TM4C1231E6PZ     128kB        2kB      32kB
+;   TM4C1231H6PGE    256kB        2kB      32kB
+;   TM4C1231H6PM     256kB        2kB      32kB
+;   TM4C1231H6PZ     256kB        2kB      32kB
+; --------------------------------------------------------------------------------
+;   TM4C1232C3PM      32kB        2kB      12kB
+;   TM4C1232D5PM      64kB        2kB      24kB
+;   TM4C1232E6PM     128kB        2kB      32kB
+;   TM4C1232H6PM     256kB        2kB      32kB
+; --------------------------------------------------------------------------------
+;   TM4C1233C3PM      32kB        2kB      12kB
+;   TM4C1233D5PM      64kB        2kB      24kB
+;   TM4C1233D5PZ      64kB        2kB      24kB
+;   TM4C1233E6PM     128kB        2kB      32kB
+;   TM4C1233E6PZ     128kB        2kB      32kB
+;   TM4C1233H6PGE    256kB        2kB      32kB
+;   TM4C1233H6PM     256kB        2kB      32kB
+;   TM4C1233H6PZ     256kB        2kB      32kB
+; --------------------------------------------------------------------------------
+;   TM4C1236D5PM      64kB        2kB      24kB
+;   TM4C1236E6PM     128kB        2kB      32kB
+;   TM4C1236H6PM     256kB        2kB      32kB
+; --------------------------------------------------------------------------------
+;   TM4C1237D5PM      64kB        2kB      24kB
+;   TM4C1237D5PZ      64kB        2kB      24kB
+;   TM4C1237E6PM     128kB        2kB      32kB
+;   TM4C1237E6PZ     128kB        2kB      32kB
+;   TM4C1237H6PGE    256kB        2kB      32kB
+;   TM4C1237H6PM     256kB        2kB      32kB
+;   TM4C1237H6PZ     256kB        2kB      32kB
+; --------------------------------------------------------------------------------
+;   TM4C123AE6PM     128kB        2kB      32kB
+;   TM4C123AH6PM     256kB        2kB      32kB
+; --------------------------------------------------------------------------------
+;   TM4C123BE6PM     128kB        2kB      32kB
+;   TM4C123BE6PZ     128kB        2kB      32kB
+;   TM4C123BH6PGE    256kB        2kB      32kB
+;   TM4C123BH6PM     256kB        2kB      32kB
+;   TM4C123BH6PZ     256kB        2kB      32kB
+;   TM4C123BH6ZRB    256kB        2kB      32kB
+; --------------------------------------------------------------------------------
+;   TM4C123FE6PM     128kB        2kB      32kB
+;   TM4C123FH6PM     256kB        2kB      32kB
+; --------------------------------------------------------------------------------
+;   TM4C123GE6PM     128kB        2kB      32kB
+;   TM4C123GE6PZ     128kB        2kB      32kB
+;   TM4C123GH6PGE    256kB        2kB      32kB
+;   TM4C123GH6PM     256kB        2kB      32kB
+;   TM4C123GH6PZ     256kB        2kB      32kB
+;   TM4C123GH6ZRB    256kB        2kB      32kB
+; --------------------------------------------------------------------------------
+;   TM4C1290NCPDT   1024kB        6kB     256kB
+;   TM4C1290NCZAD   1024kB        6kB     256kB
+;   TM4C1292NCPDT   1024kB        6kB     256kB
+;   TM4C1292NCZAD   1024kB        6kB     256kB
+;   TM4C1294KCPDT    512kB        6kB     256kB
+;   TM4C1294NCPDT   1024kB        6kB     256kB
+;   TM4C1294NCZAD   1024kB        6kB     256kB
+;   TM4C1297NCZAD   1024kB        6kB     256kB
+;   TM4C1299KCZAD    512kB        6kB     256kB
+;   TM4C1299NCZAD   1024kB        6kB     256kB
+;   TM4C129CNCPDT   1024kB        6kB     256kB
+;   TM4C129CNCZAD   1024kB        6kB     256kB
+;   TM4C129DNCPDT   1024kB        6kB     256kB
+;   TM4C129DNCZAD   1024kB        6kB     256kB
+;   TM4C129EKCPDT    512kB        6kB     256kB
+;   TM4C129ENCPDT   1024kB        6kB     256kB
+;   TM4C129ENCZAD   1024kB        6kB     256kB
+;   TM4C129LNCZAD   1024kB        6kB     256kB
+;   TM4C129XKCZAD    512kB        6kB     256kB
+;   TM4C129XNCZAD   1024kB        6kB     256kB
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: TM4C123*
+; --------------------------------------------------------------------------------
+; $Rev: 3086 $
+; $Id: tm4c.cmm 3086 2014-11-21 09:22:36Z amerkle $
+
+  LOCAL &parameters &param_prepareonly
+  ENTRY %LINE &parameters
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  LOCAL &param_cpu
+  &param_cpu=STRing.SCANAndExtract(STRing.UPpeR("&parameters"),"CPU=","")
+
+  ; ------------------------------------------------------------------------------
+  ; Setup CPU
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+
+    IF "&param_cpu"!=""
+      SYStem.CPU &param_cpu
+    IF !CPUIS(TM4C*)
+      SYStem.CPU TM4C*
+
+    IF CABLE.TWOWIRE()
+      SYStem.CONFIG.DEBUGPORTTYPE SWD
+    ELSE
+      SYStem.CONFIG.DEBUGPORTTYPE JTAG
+      
+    IF VERSION.BUILD.BASE<58225.
+    ( 
+      SYStem.Option ResBreak OFF
+      SYStem.Option WaitReset 50.0ms
+    )
+    SYStem.Up
+  )
+
+  ; ------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration
+
+  ; In case of empty flash disable RMCTL:BA (ROM Control register Boot 
+  ; Alias bit) to show flash contents at address 0x0
+  ;IF (Data.Long(ASD:0x400FE0F0)&0x01)==0x01
+    ;Data.Set ASD:0x400FE0F0 %Long 0x01
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+
+  ; ------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.ReProgram.ALL /Erase
+    Data.LOAD.auto *
+    FLASH.ReProgram.off
+
+    ; Reset device
+    SYStem.Down
+    SYStem.Up
+  )
+
+  ENDDO
+
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on selected CPU 
+
+FlashDeclaration:
+  LOCAL &FlashSize
+
+  IF CPUIS("TM4C123?C*")
+    &FlashSize=0x8000
+  ELSE IF CPUIS("TM4C123?D*")
+    &FlashSize=0x10000
+  ELSE IF CPUIS("TM4C123?E*")
+    &FlashSize=0x20000
+  ELSE IF CPUIS("TM4C123?H*")
+    &FlashSize=0x40000
+  ELSE IF CPUIS("TM4C129?KC*")
+    &FlashSize=0x80000
+  ELSE IF CPUIS("TM4C129*C*")
+    &FlashSize=0x100000
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is not supported by the script"
+    ENDDO
+  )
+
+  ;IF (Data.Long(SD:0x400FE358)&0x01)==0x01
+  ;  PRINT "EEPROM module is present"
+
+  FLASH.Create 1. 0x0++(&FlashSize-1) 0x400 TARGET Long
+
+  FLASH.TARGET 0x20000000 0x20001000 0x400 ~~/demo/arm/flash/long/lm4f.bin
+
+  RETURN

@@ -1,0 +1,111 @@
+; --------------------------------------------------------------------------------
+; @Title: Serial FLASH Programming script for DB-88F6281/88F6192 board from Marvell
+; @Description:
+; Serial FLASH(ST,25P64) is connected
+;
+; SDRAM: 0x00100000
+;
+; before booting up
+; SPI Tx Register : 0xD0010608   
+; SPI Rx Register : 0xD001060C   
+; SPI CS Register : 0xD0010600
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: 88FR131
+; @Board: DB-88F6281/88F6192
+; @Keywords: Marvell 25P64 ST flash SPI
+; --------------------------------------------------------------------------------
+; $Id: 88F6281-spi.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  SYStem.RESet
+  SYStem.CPU 88FR131
+  SYStem.Option L2Cache ON
+  SYStem.JtagClock 5Mhz
+  SYStem.Up
+
+; Increase JTAG clock (limited to 5MHz during nSRST is asserted)
+  SYStem.JtagClock CTCK 50Mhz
+
+  GOSUB SDRAM_INIT
+
+  Data.Set 0xD00d3100 %LE %Long 0x2A10
+  Data.Set 0xD00d3104 %LE %Long 0x81
+
+;TDM/SPI Pin Multiplexting Register
+  Data.Set 0xD00d4000 %Long 0xFFFFC001
+
+  Data.Set SD:0xD0010000 %LE %Long 0x10022222
+ ;Data.Set SD:0xD00100D0 %LE %LONG 0x94010712
+  Data.Set SD:0xD0010600 %LE %Long 0x2
+  Data.Set SD:0xD0010604 %LE %Long 0x215
+  Data.Set SD:0xD0010610 %LE %Long 0x1
+  Data.Set SD:0xD0010614 %LE %Long 0x1
+  
+  FLASHFILE.RESet
+ 
+//FLASHFILE.CONFIG  <tx_reg>     <rx_reg>     <cs_reg>      <cs_bit>
+  FLASHFILE.CONFIG  0xD0010608   0xD001060C   0xD0010600    0x0
+
+// FLASHFILE.TARGET <code range>       <data range>        <Algorithm file>
+  FLASHFILE.TARGET 0x00100000++0x1FFF  0x00102000++0x1FFF  ~~/demo/arm/flash/byte/spi64_marvell.bin
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Dump window for Serial FLASH
+  ;FLASHFILE.DUMP 0x0
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+
+    //Erase Serial FLASH 8MB
+    &addr=0x0 
+    RePeaT 8.
+    (
+    PRINT "Erasing 1MB from 0x" &addr
+    FLASHFILE.Erase &addr++0xFFFFF
+    &addr=&addr+0x100000
+    )
+
+    //Write Serial FLASH
+    FLASHFILE.LOAD.binary  * 0x0
+  
+  //Save Serial FLASH 
+    ;FLASHFILE.SAVE dump.bin 0x0--0x7FFFFF
+  )
+
+ENDDO 
+
+SDRAM_INIT:
+
+Data.Set SD:0xD0001400 %LE %Long 0x43000C30
+Data.Set SD:0xD0001404 %LE %Long 0x39543000
+Data.Set SD:0xD0001408 %LE %Long 0x22125451
+Data.Set SD:0xD000140C %LE %Long 0x0833
+Data.Set SD:0xD0001410 %LE %Long 0xCC
+Data.Set SD:0xD0001414 %LE %Long 0x0
+Data.Set SD:0xD0001418 %LE %Long 0x0
+Data.Set SD:0xD000141C %LE %Long 0xC52
+Data.Set SD:0xD0001420 %LE %Long 0x42
+Data.Set SD:0xD0001424 %LE %Long 0x0000F1FF
+Data.Set SD:0xD0001428 %LE %Long 0x00085520
+Data.Set SD:0xD000147C %LE %Long 0x00008552
+
+Data.Set SD:0xF1001500 %LE %Long 0x0
+Data.Set SD:0xF1001504 %LE %Long 0x0FFFFFF1
+
+Data.Set SD:0xD0001494 %LE %Long 0x3c0000
+Data.Set SD:0xD0001498 %LE %Long 0x0
+
+Data.Set SD:0xD000149C %LE %Long 0x0000F80F
+Data.Set SD:0xD0001480 %LE %Long 0x1
+
+RETURN
+
+
+
+
+

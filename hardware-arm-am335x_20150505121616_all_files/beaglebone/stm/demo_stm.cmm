@@ -1,0 +1,135 @@
+; --------------------------------------------------------------------------------
+; @Title: STM Demo Script for BeagleBone Board
+; @Description:
+;   This script starts the AM3359, disables the watchdog and loads an STM
+;   demo application to demonstrate the usage of the STM trace
+; @Keywords: AM335x, BeagleBone, Cortex-A8, sieve
+; @Author: JBO, HLG
+; @Board: BeagleBone
+; @Chip: AM3359
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: demo_stm.cmm 7463 2014-07-24 09:35:11Z hlohn $
+
+LOCAL &param
+ENTRY %LINE &param
+&param=STRing.LoWeR("&param")
+
+IF VERSION.BUILD()<45840.
+(
+	PRINT %ERROR "Sorry, this example requires TRACE32 build 45840. (or higher)"
+	ENDDO
+)
+
+WinCLEAR
+FramePOS ,,,,Maximized
+SCREEN.ALways
+AREA.RESet
+SYStem.RESet
+Break.RESet
+TRANSlation.RESet
+sYmbol.RESet
+MAP.RESet
+
+SYStem.CPU AM3359
+SYStem.Option ResBreak OFF
+SYStem.Up
+
+; disable Watchdog
+Data.Set ASD:0x44E35048 %LE %Long 0x0000AAAA   ;write magic1 to WDT_WSPR
+Data.Set ASD:0x44E35048 %LE %Long 0x00005555   ;write magic2 to WDT_WSPR
+
+Data.LOAD.auto "~~~~/demo_stm.elf"
+
+STM.RESet
+IF (Analyzer()||CAnalyzer())&&(STRing.SCAN("&param","onchip",0)<0)
+(
+    ETM.ON
+    ETM.DataTrace OFF
+    Trace.METHOD Onchip
+    IF CAnalyzer()
+    (
+        SystemTrace.METHOD CAnalyzer
+        STM.PortRoute CAnalyzer
+    )
+    ELSE
+    (
+        SystemTrace.METHOD Analyzer
+        STM.PortRoute Analyzer
+    )
+    SystemTrace.RESet
+    SystemTrace.PortType STM
+    SystemTrace.THreshold 1.66
+    STM.PortSize 4e  // You must use "4e" to get the trace from EMU0..EMU4
+    STM.IdleCount 20.
+    IF CAnalyzer()
+    (
+        SYStem.CONFIG CONNECTOR MIPI34
+    )
+    ELSE
+    (
+        // Change pinout to ETMv3 style (to be compatible to lots of adapters)
+        // Note: TRACE-Clock is EMU2
+        IF (HEADID()==0x72)
+        (
+            // AutoFocus MIPI
+            Analyzer.REMAP.PIN TP0 19. // EMU0
+            Analyzer.REMAP.PIN TP1 21. // EMU1
+            Analyzer.REMAP.PIN TP2 23. // EMU3
+            Analyzer.REMAP.PIN TP3 25. // EMU4
+        )
+        ELSE
+        (
+            // AutoFocus-II
+            Analyzer.REMAP.PIN TP0 38. // EMU0
+            Analyzer.REMAP.PIN TP1 28. // EMU1
+            Analyzer.REMAP.PIN TP2 26. // EMU3
+            Analyzer.REMAP.PIN TP3 24. // EMU4
+        )
+    )
+    DO "~~~~/beaglebone_rev_a3.cmm"
+    IF CAnalyzer()&&(OS.VERSION(0)<0x10) // CustomTrace currently only working with CombiProbe
+    (
+        SystemTrace.CustomTraceLoad ""    //Unload DLLs
+        SystemTrace.Mode PIPE
+        IF SOFTWARE.64BIT()
+            SystemTrace.CustomTraceLoad "myPrint" "~~~~/dll/pproto64.dll"
+        ELSE
+            SystemTrace.CustomTraceLoad "myPrint" "~~~~/dll/pproto32.dll"
+        WAIT 0.3s
+
+        AREA.Create myPrint
+        WinPOS 50% 50% 50% 25%
+        AREA.view myPrint
+        WinPOS  0  75% 50% 25%
+        WinTABS 0.
+        SystemTrace.CustomTrace.MYPRINT.List
+        WinPOS 50% 75% 50% 25%
+        CAnalyzer.PipePROTO.LOG
+    )
+)
+ELSE
+(
+    ETM.OFF
+    SYStem.CONFIG FUNNEL1 ATBSource ETM 0. STM1 7.
+    SystemTrace.METHOD Onchip
+    STM.PortRoute Onchip
+    SystemTrace.RESet
+)
+SystemTrace.AutoArm OFF
+SystemTrace.Init
+STM.ON
+
+WinPOS 0  0  100% 50%
+SystemTrace.List STMMASTER STMCHANNEL DEFault  %Ascii Data.B List.NoDummy
+WinPOS 0 50%  50% 25%
+PrintfTrace.List STMMASTER STMCHANNEL MESSAGE TIme.Back List.NoDummy List.TIme
+
+SystemTrace.Arm
+Go.direct
+WAIT 1300.ms
+Break.direct
+SystemTrace.OFF
+
+SystemTrace.AutoArm ON
+ENDDO

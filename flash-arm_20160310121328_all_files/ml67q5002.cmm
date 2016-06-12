@@ -1,0 +1,86 @@
+; --------------------------------------------------------------------------------
+; @Title: Example script for programming of OKI ML67Q5002 internal flash.
+;
+; @Description: 
+; Script arguments:
+;
+;   DO ml67q5002  [PREPAREONLY]
+;     PREPAREONLY only declares flash but does not execute flash programming
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/ml67q5002 PREPAREONLY
+;
+; 256 kByte internal Flash. The adress mapping is depending on
+; -   register RMPCON bits RMPM[3:0]
+; -   register ROMSEL bit RSEL
+; -   BSEL[1:0] pins
+; The internal flash can be mapped to one of following address ranges 
+; -   0x00000000--0x0003ffff
+; -   0x04000000--0x0403ffff
+; -   0xc8000000--0xc803ffff
+; -   0xcc000000--0xcc03ffff
+;
+; 32 kByte internal RAM at 0x50000000--0x50007fff
+;
+; @Chip: ML67Q5002
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: ml67q5002.cmm 2881 2014-07-07 10:35:48Z kjmal $
+;
+; wrd - 03.12.2004
+;
+LOCAL &parameters
+ENTRY %LINE &parameters
+
+LOCAL &param_prepareonly
+&param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  
+&ramaddr=0x50000000
+&flashaddr=0xc8000000
+
+; --------------------------------------------------------------------------------
+; Select target controlled flash programming or Trace32 tool based 
+; flash method:
+;   &flashtarget="yes" | "no"
+;
+&flashtarget="yes"
+
+; --------------------------------------------------------------------------------
+; Flash declaration
+;
+
+FLASH.RESet
+
+IF "&flashtarget"=="no"
+(
+  FLASH.Create 1. &flashaddr++0x3ffff 0x800 AT49F100 Word
+)
+ELSE
+(
+  FLASH.Create 1. &flashaddr++0x3ffff 0x800 TARGET Word
+  FLASH.TARGET &ramaddr &ramaddr+0x1000 0x1000 ~~/demo/arm/flash/word/at49f100.bin
+)
+; Flash script ends here if called with parameter PREPAREONLY
+IF &param_prepareonly
+  ENDDO PREPAREDONE
+; --------------------------------------------------------------------------------
+; Example downloading a application to internal flash.
+
+DIALOG.YESNO "Program flash memory?"
+ENTRY &progflash
+
+IF &progflash 
+(
+  ; Erase flash
+  FLASH.Erase ALL
+
+  ; Program flash
+  FLASH.Program.ALL
+  Data.LOAD.auto * /Word
+  FLASH.Program.off
+)
+
+ENDDO

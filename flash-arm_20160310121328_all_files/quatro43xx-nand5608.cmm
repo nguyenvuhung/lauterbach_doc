@@ -1,0 +1,116 @@
+; --------------------------------------------------------------------------------
+; @Title: Quatro4310(CSR,Zoran) NAND FLASH Programming Script
+; @Description:
+; NAND FLASH(SAMSUNG, K9F5608) is connected to SBCS0 (GPIO80)
+;
+; S(D)RAM            : 0xF4A10000 & 0x98000000
+; Command Register   : 0x80000800 
+; AddRESets Register : 0x80000400 
+; Data Register      : 0x80000000 
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ARM926EJ-S
+; @Keywords: SAMSUNG K9F5608 NAND Quatro4310
+; --------------------------------------------------------------------------------
+; $Id: quatro43xx-nand5608.cmm 3183 2015-02-24 13:54:53Z jjeong $
+
+; Start-up script for Zoran Quatro4310 on 4300 LP Board
+ 
+; Supply ATX power at J6
+; Connect Debug Cable to J2
+; Push power button S7
+
+SYStem.CPU ARM926EJ
+SYStem.CONFIG.IRPOST 6
+SYStem.CONFIG.DRPOST 1
+SYStem.Option ResBreak OFF
+SYStem.Option WaitReset ON
+SYStem.JtagClock 1.Mhz
+SYStem.Up
+
+PER.Set.simple C15:0x1 %Long 0x50078                ;disable MMU and Cache 
+
+GOSUB setup_pll
+
+SYStem.JtagClock 20.Mhz
+
+Data.Set A:0xF088005C %LE %Long 0x77070770   ;MC10(nRB), MC12(WP) to GPIO mode
+Data.Set A:0xF0880038 %LE %Long 0x11111111   ;SBCS0 , output SBCS0
+Data.Set A:0xF0880040 %LE %Long 0x11111111   ;SBA10, SBA11
+
+Data.Set A:0xF0300040 %LE %Long 0x80000050
+Data.Set A:0xF0300080 %LE %Long 0x4430808
+
+// the NAND_CE must be held low during tR (from nWE to R/nB), so handle the NAND_CE low manually.
+Data.Set A:0xF0880038 %LE %Long 0x11111110  ; SBCS0 to GPIO 
+Data.Set A:0xf020004A %Byte ~(0x1) ; SBCS0 (GPIO80) direction output
+Data.Set A:0xf02000CA %Byte 0x1    ; SBCS0 (GPIO80) set high
+Data.Set A:0xf02000EA %Byte 0x1    ; SBCS0 (GPIO80) set low
+
+GOSUB READ_ID_TEST
+
+Break.RESet
+
+FLASHFILE.RESet
+
+//FLASHFILE.config <Cmd_reg>   <Addr_reg>  <Data_reg>
+FLASHFILE.CONFIG 0x80000800  0x80000400  0x80000000
+
+// FLASHFILE.TARGET <code range>        <data range>      <Algorithm file>
+FLASHFILE.TARGET 0xF4A10000++0x17FF  0x98000000++0x12FF    ~~\demo\arm\flash\byte\nand5608.bin  /KEEP
+
+//Read FLASH Manufacture and Device ID
+FLASHFILE.GETID
+
+//Dump window for Serial FLASH
+FLASHFILE.DUMP 0x0
+
+//Unlock Serial FLASH
+;FLASHFILE.UNLOCK 0x0--0xFFFFF 
+
+//Erase Serial FLASH
+;FLASHFILE.ERASE 0x0--0xFFFFF
+
+//Write Serial FLASH
+;FLASHFILE.LOAD  * 0x0
+
+ENDDO 
+
+setup_pll:
+
+Data.Set A:0xF0C00000 %LE %Long 0x7F
+Data.Set A:0xF0C0000C %LE %Long 0x5Dc1
+Data.Set A:0xF0C00010 %LE %Long 0x20b0960B
+Data.Set A:0xF0C00014 %LE %Long 0x80b04e40
+Data.Set A:0xF0C00020 %LE %Long 0x12
+Data.Set A:0xF0C00024 %LE %Long 0x8
+Data.Set A:0xF0C00028 %LE %Long 0x10
+Data.Set A:0xF0C0002C %LE %Long 0x8
+Data.Set A:0xF0C00030 %LE %Long 0x8
+Data.Set A:0xF0C00034 %LE %Long 0x10
+Data.Set A:0xF0C00038 %LE %Long 0x20
+
+RETURN
+
+READ_ID_TEST:
+
+&io=0x80000000
+&cle=0x80000800
+&ale=0x80000400
+
+Data.Set A:&cle %Byte 0x90 ; COMMAND Reg Address 
+WAIT 100.ms
+
+Data.Set A:&ale %Byte 0x00 ; Address Reg Address
+WAIT 100.ms
+
+PRINT "Manufacture ID : 0x" Data.Byte(A:&io) " , Device ID : 0x" Data.Byte(A:&io) 
+
+PRINT "3rd 0x" Data.Byte(A:&io) 
+PRINT "4th 0x" Data.Byte(A:&io) 
+PRINT "5th 0x" Data.Byte(A:&io) 
+PRINT "6th 0x" Data.Byte(A:&io) 
+PRINT "7th 0x" Data.Byte(A:&io) 
+
+RETURN

@@ -1,0 +1,86 @@
+; --------------------------------------------------------------------------------
+; @Title: TMS470 internal flash of TMS470R1SF45B/55B
+;
+; @Description: 
+; NOTE:
+;   This script is called from tms470r1.cmm script.
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: se470r1vb8cd_d.cmm 3152 2015-02-06 16:35:19Z kjmal $
+; wrd - 07.11.2005
+;
+
+GOSUB Setup_CPU SE470R1VB8CD 
+
+; --------------------------------------------------------------------------------
+; Flash configuration and declaration generated out of flash.cfg file
+;
+
+FLASH.RESet
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Config for SE470R1VB8CD Rev 0 1.5M
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;Device ID: 0x82F               SE470R1VB8CD
+&Device_ID=0x82F
+;  ProgVersion: 0.32 ; Library version
+;  ProgRoutines: f05a.lib ; Library archive
+&ProgRoutines="f05a"
+;  Frequency: 24.0 Range: 10.0 - 24.0
+;  Minor Revisions: 1
+;    0 "SE470R1VB8CD Rev 0 1.5M "
+;  Ram Config: 0x01000000 0x00020000
+&RamStart=0x01000000 
+&RamSize=0x00020000 
+;  Initialization: 4
+Data.Set 0xfffffe00 %Long 0x00000000 0x000000c0 0x00000000 0x00000000 0x00000100 0x00000080 0x00000000 0x00000000
+Data.Set 0xfffffe20 %Long 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+Data.Set 0xfffffe40 %Long 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000 0x00000000
+Data.Set 0xfffffe00 %Long 0x00000000 0x000001c0 ; Enable memory map
+;  PLL Config: 0xffffffdc 0x00000008 0xffffffff ; configure PLL assume 6MHz crystal
+Data.Set 0xFFFFFFDC %Long 0x00000007 ; configure PLL
+;  Engr ID: 0xffe88000 0x00000000
+;  Protection Keys:
+;    0xffe88000 0x00003ff0: 0xffffffff 0xffffffff 0xffffffff 0xffffffff
+&FlashControl_Base=0xffe88000
+&Protection_Keys=0x00003ff0
+;  Number of Blocks: 31
+GOSUB DeclareSector Type: OTP    Start: 0x00000000   Length: 0x00000800   Control: 0xffe88000   Core: 0x00   Sector: 0x00
+GOSUB DeclareSector Type: FLASH  Start: 0x00000000   Length: 0x00004000   Control: 0xffe88000   Core: 0x00   Sector: 0x00
+GOSUB DeclareSector Type: FLASH  Start: 0x00004000   Length: 0x00004000   Control: 0xffe88000   Core: 0x00   Sector: 0x01
+GOSUB DeclareSector Type: FLASH  Start: 0x00008000   Length: 0x00008000   Control: 0xffe88000   Core: 0x00   Sector: 0x02
+GOSUB DeclareSector Type: FLASH  Start: 0x00010000   Length: 0x00008000   Control: 0xffe88000   Core: 0x00   Sector: 0x03
+GOSUB DeclareSector Type: FLASH  Start: 0x00018000   Length: 0x00008000   Control: 0xffe88000   Core: 0x00   Sector: 0x04
+GOSUB DeclareSector Type: FLASH  Start: 0x00020000   Length: 0x00008000   Control: 0xffe88000   Core: 0x00   Sector: 0x05
+GOSUB DeclareSector Type: FLASH  Start: 0x00028000   Length: 0x00008000   Control: 0xffe88000   Core: 0x00   Sector: 0x06
+GOSUB DeclareSector Type: FLASH  Start: 0x00030000   Length: 0x00008000   Control: 0xffe88000   Core: 0x00   Sector: 0x07
+GOSUB DeclareSector Type: FLASH  Start: 0x00038000   Length: 0x00004000   Control: 0xffe88000   Core: 0x00   Sector: 0x08
+GOSUB DeclareSector Type: FLASH  Start: 0x0003c000   Length: 0x00004000   Control: 0xffe88000   Core: 0x00   Sector: 0x09
+GOSUB DeclareSector Type: FLASH  Start: 0x00040000   Length: 0x00010000   Control: 0xffe88000   Core: 0x01   Sector: 0x00
+GOSUB DeclareSector Type: FLASH  Start: 0x00050000   Length: 0x00010000   Control: 0xffe88000   Core: 0x01   Sector: 0x01
+GOSUB DeclareSector Type: FLASH  Start: 0x00060000   Length: 0x00010000   Control: 0xffe88000   Core: 0x01   Sector: 0x02
+GOSUB DeclareSector Type: FLASH  Start: 0x00070000   Length: 0x00010000   Control: 0xffe88000   Core: 0x01   Sector: 0x03
+GOSUB DeclareSector Type: FLASH  Start: 0x00080000   Length: 0x00010000   Control: 0xffe88000   Core: 0x02   Sector: 0x00
+GOSUB DeclareSector Type: FLASH  Start: 0x00090000   Length: 0x00010000   Control: 0xffe88000   Core: 0x02   Sector: 0x01
+GOSUB DeclareSector Type: FLASH  Start: 0x000a0000   Length: 0x00010000   Control: 0xffe88000   Core: 0x02   Sector: 0x02
+GOSUB DeclareSector Type: FLASH  Start: 0x000b0000   Length: 0x00010000   Control: 0xffe88000   Core: 0x02   Sector: 0x03
+GOSUB DeclareSector Type: FLASH  Start: 0x000c0000   Length: 0x00010000   Control: 0xffe88000   Core: 0x03   Sector: 0x00
+GOSUB DeclareSector Type: FLASH  Start: 0x000d0000   Length: 0x00010000   Control: 0xffe88000   Core: 0x03   Sector: 0x01
+GOSUB DeclareSector Type: FLASH  Start: 0x000e0000   Length: 0x00010000   Control: 0xffe88000   Core: 0x03   Sector: 0x02
+GOSUB DeclareSector Type: FLASH  Start: 0x000f0000   Length: 0x00010000   Control: 0xffe88000   Core: 0x03   Sector: 0x03
+GOSUB DeclareSector Type: FLASH  Start: 0x00100000   Length: 0x00010000   Control: 0xffe88000   Core: 0x04   Sector: 0x00
+GOSUB DeclareSector Type: FLASH  Start: 0x00110000   Length: 0x00010000   Control: 0xffe88000   Core: 0x04   Sector: 0x01
+GOSUB DeclareSector Type: FLASH  Start: 0x00120000   Length: 0x00010000   Control: 0xffe88000   Core: 0x04   Sector: 0x02
+GOSUB DeclareSector Type: FLASH  Start: 0x00130000   Length: 0x00010000   Control: 0xffe88000   Core: 0x04   Sector: 0x03
+GOSUB DeclareSector Type: FLASH  Start: 0x00140000   Length: 0x00010000   Control: 0xffe88000   Core: 0x05   Sector: 0x00
+GOSUB DeclareSector Type: FLASH  Start: 0x00150000   Length: 0x00010000   Control: 0xffe88000   Core: 0x05   Sector: 0x01
+GOSUB DeclareSector Type: FLASH  Start: 0x00160000   Length: 0x00010000   Control: 0xffe88000   Core: 0x05   Sector: 0x02
+GOSUB DeclareSector Type: FLASH  Start: 0x00170000   Length: 0x00010000   Control: 0xffe88000   Core: 0x05   Sector: 0x03
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; End of flash.cfg
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+ENDDO

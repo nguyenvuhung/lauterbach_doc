@@ -1,0 +1,118 @@
+; --------------------------------------------------------------------------------
+; @Title: QNX Application Debugging Script
+; @Description:
+;  This script waits for an application to be started,
+;  loads the symbols and halts the application at main()
+;  NOTE: QNX and the QNX awareness must be up.
+;  Start this script with the process name as argument
+;  E.g.: do app_debug hello
+;  Prerequisites:
+;  - QNX must be booted
+;  - QNX awareness must be configured
+;  - Autoloader must be configured
+; @Keywords: awareness qnx
+; @Author: DIE
+; @Copyright: (c) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: app_debug.cmm 1377 2015-06-30 09:27:54Z mobermeir $
+
+
+; define local macros
+ LOCAL &process &breakaddr
+
+; get the process name as parameter to the script
+ ENTRY &process
+
+
+; Activate autoloader for processes:
+ TASK.sYmbol.Option AutoLoad Process
+ 
+
+; Delete possibly existing breakpoints of previous process runs
+ 
+ IF sYmbol.EXIST("\\&process")
+   Break.Delete sYmbol.SECRANGE(\\&process\.text)
+
+
+; Wait for process to be loaded.
+; The process must be started by executing it in the QNX terminal.
+
+ ; We cannot load process symbols as long as we don't
+ ; know the address translation. The MMU for the new
+ ; process is set up, right before proc_start() is called
+ 
+ IF run()
+    Break    ; halt target for breakpoint setting
+
+ ; proc_start() is called for every process to start -
+ ; the conditional breakpoint halts only, if the desired
+ ; process is found in the process table.
+ 
+ &breakaddr=ADDRESS.OFFSET(proc_start)
+ Break.Delete &breakaddr                ; delete previous set breakpoints
+ Break.Set &breakaddr /CONDition task.proc.space("&process")!=0xffffffff
+
+ ON PBREAKAT &breakaddr GOTO continue1  ; if breakpoint reached: continue
+ Go         ; let the target run and load the process
+ PRINT "waiting for &process to be started..."
+
+ STOP       ; halt script until breakpoint reached
+ 
+ ; breakpoint hit, continue script
+continue1:
+
+ Break.Delete &breakaddr    // delete breakpoint
+ ON PBREAKAT &breakaddr     // delete script action
+
+
+; Yep! The process is loaded and we found it.
+
+ ; Now load the process symbols to the space id of the process
+
+ PRINT "process &process started, loading symbols..."
+
+ sYmbol.AutoLOAD.CLEAR "&process"   ; clear possibly previous set
+ sYmbol.AutoLOAD.CHECK              ; force new autoloader list
+ sYmbol.AutoLOAD.TOUCH "&process"   ; force loading of process symbols
+ 
+
+; Now set a breakpoint at it's main entry point.
+ 
+ ; There may be more "main" symbols in the system,
+ ; we're searching for the right one.
+ 
+ IF sYmbol.COUNT(\\&process\*\main)==0
+ (
+   PRINT "symbol 'main' of process &process not found"
+   ENDDO
+ )
+   
+ Eval 0
+ sYmbol.ForEach "Eval address.offset(*)" \\&process\*\main
+ &breakaddr=EVAL()
+
+ Break.Set &breakaddr   ; set breakpoint on main
+
+ ON PBREAKAT &breakaddr GOTO continue2  ; if breakpoint reached: continue
+ Go         ; let the target run and start the process
+ PRINT "waiting for reaching main..."
+
+ STOP       ; halt script until breakpoint reached
+
+ ; breakpoint hit, continue script
+continue2: 
+         
+ Break.Delete &breakaddr    // delete breakpoint
+ ON PBREAKAT &breakaddr     // delete script action
+
+
+ PRINT "done."
+
+ ; NOTE: if finished debugging with a process, or if restarting
+ ; the process, you have to delete the symbols and restart the
+ ; application debugging. Delete the symbols with
+ ; sYmbol.AutoLoad.CLEAR "&process"
+
+
+ ENDDO
+ 

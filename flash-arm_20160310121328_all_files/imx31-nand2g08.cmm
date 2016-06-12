@@ -1,0 +1,148 @@
+; --------------------------------------------------------------------------------
+; @Title: i.MX31 NAND FLASH Programming Script
+; @Description:
+;   FLASH Type: NAND FLASH(Numonyx, NAND02G-B2D)
+; 
+;   SDRAM: 0x80000000
+;   NAND FLASH Controller(CPU-specific): 0xB8000000
+; 
+; @Author: jjeong
+; @Chip: IMX31
+; @Keywords: Numonyx NAND02G-B2D
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: imx31-nand2g08.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  AREA.RESet
+  AREA.view
+  
+//SYStem configuration
+
+  PRINT "Starting the debugger..."
+  SYStem.RESet
+  SYStem.CPU MCIMX31
+  SYStem.Option ResBreak OFF
+  SYStem.JtagClock RTCK
+  SYStem.Up
+
+  WAIT 2.S
+
+//Call SDRAM initialization
+  GOSUB sdram_init
+
+
+//NAND FLASH Controller Enable on i.Mx31
+// ARM=399MHz HCLK=100MHz IPG=50MHz NFC=19.95MHz
+  Data.Set sd:0x53f80004 %LE %Long 0xFF800458
+
+//Reset Control and Source Register (RCSR)
+//Define NAND FLASH Device 8 bits width ( bit 31 = 0 ), 2KB page (bit30 = 1)
+  Data.Set 0x53F8000C %LE %Long 0x40000000
+
+  Break.RESet
+
+  FLASHFILE.RESet
+//FLASHFILE.CONFIG <NAND Flash Controller Base Address> , ,
+  FLASHFILE.CONFIG 0xB8000000 , ,
+
+// FLASHFILE.TARGET <code range> <data range> <Algorithm file>
+  FLASHFILE.TARGET 0x80008000++0x3fff 0x8000C000++0x4FFF ~~/demo/arm/flash/byte/nand2g08_imx.bin
+
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Put a list of bad blocks into area window for 2Gbit (256MB) size
+  FLASHFILE.GETBADBLOCK 0x0--0xFFFFFFF
+
+
+  DIALOG.YESNO "Program flash memory?"
+  ENTRY &progflash
+  IF &progflash 
+  (
+  //Erase NAND FLASH Main and Bad block inforamtion
+    FLASHFILE.Erase 0x0--0x7FFFFFF  /EraseBadBlocks
+
+  //Skipped way 
+    FLASHFILE.LOAD.binary  * 0x0 
+    ;FLASHFILE.LOADSPARE * 0x0 
+   
+  //Reserved block area way
+    ;FLASHFILE.LOAD  * 0x0   /WriteBadBlocks
+    ;FLASHFILE.LOADSPARE *  0x0   /WriteBadBlocks  
+  )
+
+  ENDDO
+
+; --------------------------------------------------------------------------------
+; Initialization script for 32 bit DDR on Tortola EVB 
+; --------------------------------------------------------------------------------
+
+sdram_init:
+
+; SDCLK
+	Data.Set 0x43FAC26C %Long 0
+
+; CAS
+	Data.Set 0x43FAC270 %Long 0
+
+; RAS
+	Data.Set 0x43FAC274 %Long 0
+
+; CS2 (CSD0)
+	Data.Set 0x43FAC27C %Long 0x1000
+    
+; DQM3
+	Data.Set 0x43FAC284 %Long 0
+
+; DQM2, DQM1, DQM0, SD31-SD0, A25-A0, MA10 (0x288..0x2DC)
+	Data.Set 0x43FAC288 %Long 0
+	Data.Set 0x43FAC28C %Long 0
+	Data.Set 0x43FAC290 %Long 0
+	Data.Set 0x43FAC294 %Long 0
+	Data.Set 0x43FAC298 %Long 0
+	Data.Set 0x43FAC29C %Long 0
+	Data.Set 0x43FAC2A0 %Long 0
+	Data.Set 0x43FAC2A4 %Long 0
+	Data.Set 0x43FAC2A8 %Long 0
+	Data.Set 0x43FAC2AC %Long 0
+	Data.Set 0x43FAC2B0 %Long 0
+	Data.Set 0x43FAC2B4 %Long 0
+	Data.Set 0x43FAC2B8 %Long 0
+	Data.Set 0x43FAC2BC %Long 0
+	Data.Set 0x43FAC2C0 %Long 0
+	Data.Set 0x43FAC2C4 %Long 0
+	Data.Set 0x43FAC2C8 %Long 0
+	Data.Set 0x43FAC2CC %Long 0
+	Data.Set 0x43FAC2D0 %Long 0
+	Data.Set 0x43FAC2D4 %Long 0
+	Data.Set 0x43FAC2D8 %Long 0
+	Data.Set 0x43FAC2DC %Long 0
+	
+	
+	Data.Set 0xB8001010 %Long 0x00000004
+	Data.Set 0xB8001004 %Long 0x006ac73a
+	Data.Set 0xB8001000 %Long 0x92100000
+	Data.Set 0x80000f00 %Long 0x12344321
+	Data.Set 0xB8001000 %Long 0xa2100000
+	Data.Set 0x80000000 %Long 0x12344321
+	Data.Set 0x80000000 %Long 0x12344321
+	Data.Set 0xB8001000 %Long 0xb2100000
+	Data.Set 0x80000033 %Byte 0xda
+	Data.Set 0x81000000 %Byte 0xff
+	Data.Set 0xB8001000 %Long 0x82226080
+	Data.Set 0x80000000 %Long 0xDEADBEEF
+	Data.Set 0xB8001010 %Long 0x0000000c
+
+RETURN
+
+
+
+
+
+
+
+
+
+
+

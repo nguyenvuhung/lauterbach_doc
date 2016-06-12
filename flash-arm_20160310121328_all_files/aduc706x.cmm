@@ -1,0 +1,89 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Analog Devices ADuC706x internal flash. 
+; 
+; @Description: 
+; Script arguments:
+;
+;   DO aduc706x [PREPAREONLY] 
+;
+;     PREPAREONLY only declares flash but does not execute flash programming 
+;
+; Example:
+;
+;   DO ~~/demo/arm/flash/aduc706x PREPAREONLY
+;
+; List of ADuC706x derivatives and their configuration:
+;
+;   CPU-Type       FlashSize   RamSize
+;                    (KB)       (KB)
+;   ----------------------------------
+;   ADuC7060BCPZ32    30.        4.
+;   ADuC7060BSTZ32    30.        4.
+;   ADuC7061BCPZ32    30.        4.
+;   ADuC7062BCPZ32    30.        4.
+;
+; Flash location:
+;   30kB flash at 0x00000000--0x000077ff or 0x00080000--0x000877ff
+;
+; RAM location:
+;   4kB RAM at    0x00040000--0x00040fff or 0x00000000--0x00000fff
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ADuC706*
+; --------------------------------------------------------------------------------
+; $Rev: 2881 $
+; $Id: aduc706x.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+
+  ; --------------------------------------------------------------------------------
+  ; Set configuration values.
+
+  LOCAL &FlashBase
+  LOCAL &RamBase
+
+  &FlashBase=0x00080000
+  &RamBase=0x00040000
+
+  ; --------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU ADUC7060
+    SYStem.Up
+  )
+
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  FLASH.Create 1. (&FlashBase+0x00000)--(&FlashBase+0x077ff) 0x200 TARGET Word
+  FLASH.TARGET &RamBase &RamBase+0x800 0x200 ~~/demo/arm/flash/word/aduc7030.bin
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+  
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.Erase.ALL
+
+    FLASH.Program.ALL
+    Data.LOAD.auto * /Word
+    FLASH.Program.off
+  )
+
+  ENDDO

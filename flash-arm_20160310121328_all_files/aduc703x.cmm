@@ -1,0 +1,152 @@
+; --------------------------------------------------------------------------------
+; @Title: Example for flash declaration of Analog Devices ADuC703x internal flash. 
+; 
+; @Description: 
+; Script arguments:
+;
+;   DO aduc703x [PREPAREONLY] 
+;
+;     PREPAREONLY only declares flash but does not execute flash programming 
+; 
+; Example:
+;
+;   DO ~~/demo/arm/flash/aduc703x PREPAREONLY
+;
+; List of ADuC703x derivatives and their configuration:
+;
+;                  User
+;   CPU-Type       FlashSize   RamSize
+;                    (KB)       (KB)
+;   ----------------------------------
+;   ADuC7030          30.        4.
+;   ADuC7032          94.        6.
+;   ADuC7033          94.        6.
+;   ADuC7034          30.        4.
+;   ADuC7036          94.        6.
+;   ADuC7039          62.        4.
+;
+; Flash location:
+;   94kB user flash at 0x00000000--0x000177ff or 0x00080000--0x000977ff
+;   62kB user flash at 0x00000000--0x0000f7ff or 0x00080000--0x0008f7ff
+;   30kB user flash at 0x00000000--0x000077ff or 0x00080000--0x000877ff
+;
+; RAM location:
+;   6kB RAM at         0x00040000--0x000417ff or 0x00000000--0x000017ff
+;   4kB RAM at         0x00040000--0x00040fff or 0x00000000--0x00000fff
+;
+; @Author: WRD
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: ADuC703*
+; --------------------------------------------------------------------------------
+; $Rev: 3483 $
+; $Id: aduc703x.cmm 3483 2015-11-05 09:22:19Z pegold $
+
+  LOCAL &parameters
+  ENTRY %LINE &parameters
+
+  LOCAL &param_prepareonly
+  &param_prepareonly=(STRing.SCAN(STRing.UPpeR("&parameters"),"PREPAREONLY",0)!=-1)
+  ; --------------------------------------------------------------------------------
+  ; Set configuration values. 
+
+  LOCAL &FlashBase
+  LOCAL &FlashSize
+  LOCAL &RamBase
+
+  &FlashBase=0x00080000
+  &RamBase=0x00040000
+
+  ; --------------------------------------------------------------------------------
+  ; Start debugging
+
+  IF SYStem.MODE()<5
+  (
+    SYStem.RESet
+    SYStem.CPU ADUC7033
+    SYStem.Option EnReset OFF
+    IF CPU()=="ADUC7039"
+    (
+      SYStem.JtagClock 1Mhz
+      SYStem.Up
+      SYStem.JtagClock RTCK    ; The ARM7 core need to be switched into the scan chain
+                               ; by a system level TAP and a specific bypass pattern.
+                               ; Then only RTCK is available.
+    )
+    ELSE
+    (
+      SYStem.Up
+    )
+  )
+  
+  ; --------------------------------------------------------------------------------
+  ; Flash declaration
+
+  FLASH.RESet
+  GOSUB FlashDeclaration 
+
+  ; Flash script ends here if called with parameter PREPAREONLY
+  IF &param_prepareonly
+    ENDDO PREPAREDONE
+  ; --------------------------------------------------------------------------------
+  ; Flash programming example
+
+  DIALOG.YESNO "Program flash memory?"
+  LOCAL &progflash
+  ENTRY &progflash
+  IF &progflash 
+  (
+    FLASH.Erase.ALL
+
+    FLASH.Program.ALL
+    Data.LOAD.auto * /Word
+    FLASH.Program.off
+  )
+
+  ENDDO
+
+; --------------------------------------------------------------------------------
+; Flash declaration depending on configuration 
+
+FlashDeclaration:
+  
+  IF ((CPU()=="ADUC7030")||(CPU()=="ADUC7034"))
+  (
+    &FlashSize=30.
+  )
+  ELSE IF ((CPU()=="ADUC7039"))
+  (
+    &FlashSize=62.
+  )
+  ELSE IF ((CPU()=="ADUC7032")||(CPU()=="ADUC7033")||(CPU()=="ADUC7036"))
+  (
+    &FlashSize=94.
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH size of CPU type is unknown"
+    ENDDO
+  )
+
+  IF &FlashSize==94.
+  (
+    FLASH.Create 1. (&FlashBase+0x00000)--(&FlashBase+0x0ffff) 0x200 TARGET Word
+    FLASH.Create 2. (&FlashBase+0x10000)--(&FlashBase+0x177ff) 0x200 TARGET Word
+    FLASH.TARGET &RamBase &RamBase+0x800 0x200 ~~/demo/arm/flash/word/aduc7220.bin
+  )
+  ELSE IF &FlashSize==62.
+  (
+    FLASH.Create 1. (&FlashBase+0x00000)--(&FlashBase+0x0f7ff) 0x200 TARGET Word
+    FLASH.TARGET &RamBase &RamBase+0x800 0x200 ~~/demo/arm/flash/word/aduc7030.bin
+  )
+  ELSE IF &FlashSize==30.
+  (
+    FLASH.Create 1. (&FlashBase+0x00000)--(&FlashBase+0x077ff) 0x200 TARGET Word
+    FLASH.TARGET &RamBase &RamBase+0x800 0x200 ~~/demo/arm/flash/word/aduc7030.bin
+  )
+  ELSE
+  (
+    PRINT %ERROR "FLASH configuration is not supported by the script"
+    ENDDO
+  )
+  
+  RETURN

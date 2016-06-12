@@ -1,0 +1,82 @@
+; --------------------------------------------------------------------------------
+; @Title: i.MX28 SPI FLASH Programming Script
+; @Description:
+; SPI FLASH(SPANSION,FL128 ) is connected to the SSP2_SS0
+; 
+; Internal SRAM    : 0x001000
+; SSP2_TX   : 0x80014090
+; SSP2_RX   : 0x80014090
+; SSP2_CTRL : 0x80014000   
+; SSP2_SSn  : 0
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: IMX287
+; @Keywords: SPANSION FL128 Flash SPI 
+; --------------------------------------------------------------------------------
+; $Id: imx28-spi64.cmm 2881 2014-07-07 10:35:48Z kjmal $
+
+
+  SYStem.RESet
+  SYStem.CPU IMX287
+  SYStem.JtagClock RTCK
+		
+  SYStem.Option EnReset OFF
+  SYStem.Up
+
+  PER.Set.simple C15:0x1 %Long 0x51078   ;MMU disable
+
+
+  Data.Set ASD:0x800401D0 %LE %Long 0x4157
+
+  Data.Set ASD:0x800401B0 %LE %Long 0x1d525513
+  Data.Set ASD:0x800400B0 %LE %Long 0x5
+
+//pin configuration
+  Data.Set ASD:0x80018140 %LE %Long 0xff000000
+  Data.Set ASD:0x80018150 %LE %Long 0xff0f00
+
+  Data.Set ASD:0x80018390 %LE %Long 0x44440555
+  Data.Set ASD:0x800183A0 %LE %Long 0x00445444
+  Data.Set ASD:0x800183B0 %LE %Long 0x04444
+
+  Data.Set ASD:0x80018600 %LE %Long 0x01000000
+  Data.Set ASD:0x80018610 %LE %Long 0x0
+  Data.Set ASD:0x80018620 %LE %Long 0x0f07FF
+  Data.Set ASD:0x80018640 %LE %Long 0x101DF
+
+//SSP2 configuration
+  Data.Set ASD:0x80014008 %LE %Long 0xc0000000  ; reset
+  Data.Set ASD:0x80014030 %LE %Long 0x1         ; xfer_size = 1
+  Data.Set ASD:0x80014080 %LE %Long 0x670
+  Data.Set ASD:0x80014088 %LE %Long 0x00200000
+  Data.Set ASD:0x80014070 %LE %Long 0xFFFF0202
+  Data.Set ASD:0x80014004 %LE %Long 0x27000000  ; ssp2_ss0
+  Data.In 0x80014090 /Long  ; dummy reading to make high of CS 
+
+  Break.RESet
+
+  FLASHFILE.RESet
+  
+//FLASHFILE.config  <SSP tx>   <SSP rx>    <SSP ctrl>  <#SSP2_SSn>
+  FLASHFILE.CONFIG  0x80014090 0x80014090  0x80014000   0x0
+
+// FLASHFILE.TARGET <code range>        <data range>      <Algorithm file>
+ FLASHFILE.TARGET 0x001000++0x1FFF 0x00003000++0x41FF     ~~/demo/arm/flash/byte/spi64_imx28.bin  /KEEP 
+
+//Read FLASH Manufacture and Device ID
+  FLASHFILE.GETID
+
+//Dump window for Serial FLASH
+  FLASHFILE.DUMP 0x0
+
+; FLASHFILE.UNLOCK 0x0--0xFFFFF  
+
+//Erase Serial FLASH 
+; FLASHFILE.ERASE 0x0--0xFFFFF  
+
+  //Write Serial FLASH
+; FLASHFILE.LOAD  * 0x0 
+  
+
+ENDDO

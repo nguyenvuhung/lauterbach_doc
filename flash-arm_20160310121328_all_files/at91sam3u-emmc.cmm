@@ -1,0 +1,118 @@
+; --------------------------------------------------------------------------------
+; @Title: eMMC FLASH Programming script for AT91SAM3U
+; @Description:
+; eMMC FLASH(Numonyx, NAND16GXH) is connected
+;
+; Internal SRAM: 0x20000000
+;
+; SD/MMC Controller Register : 0x40000000      
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: AT91SAM3U4E
+; @Keywords: Numonyx NAND16GXH flash eMMC
+; --------------------------------------------------------------------------------
+; $Id: at91sam3u-emmc.cmm 3327 2015-07-06 13:53:49Z jjeong $
+
+&MMC_BASE=0x40000000
+
+RESet
+SYStem.Option ResBreak OFF
+SYStem.CPU AT91SAM3U4E
+SYStem.Option INTDIS ON
+SYStem.Up
+
+Break.RESet
+
+Data.Set 0x400E1254 %LE %Long 0x3FFFFFFF //WDOG Disable
+Data.Set 0x400E0C04 %LE %Long 0x1F8  //Disable PIOA pins which related with SDIO
+Data.Set 0x400E0430 %LE %Long 0x11  //PMC Master Clock, Main clock is selected
+Data.Set 0x400E0410 %LE %Long 0x20000 // PMC enable
+Data.Set 0x40000008 %LE %Long 0x7F  //Set the Data time out register, max number
+Data.Set 0x4000000C %LE %Long 0x00  //Set MMC/SDCard Register bus width 1bits 
+Data.Set 0x40000000 %LE %Long 0x1   //Enable MIC
+Data.Set 0x40000050 %LE %Long 0x0  //Disable DMA interface
+Data.Set 0x40000054 %LE %Long 0x1  //Configure MCI  , FIFO Mode Enable
+
+Data.Set 0x40000004 %LE %Long 0x73B  
+Data.Set 0x40000004 %LE %Long 0x2001F07  //400Khz,  MMC clock divider 
+
+GOSUB READ_ID_TEST
+
+  FLASHFILE.RESet
+
+//FLASHFILE.CONFIG <MMC Controller Base>  0x0   0x0
+  FLASHFILE.CONFIG 0x40000000             0x0   0x0 
+
+//FLASHFILE.target <Code_range>        <Data_range>      <Algorithm file>
+  FLASHFILE.TARGET 0x20000000++0x1FFF 0x20002000++0x1FFF  ~~/demo/arm/flash/byte/emmc_at91sam.bin  /KEEP
+
+
+//Read FLASH Manufacture and Device ID
+  Data.Set 0x40000004 %LE %Long 0x2001F07  ; 400Khz,
+  FLASHFILE.GETID
+
+  Data.Set 0x40000004 %LE %Long 0x2001F00  ; 3Mhz
+ 
+  FLASHFILE.DUMP 0x0               ; Read eMMC
+ ;FLASHFILE.ERASE 0x0--0xFFFFF     ; Erase eMMC
+ ;FLASHFILE.LOAD * 0x0             ; Write eMMC
+ 
+ENDDO
+
+READ_ID_TEST:
+//MMC interface, not SD(HC)
+&arg_reg=&MMC_BASE+0x10
+&cmd_reg=&MMC_BASE+0x14
+&rsp_reg=&MMC_BASE+0x20
+
+//CMD0
+RePeaT 2.
+(
+Data.Set &arg_reg %Long 0x0
+Data.Set &cmd_reg %Long 0x0
+WAIT 10.ms
+)
+
+//CMD1
+RePeaT 10.
+(
+Data.Set &arg_reg %Long 0x40ff8000 ;arg
+Data.Set &cmd_reg %Long (0x840|1.) ;cmd1
+WAIT 10.ms
+&resp=Data.Long(A:(&rsp_reg))
+//print "CMD1 resp: 0x" &resp
+IF (&resp&0x80000000)==0x80000000
+(
+GOTO jump_cmd2
+)
+)
+
+PRINT "CMD1 fail"
+END
+
+jump_cmd2:
+//CMD2
+Data.Set &arg_reg %Long 0x0   ;arg
+Data.Set &cmd_reg %Long (0x080|2.)  ;cmd2
+WAIT 10.ms
+
+//CMD3
+Data.Set &arg_reg %Long 0x10000  ;arg, MMC RCA is (0x0001<<16.)
+Data.Set &cmd_reg %Long (0x1040|3.) ;;cmd3
+WAIT 10.ms
+
+//CMD10
+Data.Set &arg_reg %Long 0x10000    ; arg, MMC RCA is (0x0001<<16.)
+Data.Set &cmd_reg %Long (0x1080|10.)   ;cmd10
+WAIT 10.ms
+
+//Response2
+PRINT "CID register"
+PRINT "[127:96] 0x" Data.Long(A:(&rsp_reg))
+PRINT "[95:64]  0x" Data.Long(A:(&rsp_reg))
+PRINT "[63:32]   0x" Data.Long(A:(&rsp_reg))
+PRINT "[31:0]    0x" Data.Long(A:(&rsp_reg))
+
+RETURN
+

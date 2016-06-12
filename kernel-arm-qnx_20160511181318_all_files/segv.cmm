@@ -1,0 +1,89 @@
+; --------------------------------------------------------------------------------
+; @Title: Script to investigate Segmentation Violations and other Faults on QNX
+; @Description: 
+;   See QNX Awareness Manual, chapter
+;       "Debugging QNX"->"Trapping Segmentation Violation"
+;   Call this script to set the appropriate breakpoints
+;   and call it again to set the register set to the place
+;   where the fault happened.
+;   The registers are set temporarily; as soon as debugging
+;   is continued (Step, Go, ...), the original registers
+;   are restored.
+; @Author: DIE
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; --------------------------------------------------------------------------------
+; $Id: segv.cmm 6904 2014-04-21 15:16:07Z kjmal $
+
+
+ LOCAL &usr_fault
+ 
+ ; segmentation violation (usr_fault)
+ IF sYmbol.EXIST(usr_fault)
+   &usr_fault=ADDRESS.OFFSET(usr_fault)
+ ELSE
+ (
+    PRINT "label ""usr_fault"" not found."
+    ENDDO
+ )
+ Break.Set &usr_fault
+ PRINT "breakpoint set on ""usr_fault""."
+ 
+ ; if halted on segmentation violation (usr_fault)
+ IF Register(pc)==&usr_fault
+ (
+    &code=Register(r0)
+    &signo=&code&0xff
+    &thread=Register(r1)
+    &addr=Register(r2)
+    &pc=Var.VALUE(((struct thread_entry)*&thread).reg.gpr[15])
+    IF &signo==10.
+      PRINT "bus error at address 0x" &addr ", PC = 0x" &pc
+    ELSE IF &signo==11.
+      PRINT "segmentation violation at address 0x" &addr ", PC = 0x" &pc
+    ELSE
+      PRINT "signo 0x" &signo " at address 0x" &addr ", PC = 0x" &pc
+    GOSUB swap_registers &thread
+    ENDDO
+ )
+
+ ENDDO
+
+
+swap_registers:
+
+ ; set register set temporarily to faulty state
+ 
+ LOCAL &thread
+ ENTRY &thread
+
+ LOCAL &r0  &r1  &r2  &r3  &r4  &r5  &r6  &r7 
+ LOCAL &r8  &r9  &r10 &r11 &r12 &r13 &r14 &r15
+ LOCAL &spsr
+ 
+ LOCAL &i
+
+ ; first get all register values from thread context
+
+ &i=0.
+ WHILE &i<16.
+ (
+   ; collect all gpr registers to script variables &r0-&r15
+   &ic=STRing.CUT("&i",-1)   ; to cut trailing dot
+   &r&ic=Var.VALUE(((struct thread_entry)*&thread).reg.gpr[&ic]) ; &r0=v.v(.reg.gpr[0])
+   &i=&i+1
+ )
+ &spsr=Var.VALUE(((struct thread_entry)*&thread).reg.spsr)
+
+ ; second write values into registers temporarily
+
+ &i=0.
+ WHILE &i<16.
+ (
+   &ic=STRing.CUT("&i",-1)  ; to cut trailing dot
+   &&value=&r&ic            ; && for recursive macro parsing
+   Register.Set r&ic &value /Task Temporary  ; r.s r0 &r0
+   &i=&i+1
+ )
+ Register.Set spsr &spsr /Task Temporary
+
+ RETURN

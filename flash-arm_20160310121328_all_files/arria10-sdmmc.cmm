@@ -1,0 +1,192 @@
+; @Title: Arria 10 SD/MMC FLASH Program script
+;
+; @Description:
+; SD(HC)CARD is connected to 
+; SRAM: 0xFFE00000
+; SD/MMC(controller) Regisetr Base: 0xff808000
+;
+; @Author: jjeong
+; @Copyright: (C) 1989-2014 Lauterbach GmbH, licensed for use with TRACE32(R) only
+; @Chip: arria*
+; @Keywords: altera Flash MMC SD
+; $Id: arria10-sdmmc.cmm 3372 2015-08-19 13:18:13Z jjeong $
+;
+;Please check BSEL[2:0]
+;The boot select field specifies the boot source. It is read by the Boot ROM code on a cold or warm reset to determine the boot source. 
+;The HPS BSEL pins value are sampled upon deassertion of cold reset.
+;Value Description
+;0x0 Reserved
+;0x1 FPGA (HPS2FPGA Bridge)
+;0x2 NAND Flash (1.8v)
+;0x3 NAND Flash (3.0v)
+;0x4 SD/MMC External Transceiver (1.8v)
+;0x5 SD/MMC Internal Transceiver (3.0v)
+;0x6 QSPI Flash (1.8v)
+;0x7 QSPI Flash (3.0v)
+
+WinCLEAR
+AREA.view
+
+&MMC_BASE=0xff808000
+
+LOCAL &arg1
+ENTRY &arg1
+&arg1=STRing.UPpeR("&arg1")  // for example "PREPAREONLY"
+
+RESet
+SYStem.RESet
+SYStem.CPU ARRIA10SOC
+SYStem.CONFIG.DAPIRPOST 10.
+SYStem.CONFIG.DAPDRPOST 1.
+SYStem.Option ResBreak OFF
+CORE.ASSIGN 1.
+SYStem.Up
+; reset again - TrOnchip.Set RESET ON will cause stop at "real" Reset Vector
+SYStem.Up
+
+; preboot - bootrom
+Go.direct 0xffe00054 /Onchip
+WAIT !STATE.RUN() 1.s
+IF STATE.RUN()
+  Break.direct
+
+Data.Set C15:0x1 %Long  (Data.Long(C15:0x1)&~(0x1005))  ; disable interrupt and mmu
+
+;Data.Set  A:0xFFD04000 %Long 0x301  ; I_CLK_MGR,  clk change to the external oscclk from the boot clk
+
+; disable Watchdog0/1
+Data.Set A:0xFFD05028 %Long Data.Long(A:0xFFD05028)|0x3
+
+Data.Set ZSD:0xFF808014 %LE %Long 0xFFFFFFFF
+Data.Set ZSD:0xFF808024 %LE %Long 0xFFFF
+Data.Set ZSD:0xFF80801C %LE %Long 0x200
+Data.Set ZSD:0xFF808020 %LE %Long 0x200
+Data.Set ZSD:0xFF808008 %LE %Long 0x10
+Data.Set ZSD:0xFF808010 %LE %Long 0x1
+
+Data.Set ZSD:0xFF808000 %LE %Long 0x17   ;reset all then enable
+
+//clk enableing 
+Data.Set 0xFF808008 %Long 0x10            ;clk divider , make <400KHz
+Data.Set 0xFF80802C %Long 0x80202000      ;update clk
+Data.Set 0xFF808044 %LE %Long 0xFFFFFFFF  ;clear status
+
+GOSUB READ_ID_TEST
+
+  FLASHFILE.RESet
+//FLASHFILE.CONFIG <sdmmc base>
+  FLASHFILE.CONFIG 0xff808000
+  FLASHFILE.TARGET AZSD:0xffe00000++0x1FFF  AZSD:0xffe02000++0x1FFF   ~~/demo/arm/flash/byte/emmcsd_dw.bin   /KEEP
+
+FLASHFILE.GETID
+
+PER.Set.simple AD:0xFF808008 %Long 0x0   ;clk divider, make a full clock speed of the sdmmc
+PER.Set.simple AD:0xFF80802C %Long 0x80200000  ;update clk
+
+//End of the test prepareonly
+IF "&arg1"=="PREPAREONLY"
+  ENDDO
+
+  FLASHFILE.DUMP 0x0                             ; Read eMMC 
+
+ ;FLASHFILE.ERASE 0x0--0xFFFFF                   ; Erase eMMC
+
+ ;FLASHFILE.LOAD * 0x0                           ; Write eMMC
+
+ENDDO
+
+
+
+READ_ID_TEST:
+//SD(HC) interface, not MMC
+//CMD0, reset
+
+RePeaT 4.
+(
+Data.Set &MMC_BASE+0x44 %LE %Long 0xFFFFFFFF  ;clear status
+Data.Set &MMC_BASE+0x28 %Long 0x0     ;arg 
+Data.Set &MMC_BASE+0x2c %Long 0xA000A000 ;cmd
+WAIT 10.ms
+)
+
+//CMD8, is madatory to intialize High Capacity SD Memory Card
+RePeaT 2.
+(
+Data.Set &MMC_BASE+0x44 %LE %Long 0xFFFFFFFF  ;clear status
+Data.Set &MMC_BASE+0x28 %Long 0x1AA       ;arg
+Data.Set &MMC_BASE+0x2c %Long 0xA0002148  ;cmd
+WAIT 10.ms
+
+&status=Data.Long(A:(&MMC_BASE+0x44))
+IF (&status&0x4)==0x4
+(
+PRINT "passed CMD8(voltage check)"
+GOTO jump_cmd55
+)
+ELSE
+(
+//CMD0
+Data.Set &MMC_BASE+0x44 %LE %Long 0xFFFFFFFF  ;clear status
+Data.Set &MMC_BASE+0x28 %Long 0x0  ;arg 
+Data.Set &MMC_BASE+0x2c %Long 0x0  ;cmd
+WAIT 10.ms
+)
+)
+
+jump_cmd55:
+//CMD55
+RePeaT 10.
+(
+Data.Set &MMC_BASE+0x44 %LE %Long 0xFFFFFFFF  ;clear status
+Data.Set &MMC_BASE+0x28 %Long 0x0 ;arg
+Data.Set &MMC_BASE+0x2c %Long 0xA0002177 ;cmd55, resp1
+WAIT 10.ms
+
+//ACMD41
+Data.Set &MMC_BASE+0x44 %LE %Long 0xFFFFFFFF  ;clear status
+Data.Set &MMC_BASE+0x28 %Long 0x40FF8000 ;arg
+Data.Set &MMC_BASE+0x2c %Long 0xA0002069; cmd41, resp1
+WAIT 10.ms
+
+&resp=Data.Long(A:(&MMC_BASE+0x30))
+//print "CMD1 resp: 0x" &resp
+IF (&resp&0x80000000)==0x80000000
+(
+GOTO jump_cmd2
+)
+)
+
+PRINT "CMD1 fail"
+END
+
+jump_cmd2:
+//CMD2
+Data.Set &MMC_BASE+0x44 %LE %Long 0xFFFFFFFF  ;clear status
+Data.Set &MMC_BASE+0x28 %Long 0x0          ;arg
+Data.Set &MMC_BASE+0x2c %Long 0xA00021C2   ;cmd2
+WAIT 10.ms
+
+//CMD3
+Data.Set &MMC_BASE+0x44 %LE %Long 0xFFFFFFFF  ;clear status
+Data.Set &MMC_BASE+0x28 %Long 0x00070000  ; arg, MMC RCA is (0x0001<<16.)
+Data.Set &MMC_BASE+0x2c %Long 0x20002143  ;cmd3
+WAIT 10.ms
+
+&cardaddress=Data.Long(A:(&MMC_BASE+0x30))
+&cardaddress=&cardaddress&0xFFFF0000
+
+
+//CMD10
+Data.Set &MMC_BASE+0x44 %LE %Long 0xFFFFFFFF  ;clear status
+Data.Set &MMC_BASE+0x28 %Long &cardaddress  ; arg, card address
+Data.Set &MMC_BASE+0x2c %Long 0xA00021CA    ;cmd10
+WAIT 10.ms
+
+//Response2
+PRINT "CID register"
+PRINT "[127:104] 0x" Data.Long(A:(&MMC_BASE+0x3c))
+PRINT "[103:72]  0x" Data.Long(A:(&MMC_BASE+0x38))
+PRINT "[71:40]   0x" Data.Long(A:(&MMC_BASE+0x34))
+PRINT "[39:8]    0x" Data.Long(A:(&MMC_BASE+0x30))
+
+RETURN
